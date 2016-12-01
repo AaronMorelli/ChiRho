@@ -13,6 +13,22 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
+/*
+	FILE NAME: CoreXR.ProcessingTimes.Table.sql
+
+	TABLE NAME: CoreXR.ProcessingTimes
+
+	AUTHOR:			Aaron Morelli
+					aaronmorelli@zoho.com
+					@sqlcrossjoin
+					sqlcrossjoin.wordpress.com
+					https://github.com/AaronMorelli/ChiRho
+
+	PURPOSE: Contains a list of tags (used by various components of the CoreXR
+	system) and a "last processed" time for that tag, essentially recording the
+	high watermark for various post-processing procedures that do analysis or
+	data modification on already collected data.
+*/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON

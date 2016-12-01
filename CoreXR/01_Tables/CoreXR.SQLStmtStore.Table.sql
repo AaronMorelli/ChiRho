@@ -13,6 +13,20 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
+/*
+	FILE NAME: CoreXR.SQLStmtStore.Table.sql
+
+	TABLE NAME: CoreXR.SQLStmtStore
+
+	AUTHOR:			Aaron Morelli
+					aaronmorelli@zoho.com
+					@sqlcrossjoin
+					sqlcrossjoin.wordpress.com
+					https://github.com/AaronMorelli/ChiRho
+
+	PURPOSE: A centralized store for all statement-level SQL text captured
+	by the various components of the ChiRho system.
+*/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON

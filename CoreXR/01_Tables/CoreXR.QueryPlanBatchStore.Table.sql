@@ -13,6 +13,20 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
+/*
+	FILE NAME: CoreXR.QueryPlanBatchStore.Table.sql
+
+	TABLE NAME: CoreXR.QueryPlanBatchStore
+
+	AUTHOR:			Aaron Morelli
+					aaronmorelli@zoho.com
+					@sqlcrossjoin
+					sqlcrossjoin.wordpress.com
+					https://github.com/AaronMorelli/ChiRho
+
+	PURPOSE: A centralized store for all batch-level query plans captured
+	by any component in the ChiRho system.
+*/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON

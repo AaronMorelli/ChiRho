@@ -13,6 +13,23 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
+/*
+	FILE NAME: CoreXR.OrdinalCachePosition.Table.sql
+
+	TABLE NAME: CoreXR.OrdinalCachePosition
+
+	AUTHOR:			Aaron Morelli
+					aaronmorelli@zoho.com
+					@sqlcrossjoin
+					sqlcrossjoin.wordpress.com
+					https://github.com/AaronMorelli/ChiRho
+
+	PURPOSE: Holds the current ordinal position within a given cache from the
+	CaptureOrdinalCache table. An ordinal cache is identified by the combination
+	of columns: StartTime/EndTime/session_id, and the CurrentPosition is valid
+	for the range of ordinals found in CaptureOrdinalCache for the matching
+	start/end/session_id.
+*/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON

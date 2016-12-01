@@ -13,6 +13,20 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
+/*
+	FILE NAME: CoreXR.SQLBatchStore.Table.sql
+
+	TABLE NAME: CoreXR.SQLBatchStore
+
+	AUTHOR:			Aaron Morelli
+					aaronmorelli@zoho.com
+					@sqlcrossjoin
+					sqlcrossjoin.wordpress.com
+					https://github.com/AaronMorelli/ChiRho
+
+	PURPOSE: A centralized store for all batch-level statement text collected by
+	the various components in the ChiRho system
+*/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON

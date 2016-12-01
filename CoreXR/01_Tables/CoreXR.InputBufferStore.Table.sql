@@ -13,6 +13,20 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
+/*
+	FILE NAME: CoreXR.InputBufferStore.Table.sql
+
+	TABLE NAME: CoreXR.InputBufferStore
+
+	AUTHOR:			Aaron Morelli
+					aaronmorelli@zoho.com
+					@sqlcrossjoin
+					sqlcrossjoin.wordpress.com
+					https://github.com/AaronMorelli/ChiRho
+
+	PURPOSE: A central store for all input buffers captured by any component
+	in the ChiRho system. (AutoWho is the only consumer at this point)
+*/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON

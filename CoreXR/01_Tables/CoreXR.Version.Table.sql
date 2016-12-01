@@ -13,12 +13,25 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
+/*
+	FILE NAME: CoreXR.Version.Table.sql
+
+	TABLE NAME: CoreXR.Version
+
+	AUTHOR:			Aaron Morelli
+					aaronmorelli@zoho.com
+					@sqlcrossjoin
+					sqlcrossjoin.wordpress.com
+					https://github.com/AaronMorelli/ChiRho
+
+	PURPOSE: One-row table with the current version of the ChiRho system
+*/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
 CREATE TABLE [CoreXR].[Version](
-	[Version] [nvarchar](20) NOT NULL,
+	[Version] [nvarchar](30) NOT NULL,
 	[EffectiveDate] [datetime] NOT NULL
 ) ON [PRIMARY]
 

@@ -13,12 +13,26 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
+/*
+	FILE NAME: CoreXR.Version_History.Table.sql
+
+	TABLE NAME: CoreXR.Version_History
+
+	AUTHOR:			Aaron Morelli
+					aaronmorelli@zoho.com
+					@sqlcrossjoin
+					sqlcrossjoin.wordpress.com
+					https://github.com/AaronMorelli/ChiRho
+
+	PURPOSE: A history of the ChiRho versions present in this database.
+	Populated by a set of triggers on the CoreXR.Version table.
+*/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
 CREATE TABLE [CoreXR].[Version_History](
-	[Version] [nvarchar](20) NOT NULL,
+	[Version] [nvarchar](30) NOT NULL,
 	[EffectiveDate] [datetime] NOT NULL,
 	[HistoryInsertDate] [datetime] NOT NULL,
 	[TriggerAction] [nvarchar](20) NOT NULL

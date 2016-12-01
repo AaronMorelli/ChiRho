@@ -13,6 +13,22 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
+/*
+	FILE NAME: CoreXR.CaptureOrdinalCache.Table.sql
+
+	TABLE NAME: CoreXR.CaptureOrdinalCache
+
+	AUTHOR:			Aaron Morelli
+					aaronmorelli@zoho.com
+					@sqlcrossjoin
+					sqlcrossjoin.wordpress.com
+					https://github.com/AaronMorelli/ChiRho
+
+	PURPOSE: Holds a list of capture times (e.g. for captures by the AutoWho or ServerEye components)
+	and each capture time's order number (both ascending and descending) within the overall range. The
+	front-end UI procs populate this table when requested by a user call, for a given start/end range,
+	and then refer to it as they iterate over the capture times.
+*/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
