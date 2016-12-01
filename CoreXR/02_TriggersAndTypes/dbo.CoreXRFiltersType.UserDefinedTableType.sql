@@ -13,11 +13,24 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-CREATE SCHEMA [CoreXR] 
-GO
-CREATE SCHEMA [XR]		--the "public" interface (e.g. views and such)
-GO
-CREATE SCHEMA [AutoWho]
-GO
-CREATE SCHEMA [ServerEye]
+/*
+	FILE NAME: dbo.CoreXRFiltersType.UserDefinedTableType.sql
+
+	TABLE NAME: dbo.CoreXRFiltersType
+
+	AUTHOR:			Aaron Morelli
+					aaronmorelli@zoho.com
+					@sqlcrossjoin
+					sqlcrossjoin.wordpress.com
+					https://github.com/AaronMorelli/ChiRho
+
+	PURPOSE: This table type is passed around as a parameter and typically
+	contains one or more types of filters (e.g. "session", or "database")
+	along with the filtering value(s).
+*/
+CREATE TYPE [dbo].[CoreXRFiltersType] AS TABLE(
+	[FilterType] [tinyint] NOT NULL,
+	[FilterID] [int] NOT NULL,
+	[FilterName] [nvarchar](255) NULL
+)
 GO
