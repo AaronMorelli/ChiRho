@@ -44,7 +44,7 @@ GO
 SET ANSI_PADDING ON
 
 GO
-CREATE UNIQUE NONCLUSTERED INDEX [AK_allattributes] ON [AutoWho].[DimCommand]
+CREATE UNIQUE NONCLUSTERED INDEX [AK_AutoWho_DimCommand] ON [AutoWho].[DimCommand]
 (
 	[command] ASC
 )

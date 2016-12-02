@@ -50,7 +50,6 @@ CREATE TABLE [AutoWho].[LockDetails](
 	[request_status] [nvarchar](60) NULL,
 	[RecordCount] [bigint] NULL
 ) ON [PRIMARY]
-
 GO
 CREATE CLUSTERED INDEX [CL_SPIDCaptureTime] ON [AutoWho].[LockDetails]
 (

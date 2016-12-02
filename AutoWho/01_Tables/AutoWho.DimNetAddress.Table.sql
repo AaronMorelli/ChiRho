@@ -44,9 +44,15 @@ CREATE TABLE [AutoWho].[DimNetAddress](
 	[DimNetAddressID] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
-
 GO
-SET ANSI_PADDING OFF
+CREATE UNIQUE NONCLUSTERED INDEX [AK_AutoWho_DimNetAddress] ON [AutoWho].[DimNetAddress]
+(
+	[client_net_address], 
+	[local_net_address],
+	[local_tcp_port]
+)
+INCLUDE ( 	[DimNetAddressID],
+	[TimeAdded]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 GO
 ALTER TABLE [AutoWho].[DimNetAddress] ADD  CONSTRAINT [DF_AutoWho_DimNetAddress_TimeAdded]  DEFAULT (getdate()) FOR [TimeAdded]
 GO

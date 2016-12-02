@@ -190,7 +190,6 @@ CREATE TABLE [AutoWho].[LightweightSessions](
 	[mgrant__is_small] [bit] NULL,
 	[mgrant__ideal_memory_kb] [bigint] NULL
 ) ON [PRIMARY]
-
 GO
 SET ANSI_PADDING OFF
 GO

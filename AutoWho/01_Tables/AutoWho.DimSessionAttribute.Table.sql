@@ -52,7 +52,7 @@ GO
 SET ANSI_PADDING ON
 
 GO
-CREATE UNIQUE NONCLUSTERED INDEX [AK_allattributes] ON [AutoWho].[DimSessionAttribute]
+CREATE UNIQUE NONCLUSTERED INDEX [AK_AutoWho_DimSessionAttribute] ON [AutoWho].[DimSessionAttribute]
 (
 	[host_name] ASC,
 	[program_name] ASC,

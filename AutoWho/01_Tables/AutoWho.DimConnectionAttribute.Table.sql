@@ -52,7 +52,7 @@ GO
 SET ANSI_PADDING ON
 
 GO
-CREATE UNIQUE NONCLUSTERED INDEX [AK_allattributes] ON [AutoWho].[DimConnectionAttribute]
+CREATE UNIQUE NONCLUSTERED INDEX [AK_AutoWho_DimConnectionAttribute] ON [AutoWho].[DimConnectionAttribute]
 (
 	[net_transport] ASC,
 	[protocol_type] ASC,

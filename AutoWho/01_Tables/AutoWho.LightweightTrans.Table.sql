@@ -77,7 +77,6 @@ CREATE TABLE [AutoWho].[LightweightTrans](
 	[dtdt__database_transaction_last_rollback_lsn] [numeric](25, 0) NULL,
 	[dtdt__database_transaction_next_undo_lsn] [numeric](25, 0) NULL
 ) ON [PRIMARY]
-
 GO
 SET ANSI_PADDING OFF
 GO

@@ -35,7 +35,7 @@ CREATE TABLE [AutoWho].[DimLoginName](
 	[login_name] [nvarchar](128) NOT NULL,
 	[original_login_name] [nvarchar](128) NOT NULL,
 	[TimeAdded] [datetime] NOT NULL,
- CONSTRAINT [PK_DimLoginName] PRIMARY KEY CLUSTERED 
+ CONSTRAINT [PK_AutoWho_DimLoginName] PRIMARY KEY CLUSTERED 
 (
 	[DimLoginNameID] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
@@ -45,7 +45,7 @@ GO
 SET ANSI_PADDING ON
 
 GO
-CREATE UNIQUE NONCLUSTERED INDEX [AK_allattributes] ON [AutoWho].[DimLoginName]
+CREATE UNIQUE NONCLUSTERED INDEX [AK_AutoWho_DimLoginName] ON [AutoWho].[DimLoginName]
 (
 	[login_name] ASC,
 	[original_login_name] ASC

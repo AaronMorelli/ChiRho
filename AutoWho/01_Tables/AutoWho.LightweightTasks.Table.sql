@@ -64,7 +64,6 @@ CREATE TABLE [AutoWho].[LightweightTasks](
 	[blocking_exec_context_id] [int] NULL,
 	[resource_description] [nvarchar](3072) NULL
 ) ON [PRIMARY]
-
 GO
 SET ANSI_PADDING OFF
 GO

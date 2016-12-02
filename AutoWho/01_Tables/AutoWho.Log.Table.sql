@@ -38,7 +38,6 @@ CREATE TABLE [AutoWho].[Log](
 	[LocationTag] [nvarchar](50) NOT NULL,
 	[LogMessage] [nvarchar](max) NOT NULL
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
-
 GO
 CREATE CLUSTERED INDEX [CL_LogDT] ON [AutoWho].[Log]
 (
