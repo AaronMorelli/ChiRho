@@ -18,6 +18,12 @@ CREATE PROCEDURE [AutoWho].[DataByTime]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.DataByTime.StoredProcedure.sql
 
 	PROCEDURE NAME: AutoWho.DataByTime
@@ -26,7 +32,6 @@ CREATE PROCEDURE [AutoWho].[DataByTime]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Just dumps out data for each table organized by time. Mainly for quick data collection review during development.
 

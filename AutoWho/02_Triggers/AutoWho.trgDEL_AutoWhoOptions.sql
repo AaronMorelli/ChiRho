@@ -12,8 +12,13 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-*/
-/*
+
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.trgDEL_AutoWhoOptions.sql
 
 	TRIGGER NAME: AutoWho.trgDEL_AutoWhoOptions
@@ -22,7 +27,6 @@
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: redirects attempts to delete data from the Options table into a reset
 	of the values. (An accidental delete can be recovered using the history table).

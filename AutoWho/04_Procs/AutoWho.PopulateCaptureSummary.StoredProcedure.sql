@@ -18,6 +18,12 @@ CREATE PROCEDURE [AutoWho].[PopulateCaptureSummary]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.InsertConfigData.StoredProcedure.sql
 
 	PROCEDURE NAME: AutoWho.InsertConfigData
@@ -26,7 +32,6 @@ CREATE PROCEDURE [AutoWho].[PopulateCaptureSummary]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Pulls data from the AutoWho base tables and aggregates various characteristics of the data into a summary row per SPIDCaptureTime. 
 			This procedure assumes that it will only be called by other AutoWho procs (or by sp_XR_SessionViewer), thus error-handling is limited.

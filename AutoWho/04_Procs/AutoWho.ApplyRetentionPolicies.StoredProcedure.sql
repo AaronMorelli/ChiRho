@@ -18,6 +18,12 @@ CREATE PROCEDURE [AutoWho].[ApplyRetentionPolicies]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.ApplyRetentionPolicies.StoredProcedure.sql
 
 	PROCEDURE NAME: AutoWho.ApplyRetentionPolicies
@@ -26,7 +32,6 @@ CREATE PROCEDURE [AutoWho].[ApplyRetentionPolicies]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Runs on the schedule defined via parameters to CoreXR.ChiRhoMaster, 
 		and applies various retention policies defined in AutoWho.Options

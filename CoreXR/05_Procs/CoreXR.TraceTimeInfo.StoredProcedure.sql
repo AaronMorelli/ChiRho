@@ -18,6 +18,12 @@ CREATE PROCEDURE [CoreXR].[TraceTimeInfo]
    See the License for the specific language governing permissions and
    limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: CoreXR.TraceTimeInfo.StoredProcedure.sql
 
 	PROCEDURE NAME: CoreXR.TraceTimeInfo
@@ -26,7 +32,6 @@ CREATE PROCEDURE [CoreXR].[TraceTimeInfo]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Given a point in time (usually executed with the current time), finds the start time and end time
 	of the next trace for the @Utility supplied. 

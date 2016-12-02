@@ -18,6 +18,12 @@ CREATE PROCEDURE [AutoWho].[MaintainIndexes]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.MaintainIndexes.StoredProcedure.sql
 
 	PROCEDURE NAME: AutoWho.MaintainIndexes
@@ -26,7 +32,6 @@ CREATE PROCEDURE [AutoWho].[MaintainIndexes]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Evaluates CoreXR and AutoWho indexes for whether they should be rebuilt or not. 
 

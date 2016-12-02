@@ -18,6 +18,12 @@ CREATE PROCEDURE [AutoWho].[LightWeightCollector]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.LightweightCollector.StoredProcedure.sql
 
 	PROCEDURE NAME: AutoWho.LightweightCollector
@@ -26,7 +32,6 @@ CREATE PROCEDURE [AutoWho].[LightWeightCollector]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: When the normal collector procedure runs > 30 seconds, "something is wrong". This procedure is lighter-weight
 		in the sense that it only pulls from 3 DMVs (the most important ones in a slammed system) and uses loop joins

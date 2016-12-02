@@ -18,6 +18,12 @@ CREATE PROCEDURE [AutoWho].[ResetAutoWhoData]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.ResetAutoWhoData.StoredProcedure.sql
 
 	PROCEDURE NAME: AutoWho.ResetAutoWhoData
@@ -26,7 +32,6 @@ CREATE PROCEDURE [AutoWho].[ResetAutoWhoData]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Clear out/reset all "collected" data in the AutoWho tables so that we can start testing
 			over again. This proc is primarily aimed at development/testing

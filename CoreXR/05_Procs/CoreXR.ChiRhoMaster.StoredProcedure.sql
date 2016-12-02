@@ -18,6 +18,12 @@ CREATE PROCEDURE   [CoreXR].[ChiRhoMaster]
    See the License for the specific language governing permissions and
    limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: CoreXR.ChiRhoMaster.StoredProcedure.sql
 
 	PROCEDURE NAME: CoreXR.ChiRhoMaster
@@ -26,7 +32,6 @@ CREATE PROCEDURE   [CoreXR].[ChiRhoMaster]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Runs regularly throughout the day (by default, every 15 minutes), and checks whether the various
 		traces (that drive data collection) should be running, and if they should but aren't, starts them.

@@ -18,6 +18,12 @@ CREATE PROCEDURE [CoreXR].[UpdateDBMapping]
    See the License for the specific language governing permissions and
    limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: CoreXR.UpdateDBMapping.StoredProcedure.sql
 
 	PROCEDURE NAME: CoreXR.UpdateDBMapping
@@ -26,7 +32,6 @@ CREATE PROCEDURE [CoreXR].[UpdateDBMapping]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Since our app stored historical data, and DBs are sometimes detached/re-attached, etc,
 	 we want to keep a mapping between DBID and DBName. (Much of our storage just keeps DBID rather than DBName).

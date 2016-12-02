@@ -12,8 +12,13 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-*/
-/*
+
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: CoreXR.CaptureOrdinalCache.Table.sql
 
 	TABLE NAME: CoreXR.CaptureOrdinalCache
@@ -22,7 +27,6 @@
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Holds a list of capture times (e.g. for captures by the AutoWho or ServerEye components)
 	and each capture time's order number (both ascending and descending) within the overall range. The

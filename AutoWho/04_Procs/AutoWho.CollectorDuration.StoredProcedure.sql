@@ -18,6 +18,12 @@ CREATE PROCEDURE [AutoWho].[CollectorDuration]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.CollectorDuration.StoredProcedure.sql
 
 	PROCEDURE NAME: AutoWho.CollectorDuration
@@ -26,7 +32,6 @@ CREATE PROCEDURE [AutoWho].[CollectorDuration]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Splits out the comma-separated entries in the "DurationBreakdown" field of AutoWho.CaptureTimes
 		into aggregated rows, to allow us to see which statements in the AutoWho Collector are typically the

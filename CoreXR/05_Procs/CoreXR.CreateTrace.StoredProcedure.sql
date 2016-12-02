@@ -18,6 +18,12 @@ CREATE PROCEDURE [CoreXR].[CreateTrace]
    See the License for the specific language governing permissions and
    limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: CoreXR.CreateTrace.StoredProcedure.sql
 
 	PROCEDURE NAME: CoreXR.CreateTrace
@@ -26,7 +32,6 @@ CREATE PROCEDURE [CoreXR].[CreateTrace]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Creates an entry in the CoreXR.Traces table for the @Utility specified. At this time the
 		Traces table is little more than a log table to show when various traces have started or stopped. 

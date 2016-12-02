@@ -18,6 +18,12 @@ CREATE PROCEDURE [AutoWho].[PrePopulateDimensions]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.PrePopulateDimensions.StoredProcedure.sql
 
 	PROCEDURE NAME: AutoWho.PrePopulateDimensions
@@ -26,7 +32,6 @@ CREATE PROCEDURE [AutoWho].[PrePopulateDimensions]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: The AutoWho.Collector proc will populate the various dimension tables in an ad-hoc sort of way... as it
 		sees dimension members, (e.g. wait types) in the DMVs and there isn't a match yet in the dimension table,

@@ -18,6 +18,12 @@ CREATE PROCEDURE [AutoWho].[Collector]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.Collector.StoredProcedure.sql
 
 	PROCEDURE NAME: AutoWho.Collector
@@ -26,7 +32,6 @@ CREATE PROCEDURE [AutoWho].[Collector]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: This is the heart of AutoWho. This proc collects data from a wide array of session-focused DMVs and stores 
 		the data in various AutoWho tables. Much care has gone into finding the right balance of completeness and efficiency, 

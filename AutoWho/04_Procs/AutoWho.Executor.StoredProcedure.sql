@@ -18,6 +18,12 @@ CREATE PROCEDURE   [AutoWho].[Executor]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.Executor.StoredProcedure.sql
 
 	PROCEDURE NAME: AutoWho.Executor
@@ -26,7 +32,6 @@ CREATE PROCEDURE   [AutoWho].[Executor]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Sits in a loop for the duration of an AutoWho trace, calling the collector every X seconds. (By default, 15). 
 		This proc is called directly by the SQL Agent job "<ChiRho DB name> - Disabled - AutoWho Trace". 

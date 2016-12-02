@@ -18,6 +18,12 @@ CREATE PROCEDURE [CoreXR].[RetrieveOrdinalCacheEntry]
    See the License for the specific language governing permissions and
    limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: CoreXR.RetrieveOrdinalCacheEntry.StoredProcedure.sql
 
 	PROCEDURE NAME: CoreXR.RetrieveOrdinalCacheEntry
@@ -26,7 +32,6 @@ CREATE PROCEDURE [CoreXR].[RetrieveOrdinalCacheEntry]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: For a given utility (@ut), and a start/end range (@st/@et), and an ordinal in that range (@ord),
 		finds the historical Capture Time (@hct) that corresponds to that ordinal. The first time that a @st/@et

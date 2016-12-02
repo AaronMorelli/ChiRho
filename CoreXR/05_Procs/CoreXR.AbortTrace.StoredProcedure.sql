@@ -18,6 +18,12 @@ CREATE PROCEDURE [CoreXR].[AbortTrace]
    See the License for the specific language governing permissions and
    limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: CoreXR.AbortTrace.StoredProcedure.sql
 
 	PROCEDURE NAME: CoreXR.AbortTrace
@@ -26,7 +32,6 @@ CREATE PROCEDURE [CoreXR].[AbortTrace]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Provides an interface for humans or programs to stop an AutoWho or ServerEye trace. 
 

@@ -18,6 +18,12 @@ CREATE PROCEDURE [AutoWho].[ObtainSessionsForThresholdIgnore]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.ObtainSessionsForThresholdIgnore.StoredProcedure.sql
 
 	PROCEDURE NAME: AutoWho.ObtainSessionsForThresholdIgnore
@@ -26,7 +32,6 @@ CREATE PROCEDURE [AutoWho].[ObtainSessionsForThresholdIgnore]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: The AutoWho collector uses "threshold" parameters to determine whether certain, more-expensive
 		activities (collecting query plans, input buffers, tran or lock info, etc) are required. If no SPIDs
