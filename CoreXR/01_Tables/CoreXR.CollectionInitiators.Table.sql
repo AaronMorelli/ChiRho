@@ -19,50 +19,36 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: AutoWho.CaptureTimes.Table.sql
+	FILE NAME: CoreXR.CollectionInitiators.Table.sql
 
-	TABLE NAME: AutoWho.CaptureTimes
+	TABLE NAME: CoreXR.CollectionInitiators
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Holds 1 row for each successful run of the AutoWho.Collector
-	procedure, identifying the time and basic stats of the run.
+	PURPOSE: A simple lookup table mapping the IDs used for various "sections of code that trigger
+		the collection of data". The ID is used in a number of tables, e.g. the AutoWho data collection
+		tables, and allows the users of various sp_XR_* procs to choose whether they are reviewing 
+		data captured by the standard AutoWho or ServerEye traces, or special "one-off" traces triggered
+		through the sp_XR_* procs themselves.
 */
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-SET ANSI_PADDING ON
-GO
-CREATE TABLE [AutoWho].[CaptureTimes] (
+CREATE TABLE [CoreXR].[CollectionInitiators](
 	[CollectionInitiatorID] [tinyint] NOT NULL,
-	[SPIDCaptureTime] [datetime] NOT NULL,
-	[UTCCaptureTime] [datetime] NOT NULL,
-	[RunWasSuccessful] [tinyint] NOT NULL,
-	[PostProcessed] [tinyint] NOT NULL,
-	[CaptureSummaryPopulated] [tinyint] NOT NULL,
-	[AutoWhoDuration_ms] [int] NOT NULL,
-	[SpidsCaptured] [int] NULL,
-	[DurationBreakdown] [varchar](1000) NULL,
- CONSTRAINT [PKAutoWhoCaptureTimes] PRIMARY KEY CLUSTERED 
+	[CollectionInitiator] [nvarchar](100) NOT NULL,
+ CONSTRAINT [PKCollectionInitiators] PRIMARY KEY CLUSTERED 
 (
-	[CollectionInitiatorID] ASC,
-	[SPIDCaptureTime] ASC
+	[CollectionInitiatorID] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
-) ON [PRIMARY]
 
+) ON [PRIMARY]
 GO
-SET ANSI_PADDING OFF
+SET ANSI_NULLS ON
 GO
-CREATE UNIQUE NONCLUSTERED INDEX [UNCL_RunWasSuccessful_OTHERS] ON [AutoWho].[CaptureTimes]
-(
-	[RunWasSuccessful] ASC,
-	[CaptureSummaryPopulated] ASC,
-	[CollectionInitiatorID] ASC,
-	[SPIDCaptureTime] ASC
-)
-INCLUDE ( 	[AutoWhoDuration_ms]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+SET QUOTED_IDENTIFIER ON
 GO

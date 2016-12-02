@@ -39,15 +39,17 @@ SET QUOTED_IDENTIFIER ON
 GO
 CREATE TABLE [CoreXR].[CaptureOrdinalCache](
 	[Utility] [nvarchar](30) NOT NULL,
+	[CollectionInitiatorID] [tinyint] NOT NULL,
 	[StartTime] [datetime] NOT NULL,
 	[EndTime] [datetime] NOT NULL,
 	[Ordinal] [int] NOT NULL,
 	[OrdinalNegative] [int] NOT NULL,
 	[CaptureTime] [datetime] NOT NULL,
 	[TimePopulated] [datetime] NOT NULL,
- CONSTRAINT [PK_CaptureOrdinalCache] PRIMARY KEY CLUSTERED 
+ CONSTRAINT [PKCaptureOrdinalCache] PRIMARY KEY CLUSTERED 
 (
 	[Utility] ASC,
+	[CollectionInitiatorID] ASC,
 	[StartTime] ASC,
 	[EndTime] ASC,
 	[Ordinal] ASC
@@ -55,8 +57,9 @@ CREATE TABLE [CoreXR].[CaptureOrdinalCache](
 ) ON [PRIMARY]
 
 GO
-CREATE UNIQUE NONCLUSTERED INDEX [NCL_OrdinalNegative] ON [CoreXR].[CaptureOrdinalCache]
+CREATE UNIQUE NONCLUSTERED INDEX [UNCL_OrdinalNegative] ON [CoreXR].[CaptureOrdinalCache]
 (
+	--TODO: doesn't this need both the Utility and initiator ID fields?
 	[StartTime] ASC,
 	[EndTime] ASC,
 	[OrdinalNegative] ASC

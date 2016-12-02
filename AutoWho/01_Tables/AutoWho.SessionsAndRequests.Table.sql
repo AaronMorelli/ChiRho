@@ -35,7 +35,8 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE TABLE [AutoWho].[SessionsAndRequests](
+CREATE TABLE [AutoWho].[SessionsAndRequests] (
+	[CollectionInitiatorID] [tinyint] NOT NULL,
 	[SPIDCaptureTime] [datetime] NOT NULL,
 	[session_id] [smallint] NOT NULL,
 	[request_id] [smallint] NOT NULL,
@@ -120,14 +121,14 @@ CREATE TABLE [AutoWho].[SessionsAndRequests](
 	[FKSQLBatchStoreID] [bigint] NULL,
 	[FKInputBufferStoreID] [bigint] NULL,
 	[FKQueryPlanBatchStoreID] [bigint] NULL,
-	[FKQueryPlanStmtStoreID] [bigint] NULL
-) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
-
-GO
-CREATE CLUSTERED INDEX [CL_SPIDCaptureTime] ON [AutoWho].[SessionsAndRequests]
+	[FKQueryPlanStmtStoreID] [bigint] NULL,
+ CONSTRAINT [PKSessionsAndRequests] PRIMARY KEY CLUSTERED 
 (
-	[SPIDCaptureTime] ASC,
+	[CollectionInitiatorID] ASC,
+	[SPIDCaptureTime] ASC, 
 	[session_id] ASC,
 	[request_id] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO

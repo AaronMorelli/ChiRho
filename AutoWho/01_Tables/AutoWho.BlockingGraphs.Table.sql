@@ -36,6 +36,7 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 CREATE TABLE [AutoWho].[BlockingGraphs](
+	[CollectionInitiatorID] [tinyint] NOT NULL,
 	[SPIDCaptureTime] [datetime] NOT NULL,
 	[session_id] [smallint] NOT NULL,
 	[request_id] [smallint] NOT NULL,
@@ -51,10 +52,13 @@ CREATE TABLE [AutoWho].[BlockingGraphs](
 	[levelindc] [smallint] NOT NULL,
 	[rn] [smallint] NOT NULL
 ) ON [PRIMARY]
-
 GO
+--This table is more of an intermediate dump for processing data into an
+-- indented string format. May re-evaluate whether a primary key 
+-- or unique index can work here at a later time. 
 CREATE CLUSTERED INDEX [CL_SPIDCaptureTime] ON [AutoWho].[BlockingGraphs]
 (
+	[CollectionInitiatorID] ASC,
 	[SPIDCaptureTime] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 GO

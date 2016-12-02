@@ -54,6 +54,7 @@ EXEC CoreXR.RetrieveOrdinalCacheEntry
 */
 (
 	@ut NVARCHAR(20),
+	@init TINYINT,
 	@st DATETIME,
 	@et DATETIME,
 	@ord INT,
@@ -85,6 +86,12 @@ BEGIN
 		AutoWho.Options table). When a new ordinal cache is requested, if the @et value is older than 
 		the very oldest record in the CaptureTimes table, we let the user know that there is no data.
 
+		NOTE: a late addition is the concept of the CollectionInitiatorID, which partitions the data based
+		on which part of ChiRho called AutoWho.Collector. If the standard background trace (e.g. AutoWho.Executor)
+		calls the collector, the CollectionInitiatorID is 255. If collection occurs as part of a user manually
+		using sp_XR_SessionViewer, the ID is 1. (And for sp_XR_QueryProgress, the ID is 2). 
+		This division by initiator allows functionality like one-off traces that can then be reviewed
+		or "played back" indepedent of the standard background trace and its parameters/frequency.
 	*/
 	SET NOCOUNT ON;
 	SET XACT_ABORT ON;
@@ -113,6 +120,7 @@ BEGIN
 			SELECT @hct = c.CaptureTime
 			FROM CoreXR.CaptureOrdinalCache c
 			WHERE c.Utility = @ut
+			AND c.CollectionInitiatorID = @init
 			AND c.StartTime = @st
 			AND c.EndTime = @et
 			AND c.Ordinal = @Ord;
@@ -123,6 +131,7 @@ BEGIN
 			SELECT @hct = c.CaptureTime
 			FROM CoreXR.CaptureOrdinalCache c
 			WHERE c.Utility = @ut 
+			AND c.CollectionInitiatorID = @init
 			AND c.StartTime = @st
 			AND c.EndTime = @et
 			AND c.OrdinalNegative = @Ord;
@@ -140,6 +149,7 @@ BEGIN
 					SELECT TOP 1 c.Ordinal		--find the latest row in the cache (if the cache even exists) and get the ordinal
 					FROM CoreXR.CaptureOrdinalCache c
 					WHERE c.Utility = @ut
+					AND c.CollectionInitiatorID = @init
 					AND c.StartTime = @st
 					AND c.EndTime = @et
 					ORDER BY c.Ordinal DESC
@@ -153,6 +163,7 @@ BEGIN
 					SELECT TOP 1 c.OrdinalNegative		--find the earliest row in the cache (if the cache even exists) and get the ordinal
 					FROM CoreXR.CaptureOrdinalCache c
 					WHERE c.Utility = @ut 
+					AND c.CollectionInitiatorID = @init
 					AND c.StartTime = @st
 					AND c.EndTime = @et
 					ORDER BY c.OrdinalNegative ASC
@@ -171,7 +182,7 @@ BEGIN
 			BEGIN
 				--the cache doesn't exist, yet. Our logic here branches based on which utility we're supporting
 
-				IF @ut IN (N'SessionViewer', N'QueryProgress')		--QueryProgress and SessionViewer both are based on the same AutoWho tables.
+				IF @ut IN (N'sp_XR_SessionViewer', N'sp_XR_QueryProgress')
 				BEGIN
 					--If the cache doesn't exist yet, then we need to create it, of course.
 					-- Technically, we could do this from the AutoWho.CaptureTimes table directly,
@@ -185,12 +196,13 @@ BEGIN
 					-- capture time, then we can skip even looking at the blocking graph table at all).
 					SET @codeloc = 'CapSummPopEqZero1';
 					IF EXISTS (SELECT * FROM AutoWho.CaptureTimes t 
-							WHERE t.SPIDCaptureTime BETWEEN @st and @et 
+							WHERE t.CollectionInitiatorID = @init
+							AND t.SPIDCaptureTime BETWEEN @st and @et 
 							AND RunWasSuccessful = 1
 							AND CaptureSummaryPopulated = 0)
 					BEGIN
 						SET @codeloc = 'ExecPopCapSumm';
-						EXEC @scratchint = AutoWho.PopulateCaptureSummary @StartTime = @st, @EndTime = @et; 
+						EXEC @scratchint = AutoWho.PopulateCaptureSummary @CollectionInitiatorID = @init, @StartTime = @st, @EndTime = @et; 
 							--returns 1 if no rows were found in the range
 							-- -1 if there was an unexpected exception
 							-- 0 if success
@@ -215,14 +227,15 @@ BEGIN
 					-- between @st and @et. Now, build our cache
 					SET @codeloc = 'CapOrdCache1';
 					INSERT INTO CoreXR.CaptureOrdinalCache
-					(Utility, StartTime, EndTime, Ordinal, OrdinalNegative, CaptureTime)
+					(Utility, CollectionInitiatorID, StartTime, EndTime, Ordinal, OrdinalNegative, CaptureTime)
 					SELECT 
-						@ut, @st, @et, 
+						@ut, @init, @st, @et, 
 						Ordinal = ROW_NUMBER() OVER (ORDER BY t.SPIDCaptureTime ASC),
 						OrdinalNegative = 0 - ROW_NUMBER() OVER (ORDER BY t.SPIDCaptureTime DESC),
 						t.SPIDCaptureTime
 					FROM AutoWho.CaptureSummary t
-					WHERE t.SPIDCaptureTime BETWEEN @st AND @et 
+					WHERE t.CollectionInitiatorID = @init
+					AND t.SPIDCaptureTime BETWEEN @st AND @et 
 					;
 
 					SET @scratchint = @@ROWCOUNT;
@@ -243,6 +256,7 @@ BEGIN
 						SELECT @hct = c.CaptureTime
 						FROM CoreXR.CaptureOrdinalCache c
 						WHERE c.Utility = @ut 
+						AND c.CollectionInitiatorID = @init
 						AND c.StartTime = @st
 						AND c.EndTime = @et
 						AND c.Ordinal = @Ord;
@@ -253,6 +267,7 @@ BEGIN
 						SELECT @hct = c.CaptureTime
 						FROM CoreXR.CaptureOrdinalCache c
 						WHERE c.Utility = @ut 
+						AND c.CollectionInitiatorID = @init
 						AND c.StartTime = @st
 						AND c.EndTime = @et
 						AND c.OrdinalNegative = @Ord;
@@ -268,6 +283,7 @@ BEGIN
 								SELECT TOP 1 c.Ordinal
 								FROM CoreXR.CaptureOrdinalCache c
 								WHERE c.Utility = @ut 
+								AND c.CollectionInitiatorID = @init
 								AND c.StartTime = @st
 								AND c.EndTime = @et
 								ORDER BY c.Ordinal DESC
@@ -281,6 +297,7 @@ BEGIN
 								SELECT TOP 1 c.OrdinalNegative
 								FROM CoreXR.CaptureOrdinalCache c
 								WHERE c.Utility = @ut 
+								AND c.CollectionInitiatorID = @init
 								AND c.StartTime = @st
 								AND c.EndTime = @et
 								ORDER BY c.OrdinalNegative ASC

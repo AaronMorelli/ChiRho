@@ -37,7 +37,8 @@ SET QUOTED_IDENTIFIER ON
 GO
 SET ANSI_PADDING ON
 GO
-CREATE TABLE [AutoWho].[TasksAndWaits](
+CREATE TABLE [AutoWho].[TasksAndWaits] (
+	[CollectionInitiatorID] [tinyint] NOT NULL,
 	[SPIDCaptureTime] [datetime] NOT NULL,
 	[task_address] [varbinary](8) NOT NULL,
 	[parent_task_address] [varbinary](8) NULL,
@@ -62,17 +63,21 @@ CREATE TABLE [AutoWho].[TasksAndWaits](
 	[resource_associatedobjid] [bigint] NOT NULL,
 	[cxp_wait_direction] [tinyint] NOT NULL,
 	[resolution_successful] [bit] NOT NULL,
-	[resolved_name] [nvarchar](256) NULL
-) ON [PRIMARY]
-
-GO
-SET ANSI_PADDING OFF
-GO
-CREATE CLUSTERED INDEX [CL_SPIDCaptureTime] ON [AutoWho].[TasksAndWaits]
+	[resolved_name] [nvarchar](256) NULL,
+--The underlying DMV is volatile and can produce dup rows for the "natural candidate keys"
+-- (session/request/exec id) or (task_address). So we're using task_priority as a final 
+-- PK key column, even though it is more of a prioritization field than an identifying field.
+ CONSTRAINT [PKTasksAndWaits] PRIMARY KEY CLUSTERED 
 (
+	[CollectionInitiatorID] ASC,
 	[SPIDCaptureTime] ASC,
 	[session_id] ASC,
 	[request_id] ASC,
 	[task_priority] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+
+) ON [PRIMARY]
 GO
+SET ANSI_PADDING OFF
+GO
+

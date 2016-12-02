@@ -42,6 +42,7 @@ SET ANSI_PADDING ON
 GO
 CREATE TABLE [CoreXR].[OrdinalCachePosition](
 	[Utility] [nvarchar](30) NOT NULL,
+	[CollectionInitiatorID] [tinyint] NOT NULL,
 	[StartTime] [datetime] NOT NULL,
 	[EndTime] [datetime] NOT NULL,
 	[session_id] [smallint] NOT NULL,
@@ -50,12 +51,12 @@ CREATE TABLE [CoreXR].[OrdinalCachePosition](
  CONSTRAINT [PKOrdinalCachePosition] PRIMARY KEY CLUSTERED 
 (
 	[Utility] ASC,
+	[CollectionInitiatorID] ASC,
 	[StartTime] ASC,
 	[EndTime] ASC,
 	[session_id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
-
 GO
 SET ANSI_PADDING OFF
 GO

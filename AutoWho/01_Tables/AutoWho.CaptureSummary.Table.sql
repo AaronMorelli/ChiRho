@@ -36,6 +36,7 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 CREATE TABLE [AutoWho].[CaptureSummary](
+	[CollectionInitiatorID] [tinyint] NOT NULL,
 	[SPIDCaptureTime] [datetime] NOT NULL,
 	[CapturedSPIDs] [int] NOT NULL,
 	[Active] [int] NOT NULL,
@@ -111,8 +112,9 @@ CREATE TABLE [AutoWho].[CaptureSummary](
 	[BlockingGraph] [bit] NOT NULL,
 	[LockDetails] [bit] NOT NULL,
 	[TranDetails] [bit] NOT NULL,
- CONSTRAINT [PK_AutoWho_CaptureSummary] PRIMARY KEY CLUSTERED 
+ CONSTRAINT [PKAutoWhoCaptureSummary] PRIMARY KEY CLUSTERED 
 (
+	[CollectionInitiatorID] ASC,
 	[SPIDCaptureTime] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]

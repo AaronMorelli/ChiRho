@@ -80,7 +80,7 @@ $autowho_procedures = $autowho_parent + "04_Procs"
 $job_core = $curScriptLocation + "Jobs\ChiRhoMaster.sql"
 $job_autowho = $curScriptLocation + "Jobs\AutoWhoTrace.sql"
 
-$masterprocs_parent = $curScriptLocation + "masterobjs\"
+$masterprocs_parent = $curScriptLocation + "master\"
 
 
 # Installation scripts
@@ -613,7 +613,7 @@ catch [system.exception] {
 
 Write-Host "" -foregroundcolor cyan -backgroundcolor black
 #>
-<#
+
 $masterproc_SS = $masterprocs_parent + "sp_XR_SessionSummary__TEMPLATE.sql"
 $masterproc_SS_Replace = $masterprocs_parent + "sp_XR_SessionSummary__" + $Database + ".sql"
 
@@ -645,8 +645,8 @@ catch [system.exception] {
 }
 
 Write-Host "" -foregroundcolor cyan -backgroundcolor black
-#>
-<#
+
+
 $masterproc_SV = $masterprocs_parent + "sp_XR_SessionViewer__TEMPLATE.sql"
 $masterproc_SV_Replace = $masterprocs_parent + "sp_XR_SessionViewer__" + $Database + ".sql"
 
@@ -678,7 +678,7 @@ catch [system.exception] {
 }
 
 Write-Host "" -foregroundcolor cyan -backgroundcolor black
-#>
+
 
 
 $curtime = Get-Date -format s
