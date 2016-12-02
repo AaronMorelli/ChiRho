@@ -16,7 +16,7 @@
 /*
 	FILE NAME: CoreXR.trgUPD_CoreXRVersion.sql
 
-	TABLE NAME: CoreXR.trgUPD_CoreXRVersion
+	TRIGGER NAME: CoreXR.trgUPD_CoreXRVersion
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com

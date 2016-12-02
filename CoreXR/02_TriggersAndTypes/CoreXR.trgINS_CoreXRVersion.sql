@@ -16,7 +16,7 @@
 /*
 	FILE NAME: CoreXR.trgINS_CoreXRVersion.sql
 
-	TABLE NAME: CoreXR.trgINS_CoreXRVersion
+	TRIGGER NAME: CoreXR.trgINS_CoreXRVersion
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
