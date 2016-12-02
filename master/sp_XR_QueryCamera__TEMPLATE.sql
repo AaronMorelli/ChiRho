@@ -20,6 +20,12 @@ CREATE PROCEDURE [dbo].[sp_XR_QueryCamera]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: sp_XR_QueryCamera__TEMPLATE.sql
 
 	PROCEDURE NAME: sp_XR_QueryCamera
@@ -28,7 +34,6 @@ CREATE PROCEDURE [dbo].[sp_XR_QueryCamera]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE:
 

@@ -18,6 +18,12 @@ CREATE PROCEDURE [AutoWho].[QueryCamera]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.QueryCamera.StoredProcedure.sql
 
 	PROCEDURE NAME: AutoWho.QueryCamera
@@ -26,7 +32,6 @@ CREATE PROCEDURE [AutoWho].[QueryCamera]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: The AutoWho.QueryCamera proc snapshots session/request/task/tran state for a given spid (usually at
 		a higher frequency than AutoWho's default) with the aim of showing a query's progress. The increased frequency 
