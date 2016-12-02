@@ -19,28 +19,28 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: AutoWho.trgDEL_AutoWhoOptions.sql
+	FILE NAME: AutoWho.trgDEL_AutoWhoUserCollectionOptions.sql
 
-	TRIGGER NAME: AutoWho.trgDEL_AutoWhoOptions
+	TRIGGER NAME: AutoWho.trgDEL_AutoWhoUserCollectionOptions
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Prevents deletion of the option row in AutoWho.Options
+	PURPOSE: Prevents deletes on the AutoWho.UserCollectionOptions table.
 */
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE TRIGGER [AutoWho].[trgDEL_AutoWhoOptions] ON [AutoWho].[Options]
+CREATE TRIGGER [AutoWho].[trgDEL_AutoWhoUserCollectionOptions] ON [AutoWho].[UserCollectionOptions]
 
 FOR DELETE
 AS 	BEGIN
 
 --We don't allow deletes.
-RAISERROR('Deletes on the Option table are forbidden. To reset the options to defaults, call the AutoWho.ResetOptions procedure.',10,1);
+RAISERROR('Deletes on the UserCollectionOption table are forbidden. To reset the options to defaults, call the AutoWho.ResetUserCollectionOptions procedure.',10,1);
 ROLLBACK TRANSACTION;
 
 RETURN;

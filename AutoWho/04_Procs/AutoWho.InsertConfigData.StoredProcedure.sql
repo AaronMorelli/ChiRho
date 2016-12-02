@@ -43,6 +43,8 @@ EXEC AutoWho.InsertConfigData @HoursToKeep=336	--14 days
 
 --use to reset the data:
 truncate table CoreXR.ProcessingTimes
+truncate table AutoWho.UserCollectionOptions
+truncate table AutoWho.UserCollectionOptions_History
 truncate table AutoWho.Options
 truncate table AutoWho.Options_History
 truncate table AutoWho.CollectorOptFakeout
@@ -68,6 +70,7 @@ BEGIN
 
 	--To prevent this proc from damaging the installation after it has already been run, check for existing data.
 	IF EXISTS (SELECT * FROM AutoWho.Options)
+		OR EXISTS (SELECT * FROM AutoWho.UserCollectionOptions)
 		OR EXISTS (SELECT * FROM AutoWho.CollectorOptFakeout)
 		OR EXISTS (SELECT * FROM AutoWho.DimCommand)
 		OR EXISTS (SELECT * FROM AutoWho.DimConnectionAttribute)
@@ -180,6 +183,7 @@ BEGIN
 		Retention_CaptureTimes = (@HoursToKeep/24) + 2
 	;
 
+	EXEC AutoWho.ResetUserCollectionOptions;
 
 	INSERT INTO CoreXR.ProcessingTimes (Label, LastProcessedTime)
 	SELECT N'AutoWhoStoreLastTouched', NULL;

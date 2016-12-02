@@ -207,7 +207,7 @@ BEGIN
 			SET @lv__ProcRC = 0;
 			SET @lv__PostProcessingEnd = DATEADD(SECOND, -30, GETDATE());		--so we steer clear of the tail of the table where data is being inserted regularly.
 			SET @lv__PostProcessingStart = DATEADD(MINUTE, -30, @lv__PostProcessingEnd);
-			EXEC @lv__ProcRC = AutoWho.PostProcessor @init=255, @start=@lv__PostProcessingStart, @end=@lv__PostProcessingEnd;
+			EXEC @lv__ProcRC = AutoWho.PostProcessor @optionset=N'BackgroundTrace', @init=255, @start=@lv__PostProcessingStart, @end=@lv__PostProcessingEnd;
 		END TRY
 		BEGIN CATCH
 			--inside the loop, we swallow the error and just log it

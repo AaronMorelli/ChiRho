@@ -53,6 +53,7 @@ To Execute
 */
 (
 	@init				TINYINT,
+	@optionset			NVARCHAR(50),
 	@camrate			INT,
 	@camstop			INT,
 	@dir				NVARCHAR(512),			-- misc directives
@@ -113,11 +114,13 @@ BEGIN
 		@opt__BlockingChainDepth				TINYINT,
 		@opt__TranDetailsThreshold				INT,
 		@opt__ResolvePageLatches				NCHAR(1),
+		@opt__ResolveLockWaits					NCHAR(1),
 		@opt__Enable8666						NCHAR(1),
-		@opt__ThresholdFilterRefresh			INT,
 		@opt__QueryPlanThreshold				INT,
 		@opt__QueryPlanThresholdBlockRel		INT,
+		@opt__UseBackgroundThresholdIgnore		NCHAR(1),
 
+		@opt__DebugSpeed						NCHAR(1),
 		@opt__SaveBadDims						NCHAR(1)
 		;
 
@@ -170,11 +173,16 @@ BEGIN
 		@opt__BlockingChainDepth				= [BlockingChainDepth],
 		@opt__TranDetailsThreshold				= [TranDetailsThreshold],
 		@opt__ResolvePageLatches				= [ResolvePageLatches],
+		@opt__ResolveLockWaits					= [ResolveLockWaits],
 		@opt__Enable8666						= [Enable8666],
-		@opt__ThresholdFilterRefresh			= [ThresholdFilterRefresh],
-		@opt__SaveBadDims						= [SaveBadDims]
-	FROM AutoWho.Options o
+		@opt__DebugSpeed						= [DebugSpeed],
+		@opt__SaveBadDims						= [SaveBadDims],
+		@opt__UseBackgroundThresholdIgnore		= [UseBackgroundThresholdIgnore]
+	FROM AutoWho.UserCollectionOptions o
+	WHERE o.OptionSet = @optionset
 	;
+
+	
 
 	IF ISNULL(@opt__IncludeDBs,N'') = N''
 	BEGIN
@@ -242,6 +250,13 @@ BEGIN
 		SET @omsg = N'One or more DB names are present in both the IncludeDBs option and ExcludeDBs option. This is not allowed.';
 		EXEC sp_releaseapplock @Resource = @lv__AppLockResource, @LockOwner = 'Session';
 		RETURN -1;
+	END
+
+	IF @opt__UseBackgroundThresholdIgnore = N'Y'
+	BEGIN
+		INSERT INTO @FilterTVP (FilterType, FilterID)
+		SELECT DISTINCT 128, f.ThresholdFilterSpid
+		FROM AutoWho.ThresholdFilterSpids f; 
 	END
 
 	SET @lv__TempDBCreateTime = (select d.create_date from sys.databases d where d.name = N'tempdb');
@@ -362,7 +377,7 @@ BEGIN
 				@BlockingChainDepth = @opt__BlockingChainDepth, 
 				@TranDetailsThreshold = @opt__TranDetailsThreshold,
 
-				@DebugSpeed = N'N',
+				@DebugSpeed = @opt__DebugSpeed,
 				@SaveBadDims = @opt__SaveBadDims,
 				@NumSPIDs = @lv__NumSPIDsCaptured OUTPUT,
 				@SPIDCaptureTime = @lv__SPIDCaptureTime OUTPUT

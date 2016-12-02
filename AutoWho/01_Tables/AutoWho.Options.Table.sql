@@ -78,7 +78,7 @@ CREATE TABLE [AutoWho].[Options](
 	[Enable8666] [nchar](1) NOT NULL CONSTRAINT [DF_Options_Enable8666]  DEFAULT (N'N'),
 	[ResolvePageLatches] [nchar](1) NOT NULL CONSTRAINT [DF_Options_ResolvePageLatches]  DEFAULT (N'Y'),
 	[ResolveLockWaits] [nchar](1) NOT NULL CONSTRAINT [DF_Options_ResolveLockWaits]  DEFAULT (N'Y'),
- CONSTRAINT [PK_Options_1] PRIMARY KEY CLUSTERED 
+ CONSTRAINT [PKAutoWhoOptions] PRIMARY KEY CLUSTERED 
 (
 	[RowID] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
