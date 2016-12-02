@@ -14,9 +14,9 @@
    limitations under the License.
 */
 /*
-	FILE NAME: CoreXR.trgUPD_CoreXRVersion.sql
+	FILE NAME: AutoWho.trgDEL_AutoWhoOptions.sql
 
-	TRIGGER NAME: CoreXR.trgUPD_CoreXRVersion
+	TRIGGER NAME: AutoWho.trgDEL_AutoWhoOptions
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
@@ -24,27 +24,25 @@
 					sqlcrossjoin.wordpress.com
 					https://github.com/AaronMorelli/ChiRho
 
-	PURPOSE: Maintains the CoreXR.Version_History table
+	PURPOSE: redirects attempts to delete data from the Options table into a reset
+	of the values. (An accidental delete can be recovered using the history table).
 */
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE TRIGGER [CoreXR].[trgUPD_CoreXRVersion] ON [CoreXR].[Version]
+CREATE TRIGGER [AutoWho].[trgDEL_AutoWhoOptions] ON [AutoWho].[Options]
 
-FOR UPDATE
+FOR DELETE
 AS 	BEGIN
 
-INSERT INTO CoreXR.Version_History 
-([Version], 
-EffectiveDate, 
-HistoryInsertDate,
-TriggerAction)
-SELECT 
-[Version], 
-EffectiveDate, 
-getdate(),
-'Update'
-FROM inserted
+--We don't actually allow deletes. So call the reset procedure
+RAISERROR('Attempts to Delete data in the Options table instead cause the Options table to be reset.',10,1);
+ROLLBACK TRANSACTION;
+
+EXEC AutoWho.ResetOptions;
+
+RETURN;
+
 END
 GO

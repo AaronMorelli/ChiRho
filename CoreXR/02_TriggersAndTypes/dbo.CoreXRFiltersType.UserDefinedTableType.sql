@@ -16,7 +16,7 @@
 /*
 	FILE NAME: dbo.CoreXRFiltersType.UserDefinedTableType.sql
 
-	TABLE NAME: dbo.CoreXRFiltersType
+	TYPE NAME: dbo.CoreXRFiltersType
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
