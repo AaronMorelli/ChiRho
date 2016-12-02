@@ -18,6 +18,12 @@ CREATE PROCEDURE [AutoWho].[ViewHistoricalQueryProgress]
 	See the License for the specific language governing permissions and
 	limitations under the License.
 
+	------------------------------------------------------------------------
+
+	PROJECT NAME: ChiRho https://github.com/AaronMorelli/ChiRho
+
+	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
+
 	FILE NAME: AutoWho.ViewHistoricalQueryProgress.StoredProcedure.sql
 
 	PROCEDURE NAME: AutoWho.ViewHistoricalQueryProgress
@@ -26,7 +32,6 @@ CREATE PROCEDURE [AutoWho].[ViewHistoricalQueryProgress]
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
-					https://github.com/AaronMorelli/ChiRho
 
 	PURPOSE: Called by the sp_XR_QueryProgress user-facing procedure when historical/AutoWho data is requested. 
 		The logic below pulls data from the various AutoWho tables, based on parameter values, and combines
