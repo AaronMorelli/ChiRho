@@ -381,6 +381,7 @@ catch [system.exception] {
 
 Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
+<#
 $curtime = Get-Date -format s
 $outmsg = $curtime + "------> Creating AutoWho views"
 Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
@@ -407,6 +408,7 @@ catch [system.exception] {
 }  # end of AutoWho views
 
 Write-Host "" -foregroundcolor cyan -backgroundcolor black
+#>
 
 $curtime = Get-Date -format s
 $outmsg = $curtime + "------> Creating AutoWho procedures"
@@ -463,122 +465,122 @@ Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
 # we take our __TEMPLATE versions of the master procs and create versions with $Database substituted for @@XRDATABASENAME@@
 # Note: currently sp_XR_JobMatrix and sp_XR_FileUsage do not have any references to the XR database
-$masterproc_JM = $masterprocs_parent + "sp_XR_JobMatrix.sql"
+#$masterproc_JM = $masterprocs_parent + "sp_XR_JobMatrix.sql"
 
-$curtime = Get-Date -format s
-$outmsg = $curtime + "------> Creating sp_XR_JobMatrix"
-Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+#$curtime = Get-Date -format s
+#$outmsg = $curtime + "------> Creating sp_XR_JobMatrix"
+#Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
-try {
-	invoke-sqlcmd -inputfile $masterproc_JM -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
-	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
-	CD $curScriptLocation
+#try {
+#	invoke-sqlcmd -inputfile $masterproc_JM -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+#	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+#	CD $curScriptLocation
 
-	Write-Host "Finished creating sp_XR_JobMatrix" -foregroundcolor cyan -backgroundcolor black
+#	Write-Host "Finished creating sp_XR_JobMatrix" -foregroundcolor cyan -backgroundcolor black
 
-}
-catch [system.exception] {
-	Write-Host "Error occurred while creating sp_XR_JobMatrix: " -foregroundcolor red -backgroundcolor black
-	Write-Host "$_" -foregroundcolor red -backgroundcolor black
-    $curtime = Get-Date -format s
-	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
-    throw "Installation failed"
-	break
-}
+#}
+#catch [system.exception] {
+#	Write-Host "Error occurred while creating sp_XR_JobMatrix: " -foregroundcolor red -backgroundcolor black
+#	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+#    $curtime = Get-Date -format s
+#	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+#    throw "Installation failed"
+#	break
+#}
 
-Write-Host "" -foregroundcolor cyan -backgroundcolor black
-
-
-$masterproc_MDF = $masterprocs_parent + "sp_XR_FileUsage.sql"
-
-$curtime = Get-Date -format s
-$outmsg = $curtime + "------> Creating sp_XR_FileUsage"
-Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
-
-try {
-	invoke-sqlcmd -inputfile $masterproc_MDF -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
-	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
-	CD $curScriptLocation
-
-	Write-Host "Finished creating sp_XR_FileUsage" -foregroundcolor cyan -backgroundcolor black
-
-}
-catch [system.exception] {
-	Write-Host "Error occurred while creating sp_XR_FileUsage: " -foregroundcolor red -backgroundcolor black
-	Write-Host "$_" -foregroundcolor red -backgroundcolor black
-    $curtime = Get-Date -format s
-	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
-    throw "Installation failed"
-	break
-}
-
-Write-Host "" -foregroundcolor cyan -backgroundcolor black
+#Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
 
-$masterproc_LR = $masterprocs_parent + "sp_XR_LongRequests__TEMPLATE.sql"
-$masterproc_LR_Replace = $masterprocs_parent + "sp_XR_LongRequests__" + $Database + ".sql"
+#$masterproc_MDF = $masterprocs_parent + "sp_XR_FileUsage.sql"
 
-$curtime = Get-Date -format s
-$outmsg = $curtime + "------> Creating sp_XR_LongRequests"
-Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+#$curtime = Get-Date -format s
+#$outmsg = $curtime + "------> Creating sp_XR_FileUsage"
+#Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
-if (Test-Path $masterproc_LR_Replace) {
-	Remove-Item $masterproc_LR_Replace
-}
+#try {
+#	invoke-sqlcmd -inputfile $masterproc_MDF -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+#	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+#	CD $curScriptLocation
 
-(Get-Content $masterproc_LR) | Foreach-Object { $_ -replace '@@XRDATABASENAME@@', $Database } | Set-Content $masterproc_LR_Replace
+#	Write-Host "Finished creating sp_XR_FileUsage" -foregroundcolor cyan -backgroundcolor black
 
-try {
-	invoke-sqlcmd -inputfile $masterproc_LR_Replace -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
-	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
-	CD $curScriptLocation
+#}
+#catch [system.exception] {
+#	Write-Host "Error occurred while creating sp_XR_FileUsage: " -foregroundcolor red -backgroundcolor black
+#	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+#    $curtime = Get-Date -format s
+#	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+#    throw "Installation failed"
+#	break
+#}
 
-	Write-Host "Finished creating sp_XR_LongRequests" -foregroundcolor cyan -backgroundcolor black
+#Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
-}
-catch [system.exception] {
-	Write-Host "Error occurred while creating sp_XR_LongRequests: " -foregroundcolor red -backgroundcolor black
-	Write-Host "$_" -foregroundcolor red -backgroundcolor black
-    $curtime = Get-Date -format s
-	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
-    throw "Installation failed"
-	break
-}
 
-Write-Host "" -foregroundcolor cyan -backgroundcolor black
+#$masterproc_LR = $masterprocs_parent + "sp_XR_LongRequests__TEMPLATE.sql"
+#$masterproc_LR_Replace = $masterprocs_parent + "sp_XR_LongRequests__" + $Database + ".sql"
 
-$masterproc_QC = $masterprocs_parent + "sp_XR_QueryCamera__TEMPLATE.sql"
-$masterproc_QC_Replace = $masterprocs_parent + "sp_XR_QueryCamera__" + $Database + ".sql"
+#$curtime = Get-Date -format s
+#$outmsg = $curtime + "------> Creating sp_XR_LongRequests"
+#Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
-$curtime = Get-Date -format s
-$outmsg = $curtime + "------> Creating sp_XR_QueryCamera"
-Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+#if (Test-Path $masterproc_LR_Replace) {
+#	Remove-Item $masterproc_LR_Replace
+#}
 
-if (Test-Path $masterproc_QC_Replace) {
-	Remove-Item $masterproc_QC_Replace
-}
+#(Get-Content $masterproc_LR) | Foreach-Object { $_ -replace '@@XRDATABASENAME@@', $Database } | Set-Content $masterproc_LR_Replace
 
-(Get-Content $masterproc_QC) | Foreach-Object { $_ -replace '@@XRDATABASENAME@@', $Database } | Set-Content $masterproc_QC_Replace
+#try {
+#	invoke-sqlcmd -inputfile $masterproc_LR_Replace -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+#	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+#	CD $curScriptLocation
 
-try {
-	invoke-sqlcmd -inputfile $masterproc_QC_Replace -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
-	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
-	CD $curScriptLocation
+#	Write-Host "Finished creating sp_XR_LongRequests" -foregroundcolor cyan -backgroundcolor black
 
-	Write-Host "Finished creating sp_XR_QueryCamera" -foregroundcolor cyan -backgroundcolor black
+#}
+#catch [system.exception] {
+#	Write-Host "Error occurred while creating sp_XR_LongRequests: " -foregroundcolor red -backgroundcolor black
+#	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+#    $curtime = Get-Date -format s
+#	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+#    throw "Installation failed"
+#	break
+#}
 
-}
-catch [system.exception] {
-	Write-Host "Error occurred while creating sp_XR_QueryCamera: " -foregroundcolor red -backgroundcolor black
-	Write-Host "$_" -foregroundcolor red -backgroundcolor black
-    $curtime = Get-Date -format s
-	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
-    throw "Installation failed"
-	break
-}
+#Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
-Write-Host "" -foregroundcolor cyan -backgroundcolor black
+#$masterproc_QC = $masterprocs_parent + "sp_XR_QueryCamera__TEMPLATE.sql"
+#$masterproc_QC_Replace = $masterprocs_parent + "sp_XR_QueryCamera__" + $Database + ".sql"
 
+#$curtime = Get-Date -format s
+#$outmsg = $curtime + "------> Creating sp_XR_QueryCamera"
+#Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+
+#if (Test-Path $masterproc_QC_Replace) {
+#	Remove-Item $masterproc_QC_Replace
+#}
+
+#(Get-Content $masterproc_QC) | Foreach-Object { $_ -replace '@@XRDATABASENAME@@', $Database } | Set-Content $masterproc_QC_Replace
+
+#try {
+#	invoke-sqlcmd -inputfile $masterproc_QC_Replace -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+#	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+#	CD $curScriptLocation
+
+#	Write-Host "Finished creating sp_XR_QueryCamera" -foregroundcolor cyan -backgroundcolor black
+
+#}
+#catch [system.exception] {
+#	Write-Host "Error occurred while creating sp_XR_QueryCamera: " -foregroundcolor red -backgroundcolor black
+#	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+#    $curtime = Get-Date -format s
+#	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+#    throw "Installation failed"
+#	break
+#}
+
+#Write-Host "" -foregroundcolor cyan -backgroundcolor black
+<#
 $masterproc_QP = $masterprocs_parent + "sp_XR_QueryProgress__TEMPLATE.sql"
 $masterproc_QP_Replace = $masterprocs_parent + "sp_XR_QueryProgress__" + $Database + ".sql"
 
@@ -610,8 +612,8 @@ catch [system.exception] {
 }
 
 Write-Host "" -foregroundcolor cyan -backgroundcolor black
-
-
+#>
+<#
 $masterproc_SS = $masterprocs_parent + "sp_XR_SessionSummary__TEMPLATE.sql"
 $masterproc_SS_Replace = $masterprocs_parent + "sp_XR_SessionSummary__" + $Database + ".sql"
 
@@ -643,8 +645,8 @@ catch [system.exception] {
 }
 
 Write-Host "" -foregroundcolor cyan -backgroundcolor black
-
-
+#>
+<#
 $masterproc_SV = $masterprocs_parent + "sp_XR_SessionViewer__TEMPLATE.sql"
 $masterproc_SV_Replace = $masterprocs_parent + "sp_XR_SessionViewer__" + $Database + ".sql"
 
@@ -676,7 +678,7 @@ catch [system.exception] {
 }
 
 Write-Host "" -foregroundcolor cyan -backgroundcolor black
-
+#>
 
 
 $curtime = Get-Date -format s

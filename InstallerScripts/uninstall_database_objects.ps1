@@ -89,31 +89,11 @@ if ($ServerObjectsOnly -eq "N") {
     }
 
     # if we get this far, the DB exists. Scrub it of any existing XR objects
-    $curtime = Get-Date -format s
-    $outmsg = $curtime + "------> Scrubbing XR database: " + $Database + " of any installed XR objects."
-    Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
-
-    try {
-	   invoke-sqlcmd -inputfile $deletedbobj -serverinstance $Server -database $Database -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
-	   #In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
-	   CD $curScriptLocation
-
-        $curtime = Get-Date -format s
-        $outmsg = $curtime + "------> Finished scrubbing XR objects for database " + $Database
-        Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
-    }
-    catch [system.exception] {
-    	Write-Host "Error occurred in InstallerScripts\DeleteDatabaseObjects.sql: " -foregroundcolor red -backgroundcolor black
-    	Write-Host "$_" -foregroundcolor red -backgroundcolor black
-        $curtime = Get-Date -format s
-    	Write-Host "Aborting uninstall, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
-        throw "Uninstall failed"
-    	break
-    }
-    
     if ($DropDatabase -eq "Y") {
         try {
 	       $MyVariableArray = "DBName = $Database"
+           $curtime = Get-Date -format s
+           $outmsg = $curtime + "------> Dropping XR database: " + $Database + "."
 	
 	       invoke-sqlcmd -inputfile $dropxrdatabase -serverinstance $Server -database master -Variable $MyVariableArray -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
 	       #In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
@@ -131,7 +111,30 @@ if ($ServerObjectsOnly -eq "N") {
            throw "Uninstall failed"
 	       break
         }
-    }
+    } #if DB exists and we're to drop it
+    else {
+        $curtime = Get-Date -format s
+        $outmsg = $curtime + "------> Scrubbing XR database: " + $Database + " of any installed XR objects."
+        Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+
+        try {
+	      invoke-sqlcmd -inputfile $deletedbobj -serverinstance $Server -database $Database -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+	       #In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+    	   CD $curScriptLocation
+
+            $curtime = Get-Date -format s
+            $outmsg = $curtime + "------> Finished scrubbing XR objects for database " + $Database
+            Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+        }
+        catch [system.exception] {
+        	Write-Host "Error occurred in InstallerScripts\DeleteDatabaseObjects.sql: " -foregroundcolor red -backgroundcolor black
+    	   Write-Host "$_" -foregroundcolor red -backgroundcolor black
+            $curtime = Get-Date -format s
+        	Write-Host "Aborting uninstall, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+            throw "Uninstall failed"
+        	break
+        }
+    } #DB exists and we're not to drop it.
 } # end of DB object cleanup logic
 
 
