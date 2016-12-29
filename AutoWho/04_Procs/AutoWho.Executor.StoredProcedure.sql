@@ -205,7 +205,8 @@ BEGIN TRY
 		 @lv__SPIDCaptureHistAvg		INT,
 		 @lv__RecompileAutoWho			BIT,
 		 @lv__LastThresholdFilterTime	DATETIME,
-		 @lv__LastStoreLastTouchedTime	DATETIME
+		 @lv__LastStoreLastTouchedTime	DATETIME,
+		 @lv__SPIDCaptureTime			DATETIME
 		 ;
 
 	--variables to hold option table contents
@@ -397,7 +398,7 @@ BEGIN TRY
 
 	IF ISNULL(@opt__IncludeDBs,N'') = N''
 	BEGIN
-		SET @lv__DBInclusionsExist = 0;		--this flag (only for inclusions) is a perf optimization used by the AutoWho proc
+		SET @lv__DBInclusionsExist = 0;		--this flag (only for inclusions) is a perf optimization used by the AutoWho Collector proc
 	END 
 	ELSE
 	BEGIN
@@ -620,11 +621,13 @@ BEGIN TRY
 		SET @lv__LoopStartTime = GETDATE();
 		SET @lv__LoopCounter = @lv__LoopCounter + 1;
 		SET @lv__NumSPIDsCaptured = -1;
+		SET @lv__SPIDCaptureTime = NULL;
 
 		BEGIN TRY
 			IF ISNULL(@lv__RecompileAutoWho,0) = 1
 			BEGIN
 				EXEC AutoWho.Collector
+					@CollectionInitiatorID = 255,
 					@TempDBCreateTime = @lv__TempDBCreateTime,
 					@IncludeIdleWithTran = @opt__IncludeIdleWithTran,
 					@IncludeIdleWithoutTran = @opt__IncludeIdleWithoutTran,
@@ -646,11 +649,11 @@ BEGIN TRY
 					@BlockingChainThreshold = @opt__BlockingChainThreshold,
 					@BlockingChainDepth = @opt__BlockingChainDepth, 
 					@TranDetailsThreshold = @opt__TranDetailsThreshold,
-					--@ResolvePageLatches = @opt__ResolvePageLatches,
 
 					@DebugSpeed = @opt__DebugSpeed,
 					@SaveBadDims = @opt__SaveBadDims,
-					@NumSPIDs = @lv__NumSPIDsCaptured OUTPUT
+					@NumSPIDs = @lv__NumSPIDsCaptured OUTPUT,
+					@SPIDCaptureTime = @lv__SPIDCaptureTime OUTPUT
 				WITH RECOMPILE;
 
 				SET @lv__NumSPIDsAtLastRecompile = @lv__NumSPIDsCaptured;
@@ -658,6 +661,7 @@ BEGIN TRY
 			ELSE
 			BEGIN
 				EXEC AutoWho.Collector
+					@CollectionInitiatorID = 255,
 					@TempDBCreateTime = @lv__TempDBCreateTime,
 					@IncludeIdleWithTran = @opt__IncludeIdleWithTran,
 					@IncludeIdleWithoutTran = @opt__IncludeIdleWithoutTran,
@@ -679,23 +683,23 @@ BEGIN TRY
 					@BlockingChainThreshold = @opt__BlockingChainThreshold,
 					@BlockingChainDepth = @opt__BlockingChainDepth, 
 					@TranDetailsThreshold = @opt__TranDetailsThreshold,
-					--@ResolvePageLatches = @opt__ResolvePageLatches,
 
 					@DebugSpeed = @opt__DebugSpeed,
 					@SaveBadDims = @opt__SaveBadDims,
-					@NumSPIDs = @lv__NumSPIDsCaptured OUTPUT
+					@NumSPIDs = @lv__NumSPIDsCaptured OUTPUT,
+					@SPIDCaptureTime = @lv__SPIDCaptureTime OUTPUT
 				;
 			END
 	
 			SET @lv__SuccessiveExceptions = 0;
 		END TRY
 		BEGIN CATCH
-			SET @ErrorMessage = 'AutoWho procedure generated an exception: Error Number: ' + 
+			SET @ErrorMessage = 'Executor: AutoWho Collector procedure generated an exception: Error Number: ' + 
 				CONVERT(VARCHAR(20), ERROR_NUMBER()) + '; Error Message: ' + ERROR_MESSAGE();
 				
 			INSERT INTO AutoWho.[Log]
 			(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), @lv__TraceID, -33, N'AutoWho exception', @ErrorMessage;
+			SELECT SYSDATETIME(), @lv__TraceID, -33, N'Executor: AutoWho Collector exception', @ErrorMessage;
 
 			SET @lv__SuccessiveExceptions = @lv__SuccessiveExceptions + 1;
 

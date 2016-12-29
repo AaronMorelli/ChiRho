@@ -45,7 +45,7 @@ param (
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "ChiRho version 2008R2.1.0" -backgroundcolor black -foregroundcolor cyan
+Write-Host "ChiRho version 2008R2.1" -backgroundcolor black -foregroundcolor cyan
 Write-Host "Apache 2.0 license" -backgroundcolor black -foregroundcolor cyan
 Write-Host "Copyright (c) 2016 Aaron Morelli" -backgroundcolor black -foregroundcolor cyan
 

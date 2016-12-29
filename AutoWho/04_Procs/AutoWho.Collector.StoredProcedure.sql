@@ -58,7 +58,8 @@ To Execute
 <called from the AutoWho.Executor procedure>
 */
 (
-	--Note that validation of these variables is done by AutoWho.Executor
+	--Note that validation of these variables is done by the callor (AutoWho.Executor or AutoWho.ViewCurrentSessions)
+	@CollectionInitiatorID				TINYINT,
 	@TempDBCreateTime					DATETIME,		--used as a fall-back value for some Date function and ISNULL calculations
 	@IncludeIdleWithTran				NCHAR(1),		--Y/N
 	@IncludeIdleWithoutTran				NCHAR(1),		--Y/N
@@ -73,7 +74,6 @@ To Execute
 	@ObtainBatchText					NCHAR(1),		--Y/N
 	@ObtainQueryPlanForStatement		NCHAR(1),		--Y/N
 	@ObtainQueryPlanForBatch			NCHAR(1),		--Y/N
-	--@ResolvePageLatches					NCHAR(1),		--Y/N
 
 	--All of these parameters involve "threshold logic" that controls when certain auxiliary data captures
 	-- are triggered
@@ -89,7 +89,8 @@ To Execute
 
 	@DebugSpeed							NCHAR(1),		--Y/N
 	@SaveBadDims						NCHAR(1),		--Y/N
-	@NumSPIDs							INT OUTPUT
+	@NumSPIDs							INT OUTPUT,
+	@SPIDCaptureTime					DATETIME OUTPUT
 )
 AS
 BEGIN
@@ -145,8 +146,9 @@ BEGIN
 	17. If our threshold scan found SPIDs whose lock info needs to be captured and aggregated, enter the logic
 		for grabbing dm_tran_locks info.
 
-	18. If the Collector has been directed to resolve page latches, enter the logic to pull all page latch waits
-		(the resource_description column) and use DBCC PAGE to obtain object and index IDs.
+	-- This logic has been moved to the AutoWho.PostProcessor procedure
+	-- 18. If the Collector has been directed to resolve page latches, enter the logic to pull all page latch waits
+	--	(the resource_description column) and use DBCC PAGE to obtain object and index IDs.
 
 	19. If we entered the BChain logic earlier, and actually generated BChain data, insert a dummy row that
 		the BChain data will be tied to.
@@ -180,6 +182,7 @@ BEGIN
 */
 	SET NOCOUNT ON;
 	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+	SET ANSI_WARNINGS OFF;		--suppress the aggregation-of-NULL messages
 
 	DECLARE @errorloc NVARCHAR(40);
 
@@ -668,6 +671,7 @@ BEGIN TRY
 	SET @errorloc = N'SAR Initial Population';
 
 	SET @lv__SPIDCaptureTime = GETDATE();
+	SET @SPIDCaptureTime = @lv__SPIDCaptureTime;
 
 	INSERT INTO #sessions_and_requests (
 		[sess__session_id],					--1
@@ -2745,75 +2749,77 @@ There are a number of points worth noting re: the below scoping queries:
 		SET @errorloc = N'Tran capture query';
 
 		INSERT INTO AutoWho.TransactionDetails (
-			SPIDCaptureTime,				--1
+			CollectionInitiatorID,			--1
+			SPIDCaptureTime,		
 			session_id, 
 			TimeIdentifier, 
-			dtat_transaction_id, 
-			dtat_name,						--5
+			dtat_transaction_id,			--5
+			dtat_name,
 			dtat_transaction_begin_time, 
 			dtat_transaction_type, 
 			dtat_transaction_uow, 
-			dtat_transaction_state, 
-			dtat_dtc_state,					--10
+			dtat_transaction_state,			--10
+			dtat_dtc_state,	
 			dtst_enlist_count, 
 			dtst_is_user_transaction, 
 			dtst_is_local, 
-			dtst_is_enlisted, 
-			dtst_is_bound,					--15
+			dtst_is_enlisted,				--15
+			dtst_is_bound,
 			dtdt_database_id, 
 			dtdt_database_transaction_begin_time, 
 			dtdt_database_transaction_type, 
-			dtdt_database_transaction_state, 
-			dtdt_database_transaction_log_record_count,			--20
+			dtdt_database_transaction_state,			--20
+			dtdt_database_transaction_log_record_count,
 			dtdt_database_transaction_log_bytes_used, 
 			dtdt_database_transaction_log_bytes_reserved, 
 			dtdt_database_transaction_log_bytes_used_system, 
-			dtdt_database_transaction_log_bytes_reserved_system, 
-			dtasdt_tran_exists,									--25
+			dtdt_database_transaction_log_bytes_reserved_system, --25
+			dtasdt_tran_exists,
 			dtasdt_transaction_sequence_num,
 			dtasdt_commit_sequence_num,
 			dtasdt_is_snapshot, 
-			dtasdt_first_snapshot_sequence_num, 
-			dtasdt_max_version_chain_traversed,					--30
+			dtasdt_first_snapshot_sequence_num,					--30
+			dtasdt_max_version_chain_traversed,
 			dtasdt_average_version_chain_traversed,
-			dtasdt_elapsed_time_seconds							--32
+			dtasdt_elapsed_time_seconds							--33
 			)
 		SELECT
-			SPIDCaptureTime = @lv__SPIDCaptureTime,		--1
+			CollectionInitiatorID = @CollectionInitiatorID,		--1
+			SPIDCaptureTime = @lv__SPIDCaptureTime,		
 			sar.sess__session_id,
 			TimeIdentifier = sar.TimeIdentifier,
-			[dtat_transaction_id] = dtat.transaction_id, 
-			[dtat_name] = dtat.name,					--5
+			[dtat_transaction_id] = dtat.transaction_id,		--5
+			[dtat_name] = dtat.name,
 			[dtat_transaction_begin_time] = dtat.transaction_begin_time,
 			[dtat_transaction_type] = dtat.transaction_type,
 			[dtat_transaction_uow] = dtat.transaction_uow,
-			[dtat_transaction_state] = dtat.transaction_state,
-			[dtat_dtc_state] = dtat.dtc_state,			--10
+			[dtat_transaction_state] = dtat.transaction_state,	--10
+			[dtat_dtc_state] = dtat.dtc_state,
 
 			[dtst_enlist_count] = dtst.enlist_count, 
 			[dtst_is_user_transaction] = dtst.is_user_transaction, 
 			[dtst_is_local] = dtst.is_local, 
-			[dtst_is_enlisted] = dtst.is_enlisted, 
-			[dtst_is_bound] = dtst.is_bound,			--15
+			[dtst_is_enlisted] = dtst.is_enlisted,				--15
+			[dtst_is_bound] = dtst.is_bound,
 
 			[dtdt.database_id] = dtdt.database_id, 
 			[dtdt_database_transaction_begin_time] = dtdt.database_transaction_begin_time, 
 			[dtdt_database_transaction_type] = dtdt.database_transaction_type, 
-			[dtdt_database_transaction_state] = dtdt.database_transaction_state, 
-			[dtdt_database_transaction_log_record_count] = dtdt.database_transaction_log_record_count,		--20
+			[dtdt_database_transaction_state] = dtdt.database_transaction_state,		--20
+			[dtdt_database_transaction_log_record_count] = dtdt.database_transaction_log_record_count,
 			[dtdt_database_transaction_log_bytes_used] = dtdt.database_transaction_log_bytes_used, 
 			[dtdt_database_transaction_log_bytes_reserved] = dtdt.database_transaction_log_bytes_reserved, 
 			[dtdt_database_transaction_log_bytes_used_system] = dtdt.database_transaction_log_bytes_used_system, 
-			[dtdt_database_transaction_log_bytes_reserved_system] = dtdt.database_transaction_log_bytes_reserved_system, 
+			[dtdt_database_transaction_log_bytes_reserved_system] = dtdt.database_transaction_log_bytes_reserved_system, --25
 
-			[dtasdt_tran_exists] = CASE WHEN dtasdt.transaction_id IS NULL THEN 0 ELSE 1 END,	--25
+			[dtasdt_tran_exists] = CASE WHEN dtasdt.transaction_id IS NULL THEN 0 ELSE 1 END,
 			[dtasdt_transaction_sequence_num] = dtasdt.transaction_sequence_num,
 			[dtasdt_commit_sequence_num] = dtasdt.commit_sequence_num, 
 			[dtasdt_is_snapshot] = dtasdt.is_snapshot, 
-			[dtasdt_first_snapshot_sequence_num] = dtasdt.first_snapshot_sequence_num, 
-			[dtasdt_max_version_chain_traversed] = dtasdt.max_version_chain_traversed,			--30
+			[dtasdt_first_snapshot_sequence_num] = dtasdt.first_snapshot_sequence_num,			--30
+			[dtasdt_max_version_chain_traversed] = dtasdt.max_version_chain_traversed,
 			[dtasdt_average_version_chain_traversed] = dtasdt.average_version_chain_traversed,
-			[dtasdt_elapsed_time_seconds] = dtasdt.elapsed_time_seconds							--32
+			[dtasdt_elapsed_time_seconds] = dtasdt.elapsed_time_seconds							--33
 		FROM  (
 			--need to handle the possibility of MARS
 				SELECT 
@@ -2872,13 +2878,13 @@ There are a number of points worth noting re: the below scoping queries:
 		--	--logically what we mean: AND DATEDIFF(second,td2.SPIDCaptureTime, @lv__SPIDCaptureTime) < @TranDetailsThreshold*1000
 		--	--but coded this way for performance: 
 		--	AND td2.SPIDCaptureTime > DATEADD(second, 0-@TranDetailsThreshold*1000, @lv__SPIDCaptureTime)
-		--		--@TranDetailsThreshold doesn't just identify which SPIDs that we captured will have tran detail obtained,
+		--		--@TranDetailsThreshold does not just identify which SPIDs that we captured will have tran detail obtained,
 		--		-- but it also identifies how long to wait before capturing that same info again. Thus, if the threshold
 		--		-- is 300 seconds, then we make sure there are no other session_id/TimeIdentifier records in the table 
 		--		-- with a spid capture time of < 300 seconds
 		--)
-		OPTION(MAXDOP 1);
-
+		OPTION(MAXDOP 1, FORCE ORDER, KEEPFIXED PLAN);
+		
 		IF @DebugSpeed = N'Y'
 		BEGIN
 			SET @lv__stmtdurations = @lv__stmtdurations +  N'TranCap:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
@@ -3467,7 +3473,9 @@ There are a number of points worth noting re: the below scoping queries:
 	IF @thresh__maxWaitLength_BlockedSPID >= @ObtainLocksForBlockRelevantThreshold
 	BEGIN
 		SET @errorloc = N'Lock capture query';
+
 		INSERT INTO AutoWho.LockDetails (
+			CollectionInitiatorID,
 			SPIDCaptureTime, 
 			request_session_id, 
 			request_request_id, 
@@ -3488,6 +3496,7 @@ There are a number of points worth noting re: the below scoping queries:
 			RecordCount 
 		)
 		SELECT 
+			CollectionInitiatorID,
 			SPIDCaptureTime,
 			request_session_id,
 			request_request_id,
@@ -3526,7 +3535,7 @@ There are a number of points worth noting re: the below scoping queries:
 										WHEN N'NOTIFICATION_OBJECT' THEN CONVERT(TINYINT,5)
 										ELSE CONVERT(TINYINT,250)
 									END ,
-											--Aaron: I've put tinyint codes to the left of each label below. Use a view to manage the translation?
+											--Aaron: I have put tinyint codes to the left of each label below. Use a view to manage the translation?
 											--Entity type that owns the request. Lock manager requests can be owned by a variety of entities. Possible values are:
 											-- 0 TRANSACTION = The request is owned by a transaction.
 											-- 1 CURSOR = The request is owned by a cursor.
@@ -3547,17 +3556,17 @@ There are a number of points worth noting re: the below scoping queries:
 											--					in the dynamic management view sys.dm_filestream_non_transacted_handles (Transact-SQL).
 											--Aaron: DB "S" locks (usually? always?) have "0" for this column
 
-				request_owner_guid = CASE WHEN l.request_owner_guid = '00000000-0000-0000-0000-000000000000' THEN '' 
+				request_owner_guid = CASE WHEN l.request_owner_guid = '00000000-0000-0000-0000-000000000000' THEN ''
 										ELSE CONVERT(VARCHAR(36), l.request_owner_guid) END,
 											--This value is only used by a distributed transaction where the value corresponds to the MS DTC GUID for that transaction.
 											--Aaron: since it is often "00000000-0000-0000-0000-000000000000", convert to varchar and only store empty strings for 
 											--that value to save space
 
-				--don't capture l.request_owner_lockspace_id,	--Identified for informational purposes only. Not supported. Future compatibility is not guaranteed. 
+				--do not capture l.request_owner_lockspace_id,	--Identified for informational purposes only. Not supported. Future compatibility is not guaranteed. 
 												-- This value represents the lockspace ID of the requestor. The lockspace ID determines whether two requestors are 
 												-- compatible with each other and can be granted locks in modes that would otherwise conflict with one another.
 
-				--don't capture l.lock_owner_address,		--Memory address of the internal data structure that is used to track this request. This column can be joined the with 
+				--do not capture l.lock_owner_address,		--Memory address of the internal data structure that is used to track this request. This column can be joined the with 
 											-- the resource_address column in sys.dm_os_waiting_tasks.
 
 				l.resource_type,		--BOL: The value can be one of the following: DATABASE, FILE, OBJECT, PAGE, KEY, EXTENT, RID, APPLICATION, METADATA, HOBT, or ALLOCATION_UNIT.
@@ -3594,8 +3603,8 @@ There are a number of points worth noting re: the below scoping queries:
 							AND taw.request_id = sar.rqst__request_id
 					WHERE sar.calc__return_to_user > 0
 					AND sar.calc__block_relevant = 1
-					AND taw.task_priority = 1		--only consider a spid's longest wait
-					AND taw.blocking_session_id IS NOT NULL  --remember, we've already set this field to NULL if it = session_id (CXP waits)
+					AND taw.task_priority = 1		--only consider the longest wait for a request
+					AND taw.blocking_session_id IS NOT NULL  --remember, we have already set this field to NULL if it = session_id (CXP waits)
 					AND taw.wait_duration_ms >= @ObtainLocksForBlockRelevantThreshold
 				) blocked
 
@@ -3618,8 +3627,8 @@ There are a number of points worth noting re: the below scoping queries:
 							ON sar.calc__blocking_session_id = sar2.sess__session_id
 					WHERE sar.calc__return_to_user > 0
 					AND sar.calc__block_relevant = 1
-					AND taw.task_priority = 1		--only consider a spid's longest wait
-					AND taw.blocking_session_id IS NOT NULL  --remember, we've already set this field to NULL if it = session_id (CXP waits)
+					AND taw.task_priority = 1		--only consider the longest wait for a request
+					AND taw.blocking_session_id IS NOT NULL  --remember, we have already set this field to NULL if it = session_id (CXP waits)
 					AND taw.wait_duration_ms >= @ObtainLocksForBlockRelevantThreshold
 				) blockers
 			) sar
@@ -3795,11 +3804,13 @@ There are a number of points worth noting re: the below scoping queries:
 			AND sar.sess__session_id > 0			--negative spids are our "special" spids, and don't have this field
 			AND sar.calc__return_to_user > 0
 		) ss
-		--not really necessary, since we trust the #sar population statement
-		--WHERE NOT EXISTS (
-		--	SELECT * FROM dbo.AutoWho_DimCommand dc
-		--	WHERE dc.command = ss.rqst__FKDimCommand
-		--)
+		--We used to not need this (when the Collector proc only ever ran once, through the Executor and
+		-- protected by app locks). Now, we need to protect against race conditions when the Collector
+		-- is running both through the Executor and by an end user
+		WHERE NOT EXISTS (
+			SELECT * FROM AutoWho.DimCommand dc2
+			WHERE dc2.command = ss.rqst__Command
+		)
 		;
 		IF @DebugSpeed = N'Y'
 		BEGIN
@@ -3827,6 +3838,9 @@ There are a number of points worth noting re: the below scoping queries:
 			AND sar.sess__session_id > 0			--negative spids are our "special" spids, and don't have this field
 			AND sar.calc__return_to_user > 0
 		) ss
+		--We used to not need this (when the Collector proc only ever ran once, through the Executor and
+		-- protected by app locks). Now, we need to protect against race conditions when the Collector
+		-- is running both through the Executor and by an end user
 		WHERE NOT EXISTS (
 			SELECT * 
 			FROM AutoWho.DimConnectionAttribute dca2
@@ -3860,10 +3874,15 @@ There are a number of points worth noting re: the below scoping queries:
 			AND sar.sess__session_id > 0			--negative spids are our "special" spids, and don't have this field
 			AND sar.calc__return_to_user > 0
 		) ss
-		--not really necessary, since we trust the #sar population statement
-		--WHERE NOT EXISTS (
-		--	SELECT *
-		--)
+		--We used to not need this (when the Collector proc only ever ran once, through the Executor and
+		-- protected by app locks). Now, we need to protect against race conditions when the Collector
+		-- is running both through the Executor and by an end user
+		WHERE NOT EXISTS (
+			SELECT *
+			FROM AutoWho.DimLoginName dln2
+			WHERE ss.sess__login_name = dln2.login_name
+			AND ss.sess__original_login_name = dln2.original_login_name
+		)
 		;
 		IF @DebugSpeed = N'Y'
 		BEGIN
@@ -3885,10 +3904,16 @@ There are a number of points worth noting re: the below scoping queries:
 			AND sar.sess__session_id > 0			--negative spids are our "special" spids, and don't have this field
 			AND sar.calc__return_to_user > 0
 		) ss
-		--not really necessary, since we trust the #sar population statement
-		--WHERE NOT EXISTS (
-		--	SELECT *
-		--)
+		--We used to not need this (when the Collector proc only ever ran once, through the Executor and
+		-- protected by app locks). Now, we need to protect against race conditions when the Collector
+		-- is running both through the Executor and by an end user
+		WHERE NOT EXISTS (
+			SELECT *
+			FROM AutoWho.DimNetAddress dna2
+			WHERE ss.conn__client_net_address = dna2.client_net_address
+			AND ss.conn__local_net_address = dna2.local_net_address
+			AND ss.conn__local_tcp_port = dna2.local_tcp_port
+		)
 		;
 		IF @DebugSpeed = N'Y'
 		BEGIN
@@ -3915,10 +3940,21 @@ There are a number of points worth noting re: the below scoping queries:
 			AND sar.sess__session_id > 0			--negative spids are our "special" spids, and don't have this field
 			AND sar.calc__return_to_user > 0
 		) ss
-		--not really necessary, since we trust the #sar population statement
-		--WHERE NOT EXISTS (
-		--	SELECT *
-		--)
+		--We used to not need this (when the Collector proc only ever ran once, through the Executor and
+		-- protected by app locks). Now, we need to protect against race conditions when the Collector
+		-- is running both through the Executor and by an end user
+		WHERE NOT EXISTS (
+			SELECT *
+			FROM AutoWho.DimSessionAttribute dsa2
+			WHERE ss.sess__host_name = dsa2.host_name
+			AND ss.sess__program_name = dsa2.program_name
+			AND ss.sess__client_version = dsa2.client_version
+			AND ss.sess__client_interface_name = dsa2.client_interface_name
+			AND ss.sess__endpoint_id = dsa2.endpoint_id
+			AND ss.sess__transaction_isolation_level = dsa2.transaction_isolation_level
+			AND ss.sess__deadlock_priority = dsa2.deadlock_priority
+			AND ss.sess__group_id = dsa2.group_id
+		)
 		;
 		IF @DebugSpeed = N'Y'
 		BEGIN
@@ -3933,39 +3969,56 @@ There are a number of points worth noting re: the below scoping queries:
 		INSERT INTO AutoWho.DimWaitType
 		(wait_type, wait_type_short, latch_subtype, TimeAdded)
 		SELECT 
-			rqst__wait_type, 
-			REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-			REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-			REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-			REPLACE(REPLACE(REPLACE(
-				rqst__wait_type,
-				'SLEEP_TASK','SlpTsk'),
-				'PAGEIOLATCH','PgIO'),
-				'PAGELATCH','Pg'),
-				'CXPACKET','CXP'),
-				'THREADPOOL','ThrPool'),				--5
-				'ASYNC_IO_COMPLETION', 'AsyncIOComp'),
-				'ASYNC_NETWORK_IO', 'AsyncNetIO'),
-				'BACKUPBUFFER','BkpBuf'),
-				'BACKUPIO', 'BkpIO'),
-				'BACKUPTHREAD', 'BkpThrd'),				--10
-				'IO_COMPLETION', 'IOcomp'),
-				'LOGBUFFER', 'LogBuf'),
-				'RESOURCE_SEMAPHORE', 'RsrcSem'),
-				'RESOURCE_SEMAPHORE_QUERY_COMPILE', 'RsrcSemQryComp'),
-				'TRACEWRITE', 'TrcWri'),				--15
-				'WRITE_COMPLETION', 'WriComp'),
-				'WRITELOG', 'WriLog'),
-				'PREEMPTIVE', 'PREm'),					--18
+			rqst__wait_type,
+			wait_type_short,
 			rqst__wait_latch_subtype,
 			@lv__SPIDCaptureTime 
 		FROM (
-			SELECT DISTINCT sar.rqst__wait_type, sar.rqst__wait_latch_subtype
-			FROM #sessions_and_requests sar
-			WHERE sar.rqst__FKDimWaitType IS NULL
-			AND sar.rqst__wait_type IS NOT NULL
-			AND sar.sess__session_id > 0			--negative spids are our "special" spids, and don't have this field
-		) ss
+			SELECT 
+				rqst__wait_type, 
+				[wait_type_short] = 
+				REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+				REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+				REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+				REPLACE(REPLACE(REPLACE(
+					rqst__wait_type,
+					'SLEEP_TASK','SlpTsk'),
+					'PAGEIOLATCH','PgIO'),
+					'PAGELATCH','Pg'),
+					'CXPACKET','CXP'),
+					'THREADPOOL','ThrPool'),				--5
+					'ASYNC_IO_COMPLETION', 'AsyncIOComp'),
+					'ASYNC_NETWORK_IO', 'AsyncNetIO'),
+					'BACKUPBUFFER','BkpBuf'),
+					'BACKUPIO', 'BkpIO'),
+					'BACKUPTHREAD', 'BkpThrd'),				--10
+					'IO_COMPLETION', 'IOcomp'),
+					'LOGBUFFER', 'LogBuf'),
+					'RESOURCE_SEMAPHORE', 'RsrcSem'),
+					'RESOURCE_SEMAPHORE_QUERY_COMPILE', 'RsrcSemQryComp'),
+					'TRACEWRITE', 'TrcWri'),				--15
+					'WRITE_COMPLETION', 'WriComp'),
+					'WRITELOG', 'WriLog'),
+					'PREEMPTIVE', 'PREm'),					--18
+				rqst__wait_latch_subtype
+			FROM (
+				SELECT DISTINCT sar.rqst__wait_type, sar.rqst__wait_latch_subtype
+				FROM #sessions_and_requests sar
+				WHERE sar.rqst__FKDimWaitType IS NULL
+				AND sar.rqst__wait_type IS NOT NULL
+				AND sar.sess__session_id > 0			--negative spids are our "special" spids, and don't have this field
+			) ss
+		) ss2
+		--We used to not need this (when the Collector proc only ever ran once, through the Executor and
+		-- protected by app locks). Now, we need to protect against race conditions when the Collector
+		-- is running both through the Executor and by an end user
+		WHERE NOT EXISTS (
+			SELECT *
+			FROM AutoWho.DimWaitType dwt2
+			WHERE dwt2.wait_type = ss2.rqst__wait_type
+			AND dwt2.wait_type_short = ss2.wait_type_short
+			AND dwt2.latch_subtype = ss2.rqst__wait_latch_subtype
+		)
 		;
 		IF @DebugSpeed = N'Y'
 		BEGIN
@@ -3980,40 +4033,51 @@ There are a number of points worth noting re: the below scoping queries:
 		INSERT INTO AutoWho.DimWaitType 
 		(wait_type, wait_type_short, latch_subtype, TimeAdded)
 		SELECT 
-			taw.wait_type,
-			REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-			REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-			REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-			REPLACE(REPLACE(REPLACE(
-				taw.wait_type,
-				'SLEEP_TASK','SlpTsk'),
-				'PAGEIOLATCH','PgIO'),
-				'PAGELATCH','Pg'),
-				'CXPACKET','CXP'),
-				'THREADPOOL','ThrPool'),				--5
-				'ASYNC_IO_COMPLETION', 'AsyncIOComp'),
-				'ASYNC_NETWORK_IO', 'AsyncNetIO'),
-				'BACKUPBUFFER','BkpBuf'),
-				'BACKUPIO', 'BkpIO'),
-				'BACKUPTHREAD', 'BkpThrd'),				--10
-				'IO_COMPLETION', 'IOcomp'),
-				'LOGBUFFER', 'LogBuf'),
-				'RESOURCE_SEMAPHORE', 'RsrcSem'),
-				'RESOURCE_SEMAPHORE_QUERY_COMPILE', 'RsrcSemQryComp'),
-				'TRACEWRITE', 'TrcWri'),				--15
-				'WRITE_COMPLETION', 'WriComp'),
-				'WRITELOG', 'WriLog'),
-				'PREEMPTIVE', 'PREm'),					--18
-				wait_latch_subtype,
+			ss2.wait_type,
+			ss2.wait_type_short, 
+			ss2.wait_latch_subtype,
 			@lv__SPIDCaptureTime
-		FROM 
-			(SELECT DISTINCT wait_type, t.wait_latch_subtype
-			FROM #tasks_and_waits t
-			WHERE t.wait_type IS NOT NULL
-			) taw
+		FROM (
+			SELECT 
+				taw.wait_type,
+				[wait_type_short] = 
+				REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+				REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+				REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+				REPLACE(REPLACE(REPLACE(
+					taw.wait_type,
+					'SLEEP_TASK','SlpTsk'),
+					'PAGEIOLATCH','PgIO'),
+					'PAGELATCH','Pg'),
+					'CXPACKET','CXP'),
+					'THREADPOOL','ThrPool'),				--5
+					'ASYNC_IO_COMPLETION', 'AsyncIOComp'),
+					'ASYNC_NETWORK_IO', 'AsyncNetIO'),
+					'BACKUPBUFFER','BkpBuf'),
+					'BACKUPIO', 'BkpIO'),
+					'BACKUPTHREAD', 'BkpThrd'),				--10
+					'IO_COMPLETION', 'IOcomp'),
+					'LOGBUFFER', 'LogBuf'),
+					'RESOURCE_SEMAPHORE', 'RsrcSem'),
+					'RESOURCE_SEMAPHORE_QUERY_COMPILE', 'RsrcSemQryComp'),
+					'TRACEWRITE', 'TrcWri'),				--15
+					'WRITE_COMPLETION', 'WriComp'),
+					'WRITELOG', 'WriLog'),
+					'PREEMPTIVE', 'PREm'),					--18
+					wait_latch_subtype
+			FROM 
+				(SELECT DISTINCT wait_type, t.wait_latch_subtype
+				FROM #tasks_and_waits t
+				WHERE t.wait_type IS NOT NULL
+				) taw
+		) ss2
+		--We used to not need this (when the Collector proc only ever ran once, through the Executor and
+		-- protected by app locks). Now, we need to protect against race conditions when the Collector
+		-- is running both through the Executor and by an end user
 			LEFT OUTER hash JOIN AutoWho.DimWaitType dwt
-				ON taw.wait_type = dwt.wait_type
-				AND taw.wait_latch_subtype = dwt.latch_subtype
+				ON ss2.wait_type = dwt.wait_type
+				AND ss2.wait_type_short = dwt.wait_type_short
+				AND ss2.wait_latch_subtype = dwt.latch_subtype
 		WHERE dwt.wait_type IS NULL
 		OPTION(FORCE ORDER, MAXDOP 1, KEEPFIXED PLAN)
 		;
@@ -4513,175 +4577,177 @@ There are a number of points worth noting re: the below scoping queries:
 	SET @errorloc = N'SAR permanence DynSQL';
 	SET @lv__BigNvar = N'
 	INSERT INTO AutoWho.SessionsAndRequests 
-	(SPIDCaptureTime,					--1
+	(	CollectionInitiatorID,			--1
+		SPIDCaptureTime,
 		session_id, 
 		request_id, 
-		TimeIdentifier, 
-		sess__login_time,				--5
+		TimeIdentifier,					--5
+		sess__login_time,
 		sess__host_process_id, 
 		sess__status_code, 
 		sess__cpu_time, 
-		sess__memory_usage, 
-		sess__total_scheduled_time,		--10
+		sess__memory_usage,				--10
+		sess__total_scheduled_time,
 		sess__total_elapsed_time, 
 		sess__last_request_start_time, 
 		sess__last_request_end_time,
-		sess__reads, 
-		sess__writes,					--15
+		sess__reads,					--15
+		sess__writes,
 		sess__logical_reads,
 		sess__is_user_process, 
 		sess__lock_timeout, 
-		sess__row_count, 
-		sess__open_transaction_count,	--20
+		sess__row_count,				--20
+		sess__open_transaction_count,
 		sess__database_id,
 		sess__FKDimLoginName, 
 		sess__FKDimSessionAttribute, 
-		conn__connect_time, 
-		conn__client_tcp_port,			--25
+		conn__connect_time,				--25
+		conn__client_tcp_port,
 		conn__FKDimNetAddress,
 		conn__FKDimConnectionAttribute,
 		rqst__start_time, 
-		rqst__status_code, 
-		rqst__blocking_session_id,		--30
+		rqst__status_code,				--30
+		rqst__blocking_session_id,
 		rqst__wait_time,
 		rqst__wait_resource,
 		rqst__open_transaction_count, 
-		rqst__open_resultset_count, 
-		rqst__percent_complete,			--35
+		rqst__open_resultset_count,		--35
+		rqst__percent_complete,	
 		rqst__cpu_time,
 		rqst__total_elapsed_time,
 		rqst__scheduler_id, 
-		rqst__reads, 
-		rqst__writes,					--40
+		rqst__reads,					--40
+		rqst__writes,
 		rqst__logical_reads,
 		rqst__transaction_isolation_level,
 		rqst__lock_timeout,
-		rqst__deadlock_priority, 
-		rqst__row_count,				--45
+		rqst__deadlock_priority,		--45
+		rqst__row_count,
 		rqst__granted_query_memory,
 		rqst__executing_managed_code,
 		rqst__group_id,	
-		rqst__FKDimCommand, 
-		rqst__FKDimWaitType,			--50
+		rqst__FKDimCommand,				--50
+		rqst__FKDimWaitType,
 		tempdb__sess_user_objects_alloc_page_count,
 		tempdb__sess_user_objects_dealloc_page_count,
 		tempdb__sess_internal_objects_alloc_page_count,
-		tempdb__sess_internal_objects_dealloc_page_count, 
-		tempdb__task_user_objects_alloc_page_count,		--55 
+		tempdb__sess_internal_objects_dealloc_page_count, --55
+		tempdb__task_user_objects_alloc_page_count,
 		tempdb__task_user_objects_dealloc_page_count,
 		tempdb__task_internal_objects_alloc_page_count,
 		tempdb__task_internal_objects_dealloc_page_count,
-		tempdb__CalculatedNumberOfTasks, 
-		mgrant__request_time,						--60
+		tempdb__CalculatedNumberOfTasks,			--60
+		mgrant__request_time,
 		mgrant__grant_time,	
 		mgrant__requested_memory_kb,
 		mgrant__required_memory_kb,
-		mgrant__granted_memory_kb, 
-		mgrant__used_memory_kb,						--65
+		mgrant__granted_memory_kb,					--65
+		mgrant__used_memory_kb,
 		mgrant__max_used_memory_kb,
 		mgrant__dop,
 		calc__record_priority, 
-		calc__is_compiling,
-		calc__duration_ms,							--70
+		calc__is_compiling,							--70
+		calc__duration_ms,
 		calc__blocking_session_id,
 		calc__block_relevant,
 		calc__return_to_user, 
-		calc__is_blocker, 
-		calc__sysspid_isinteresting,				--75
+		calc__is_blocker,							--75
+		calc__sysspid_isinteresting,
 		calc__tmr_wait,
 		calc__threshold_ignore,
 		calc__node_info,
-		calc__status_info,
-		FKSQLStmtStoreID,							--80
+		calc__status_info,							--80
+		FKSQLStmtStoreID,
 		FKSQLBatchStoreID,
 		FKInputBufferStoreID,
 		FKQueryPlanBatchStoreID,
-		FKQueryPlanStmtStoreID
+		FKQueryPlanStmtStoreID						--85
 	)
 	';
 
 	SET @lv__BigNvar = @lv__BigNvar + N'
 	SELECT 
-		@lv__SPIDCaptureTime,				--1
+		@CollectionInitiatorID,				--1
+		@lv__SPIDCaptureTime,
 		sar.sess__session_id,
 		request_id = sar.rqst__request_id,
-		sar.TimeIdentifier,
-		sar.sess__login_time,				--5
+		sar.TimeIdentifier,					--5
+		sar.sess__login_time,
 		sar.sess__host_process_id,
 		sar.sess__status_code,
 		sar.sess__cpu_time,
-		sar.sess__memory_usage,
-		sar.sess__total_scheduled_time,		--10
+		sar.sess__memory_usage,				--10
+		sar.sess__total_scheduled_time,
 		sar.sess__total_elapsed_time,
 		sar.sess__last_request_start_time,
 		sar.sess__last_request_end_time,
-		sar.sess__reads,
-		sar.sess__writes,					--15
+		sar.sess__reads,					--15
+		sar.sess__writes,
 		sar.sess__logical_reads,
 		sar.sess__is_user_process,
 		sar.sess__lock_timeout,
-		sar.sess__row_count,
-		sar.sess__open_transaction_count,	--20
+		sar.sess__row_count,				--20
+		sar.sess__open_transaction_count,
 		sar.sess__database_id,
 		sar.sess__FKDimLoginName,
 		sar.sess__FKDimSessionAttribute,
-		sar.conn__connect_time,
-		sar.conn__client_tcp_port,			--25
+		sar.conn__connect_time,				--25
+		sar.conn__client_tcp_port,
 		sar.conn__FKDimNetAddress,
 		sar.conn__FKDimConnectionAttribute,
 		sar.rqst__start_time,
-		sar.rqst__status_code,
-		sar.rqst__blocking_session_id,		--30
+		sar.rqst__status_code,				--30
+		sar.rqst__blocking_session_id,
 		sar.rqst__wait_time,
 		sar.rqst__wait_resource,
 		sar.rqst__open_transaction_count,
-		sar.rqst__open_resultset_count,
-		sar.rqst__percent_complete,			--35
+		sar.rqst__open_resultset_count,		--35
+		sar.rqst__percent_complete,
 		sar.rqst__cpu_time,	
 		sar.rqst__total_elapsed_time,
 		sar.rqst__scheduler_id,
-		sar.rqst__reads,
-		sar.rqst__writes,					--40
+		sar.rqst__reads,					--40
+		sar.rqst__writes,
 		sar.rqst__logical_reads,
 		sar.rqst__transaction_isolation_level,
 		sar.rqst__lock_timeout,
-		sar.rqst__deadlock_priority,
-		sar.rqst__row_count,				--45
+		sar.rqst__deadlock_priority,		--45
+		sar.rqst__row_count,
 		sar.rqst__granted_query_memory,
 		sar.rqst__executing_managed_code,
 		sar.rqst__group_id,
-		sar.rqst__FKDimCommand,
-		sar.rqst__FKDimWaitType,			--50
+		sar.rqst__FKDimCommand,				--50
+		sar.rqst__FKDimWaitType,
 		sar.tempdb__sess_user_objects_alloc_page_count,
 		sar.tempdb__sess_user_objects_dealloc_page_count,
 		sar.tempdb__sess_internal_objects_alloc_page_count,
-		sar.tempdb__sess_internal_objects_dealloc_page_count,
-		sar.tempdb__task_user_objects_alloc_page_count,		--55
+		sar.tempdb__sess_internal_objects_dealloc_page_count,	--55
+		sar.tempdb__task_user_objects_alloc_page_count,
 		sar.tempdb__task_user_objects_dealloc_page_count,
 		sar.tempdb__task_internal_objects_alloc_page_count,
 		sar.tempdb__task_internal_objects_dealloc_page_count,
-		sar.tempdb__CalculatedNumberOfTasks,
-		sar.mgrant__request_time,						--60
+		sar.tempdb__CalculatedNumberOfTasks,			--60
+		sar.mgrant__request_time,
 		sar.mgrant__grant_time,
 		sar.mgrant__requested_memory_kb,
 		sar.mgrant__required_memory_kb, 
-		sar.mgrant__granted_memory_kb, 
-		sar.mgrant__used_memory_kb,						--65
+		sar.mgrant__granted_memory_kb,					--65
+		sar.mgrant__used_memory_kb,
 		sar.mgrant__max_used_memory_kb,	
 		sar.mgrant__dop,
 		sar.calc__record_priority, 
-		sar.calc__is_compiling,
-		sar.calc__duration_ms,							--70
+		sar.calc__is_compiling,							--70
+		sar.calc__duration_ms,
 		sar.calc__blocking_session_id,
 		sar.calc__block_relevant,
 		sar.calc__return_to_user,
-		sar.calc__is_blocker, 
-		sar.calc__sysspid_isinteresting,				--75
+		sar.calc__is_blocker,							--75
+		sar.calc__sysspid_isinteresting,
 		sar.calc__tmr_wait,
 		sar.calc__threshold_ignore,
 		calc__node_info = N''<placeholder>'',
-		calc__status_info = N''<placeholder>'',
-		sar.calc__FKSQLStmtStoreID,						--80
+		calc__status_info = N''<placeholder>'',			--80
+		sar.calc__FKSQLStmtStoreID,
 		sar.calc__FKSQLBatchStoreID,
 		' + 
 		--the N'<placeholder>' above is to avoid page splits when we update this data from the master (every 15 min) proc
@@ -4727,7 +4793,8 @@ There are a number of points worth noting re: the below scoping queries:
 		';
 
 	SET @errorloc = N'SAR permanence SQLExec';
-	EXEC sp_executesql @lv__BigNvar, N'@lv__SPIDCaptureTime DATETIME, @lv__nullsmallint SMALLINT', @lv__SPIDCaptureTime, @lv__nullsmallint;
+	EXEC sp_executesql @lv__BigNvar, N'@CollectionInitiatorID TINYINT, @lv__SPIDCaptureTime DATETIME, @lv__nullsmallint SMALLINT', 
+		@CollectionInitiatorID, @lv__SPIDCaptureTime, @lv__nullsmallint;
 
 	IF @DebugSpeed = N'Y'
 	BEGIN
@@ -4738,6 +4805,7 @@ There are a number of points worth noting re: the below scoping queries:
 
 	SET @errorloc = N'TAW permanence';
 	INSERT INTO AutoWho.TasksAndWaits (
+		CollectionInitiatorID,
 		SPIDCaptureTime, 
 		task_address, 
 		parent_task_address, 
@@ -4764,6 +4832,7 @@ There are a number of points worth noting re: the below scoping queries:
 		resolution_successful
 	)
 	SELECT 
+		@CollectionInitiatorID,
 		[SPIDCaptureTime] = @lv__SPIDCaptureTime,
 		task_address,
 		parent_task_address,
@@ -4857,6 +4926,7 @@ There are a number of points worth noting re: the below scoping queries:
 	BEGIN
 		SET @errorloc = N'BChain permanence';
 		INSERT INTO AutoWho.BlockingGraphs (
+			CollectionInitiatorID,
 			SPIDCaptureTime, 
 			session_id, 
 			request_id, 
@@ -4871,7 +4941,9 @@ There are a number of points worth noting re: the below scoping queries:
 			block_group, 
 			levelindc, 
 			rn)
-		SELECT @lv__SPIDCaptureTime, 
+		SELECT 
+			@CollectionInitiatorID,
+			@lv__SPIDCaptureTime, 
 			b.session_id, 
 			b.request_id, 
 			b.exec_context_id,
@@ -4902,11 +4974,27 @@ There are a number of points worth noting re: the below scoping queries:
 
 	--And then I'm done, I think!
 	SET @errorloc = N'CaptureTime INSERT';
-	INSERT INTO AutoWho.CaptureTimes 
-	(SPIDCaptureTime, UTCCaptureTime, RunWasSuccessful, CaptureSummaryPopulated, AutoWhoDuration_ms, SpidsCaptured, DurationBreakdown)
-	SELECT @lv__SPIDCaptureTime, 
+	INSERT INTO AutoWho.CaptureTimes (
+		CollectionInitiatorID, 
+		SPIDCaptureTime, 
+		UTCCaptureTime, 
+		RunWasSuccessful, 
+		PostProcessed,
+		CaptureSummaryPopulated, 
+		AutoWhoDuration_ms, 
+		SpidsCaptured, 
+		DurationBreakdown
+	)
+	SELECT 
+		@CollectionInitiatorID,
+		@lv__SPIDCaptureTime, 
 		DATEADD(HOUR, DATEDIFF(HOUR, GETDATE(), GETUTCDATE()), @lv__SPIDCaptureTime),
-		1, 0, DATEDIFF(ms, @lv__procstartdt, GETDATE()), @NumSPIDs, @lv__stmtdurations;
+		1, 
+		0,
+		0, 
+		DATEDIFF(ms, @lv__procstartdt, GETDATE()), 
+		@NumSPIDs, 
+		@lv__stmtdurations;
 END TRY
 BEGIN CATCH
 	IF @@TRANCOUNT > 0 ROLLBACK;

@@ -35,13 +35,14 @@ CREATE PROCEDURE [AutoWho].[PopulateCaptureSummary]
 
 	PURPOSE: Pulls data from the AutoWho base tables and aggregates various characteristics of the data into a summary row per SPIDCaptureTime. 
 			This procedure assumes that it will only be called by other AutoWho procs (or by sp_XR_SessionViewer), thus error-handling is limited.
-			Thus, it catches errors and writes them to the AutoWho.Log table, and simply returns -1 if it does not succeed.
+			It catches errors and writes them to the AutoWho.Log table, and simply returns -1 if it does not succeed.
 
 To Execute
 ------------------------
 EXEC AutoWho.PopulateCaptureSummary @StartTime='2016-04-25 08:00', @EndTime='2016-04-25 09:00'
 */
 (
+	@CollectionInitiatorID TINYINT,
 	@StartTime DATETIME,
 	@EndTime DATETIME
 )
@@ -107,6 +108,7 @@ BEGIN
 			FROM AutoWho.CaptureTimes ct WITH (nolock)
 			WHERE ct.SPIDCaptureTime < @StartTime
 			AND ct.RunWasSuccessful = 1
+			AND ct.CollectionInitiatorID = @CollectionInitiatorID
 			ORDER BY ct.SPIDCaptureTime DESC
 		) ss;
 
@@ -137,6 +139,7 @@ BEGIN
 			FROM AutoWho.CaptureTimes ct WITH (nolock)
 			WHERE ct.SPIDCaptureTime > @EndTime
 			AND ct.RunWasSuccessful = 1
+			AND ct.CollectionInitiatorID = @CollectionInitiatorID
 			ORDER BY ct.SPIDCaptureTime ASC
 		) ss;
 
@@ -168,6 +171,7 @@ BEGIN
 			-- We do this so that there is no chance of inhibiting/delaying new inserts by the AutoWho collector procedure itself.
 		WHERE ct.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
 		AND ct.RunWasSuccessful = 1
+		AND ct.CollectionInitiatorID = @CollectionInitiatorID
 		AND ct.CaptureSummaryPopulated = 0;
 
 		SET @scratch_int = @@ROWCOUNT;
@@ -182,6 +186,7 @@ BEGIN
 
 		SET @codeloc = 'CaptureSummary INSERT';
 		INSERT INTO AutoWho.CaptureSummary (
+			CollectionInitiatorID,
 			SPIDCaptureTime,		--1
 			CapturedSPIDs, 
 			Active, 
@@ -257,6 +262,7 @@ BEGIN
 			TranDetails				--70
 		)
 		SELECT 
+			@CollectionInitiatorID,
 			ss3.SPIDCaptureTime,		--1
 			CapturedSPIDs,
 			Active,
@@ -499,7 +505,8 @@ BEGIN
 								[TranBytes] = SUM(ISNULL(td.dtdt_database_transaction_log_bytes_reserved,0) + 
 											ISNULL(td.dtdt_database_transaction_log_bytes_reserved_system,0))
 							FROM AutoWho.TransactionDetails td
-							WHERE td.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
+							WHERE td.CollectionInitiatorID = @CollectionInitiatorID
+							AND td.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
 							AND ISNULL(td.dtdt_database_id,99999) <> 32767
 
 							--This doesn't seem to mean what I think it means:
@@ -555,7 +562,8 @@ BEGIN
 									[blocked_duration_ms] = CASE WHEN taw.wait_special_category IN (@enum__waitspecial__lck, @enum__waitspecial__pgblocked, @enum__waitspecial__latchblocked)
 													THEN ISNULL(taw.wait_duration_ms,0) ELSE NULL END
 								FROM AutoWho.TasksAndWaits taw
-								WHERE taw.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
+								WHERE taw.CollectionInitiatorID = @CollectionInitiatorID
+								AND taw.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
 							) taw
 							GROUP BY taw.SPIDCaptureTime,
 								taw.session_id,
@@ -567,16 +575,19 @@ BEGIN
 						LEFT OUTER JOIN ( 
 							SELECT DISTINCT SPIDCaptureTime 
 							FROM AutoWho.BlockingGraphs bg
-							WHERE bg.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
+							WHERE bg.CollectionInitiatorID = @CollectionInitiatorID
+							AND bg.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
 							) bg
 							ON sar.SPIDCaptureTime = bg.SPIDCaptureTime
 						LEFT OUTER JOIN (
 							SELECT DISTINCT ld.SPIDCaptureTime
 							FROM AutoWho.LockDetails ld
-							WHERE ld.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
+							WHERE ld.CollectionInitiatorID = @CollectionInitiatorID
+							AND ld.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
 							) ld
 							ON ld.SPIDCaptureTime = sar.SPIDCaptureTime
-					WHERE sar.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
+					WHERE sar.CollectionInitiatorID = @CollectionInitiatorID
+					AND sar.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
 					AND sar.session_id > 0
 					AND ISNULL(sar.calc__threshold_ignore,0) = 0
 
@@ -600,7 +611,8 @@ BEGIN
 						dtdt_database_transaction_log_bytes_reserved, 
 						dtdt_database_transaction_log_bytes_reserved_system
 					FROM AutoWho.TransactionDetails td
-					WHERE td.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
+					WHERE td.CollectionInitiatorID = @CollectionInitiatorID
+					AND td.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
 				) tsub
 				GROUP BY SPIDCaptureTime
 			) td2
@@ -617,11 +629,12 @@ BEGIN
 		FROM #CTTP targ 
 			INNER JOIN AutoWho.CaptureSummary cs
 				ON targ.CaptureTimesToProcess = cs.SPIDCaptureTime
-		WHERE cs.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective;
+		WHERE cs.CollectionInitiatorID = @CollectionInitiatorID
+		AND cs.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective;
 
 		--dummy row!
 		INSERT INTO AutoWho.CaptureSummary (
-			SPIDCaptureTime, CapturedSPIDs, 
+			CollectionInitiatorID, SPIDCaptureTime, CapturedSPIDs, 
 			Active, --nullable: LongestActive_ms, Act0to1, Act1to5, Act5to10, Act10to30, Act30to60, Act60to300, Act300plus, 
 			IdleWithOpenTran, --nullable: IdlOpTrnLongest_ms, IdlOpTrn0to1, IdlOpTrn1to5, IdlOpTrn5to10, IdlOpTrn10to30, IdlOpTrn30to60, IdlOpTrn60to300, IdlOpTrn300plus,
 			WithOpenTran, --nullable: TranDurLongest_ms, TranDur0to1, TranDur1to5, TranDur5to10, TranDur10to30, TranDur30to60, TranDur60to300, TranDur300plus,
@@ -634,7 +647,8 @@ BEGIN
 			PhysicalReadsDone, PhysicalReadsDelta, LargestPhysicalReader, 
 			TlogUsed_MB, LargestLogWriter_MB, BlockingGraph, LockDetails, TranDetails
 		)
-		SELECT ss1.CaptureTimesToProcess, 0 as CapturedSPIDs, 
+		SELECT @CollectionInitiatorID,
+			ss1.CaptureTimesToProcess, 0 as CapturedSPIDs, 
 			0 as Active, 
 			0 as IdleWithOpenTran,
 			0 as WithOpenTran,
@@ -669,13 +683,15 @@ BEGIN
 			OUTER APPLY (
 				SELECT TOP 1 cs2.CPUused, cs2.WritesDone, cs2.LogicalReadsDone, cs2.PhysicalReadsDone
 				FROM AutoWho.CaptureSummary cs2
-				WHERE cs2.SPIDCaptureTime < targ.SPIDCaptureTime
+				WHERE cs2.CollectionInitiatorID = @CollectionInitiatorID
+				AND cs2.SPIDCaptureTime < targ.SPIDCaptureTime
 				--we don't want the APPLY logic to "match" with a capture time that was much earlier than our min
 				-- (e.g. due to the inevitable gaps in our Summary rows)
 				AND cs2.SPIDCaptureTime >= ISNULL(@StartTime_MinusOne, @StartTime)
 				ORDER BY cs2.SPIDCaptureTime DESC
 			) xprev
-		WHERE targ.SPIDCaptureTime BETWEEN @StartTime AND @EndTime
+		WHERE targ.CollectionInitiatorID = @CollectionInitiatorID
+		AND targ.SPIDCaptureTime BETWEEN @StartTime AND @EndTime
 		;
 
 		SET @codeloc = 'CaptureTimes UPDATE';
@@ -684,7 +700,8 @@ BEGIN
 		FROM #CTTP t
 			INNER loop JOIN AutoWho.CaptureTimes targ WITH (ROWLOCK)
 				ON targ.SPIDCaptureTime = t.CaptureTimesToProcess
-		WHERE targ.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
+		WHERE targ.CollectionInitiatorID = @CollectionInitiatorID
+		AND targ.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
 		AND targ.CaptureSummaryPopulated = 0
 		;
 

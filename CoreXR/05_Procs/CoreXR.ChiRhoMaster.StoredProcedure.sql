@@ -71,13 +71,11 @@ BEGIN
 		--General variables
 		DECLARE @lv__masterErrorString NVARCHAR(MAX),
 				@lv__curError NVARCHAR(MAX),
-				@lv__ProcRC INT
+				@lv__ProcRC INT,
+				@lv__PostProcessingStart DATETIME,
+				@lv__PostProcessingEnd DATETIME
 			;
 
-		--Regular processing of the AutoWho tables
-		DECLARE @lv__AutoWhoStoreLastTouched DATETIME2(7),
-				@lv__ThisTouchTime DATETIME2(7);
-		DECLARE @lv__AutoWhoLastWaitResolve DATETIME2(7);
 
 		SET @PurgeDOW = LOWER(@PurgeDOW);
 
@@ -192,7 +190,6 @@ BEGIN
 					-- that is, "IF trace should be running"
 		END		--IF job exists/doesn't exist
 
-
 		BEGIN TRY
 			SET @lv__ProcRC = 0;
 			EXEC @lv__ProcRC = AutoWho.UpdateStoreLastTouched;
@@ -206,10 +203,11 @@ BEGIN
 			SELECT SYSDATETIME(), NULL, ERROR_NUMBER(), N'ErrorLastTouch', @ErrorMessage;
 		END CATCH
 
-
 		BEGIN TRY
 			SET @lv__ProcRC = 0;
-			EXEC @lv__ProcRC = AutoWho.ResolveWaitIDs;
+			SET @lv__PostProcessingEnd = DATEADD(SECOND, -30, GETDATE());		--so we steer clear of the tail of the table where data is being inserted regularly.
+			SET @lv__PostProcessingStart = DATEADD(MINUTE, -30, @lv__PostProcessingEnd);
+			EXEC @lv__ProcRC = AutoWho.PostProcessor @init=255, @start=@lv__PostProcessingStart, @end=@lv__PostProcessingEnd;
 		END TRY
 		BEGIN CATCH
 			--inside the loop, we swallow the error and just log it

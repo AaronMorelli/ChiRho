@@ -920,19 +920,23 @@ BEGIN
 		FROM CoreXR.CaptureOrdinalCache targ
 			INNER JOIN
 				 (
-					SELECT DISTINCT ord.StartTime, ord.EndTime
+					SELECT DISTINCT 
+						ord.CollectionInitiatorID,
+						ord.StartTime, ord.EndTime
 					FROM CoreXR.CaptureOrdinalCache ord
 						LEFT OUTER JOIN AutoWho.CaptureSummary cs
-							ON cs.SPIDCaptureTime = ord.CaptureTime
-					WHERE ord.Utility = N'AutoWho' 
+							ON ord.CollectionInitiatorID = cs.CollectionInitiatorID
+							AND cs.SPIDCaptureTime = ord.CaptureTime
+					WHERE ord.Utility IN (N'AutoWho',N'SessionViewer',N'QueryProgress')
 					AND (
 						ord.StartTime < DATEADD(HOUR, 0-@max__RetentionHours, GETDATE())
 						OR cs.SPIDCaptureTime IS NULL 
 					)
 				) invalidCaches
-				ON invalidCaches.StartTime = targ.StartTime
+				ON invalidCaches.CollectionInitiatorID = targ.CollectionInitiatorID
+				AND invalidCaches.StartTime = targ.StartTime
 				AND invalidCaches.EndTime = targ.EndTime
-		WHERE targ.Utility = N'AutoWho'
+		WHERE targ.Utility IN (N'AutoWho',N'SessionViewer',N'QueryProgress')
 		;
 
 		SET @lv__tmpBigInt = ROWCOUNT_BIG();
