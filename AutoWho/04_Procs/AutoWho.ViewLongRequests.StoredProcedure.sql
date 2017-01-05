@@ -212,22 +212,22 @@ BEGIN TRY
 		rqst__start_time	DATETIME NOT NULL,
 		BatchIdentifier		INT NOT NULL,		--sess/rqst/starttime uniquely identifies a batch, but in our XML grouping code, I don't want to mess
 												-- with datetime values, so we create an int that is unique per batch.
-		rqst__status_code	TINYINT NULL, 
-		rqst__cpu_time		BIGINT NULL, 
-		rqst__reads			BIGINT NULL, 
-		rqst__writes		BIGINT NULL, 
-		rqst__logical_reads BIGINT NULL, 
+		rqst__status_code	TINYINT NOT NULL, 
+		rqst__cpu_time		BIGINT NOT NULL, 
+		rqst__reads			BIGINT NOT NULL, 
+		rqst__writes		BIGINT NOT NULL, 
+		rqst__logical_reads BIGINT NOT NULL, 
 		rqst__FKDimCommand			SMALLINT NULL, 
 		rqst__FKDimWaitType			SMALLINT NULL, 
 		--tempdb__CurrentlyAllocatedPages		BIGINT NULL, 
-		tempdb__TaskPages					BIGINT NULL,
-		tempdb__SessPages					BIGINT NULL,
+		tempdb__TaskPages					BIGINT NOT NULL,
+		tempdb__SessPages					BIGINT NOT NULL,
 		tempdb__CalculatedNumberOfTasks		SMALLINT NULL,
-		mgrant__requested_memory_kb	BIGINT NULL,
-		mgrant__granted_memory_kb	BIGINT NULL,
-		mgrant__used_memory_kb		BIGINT NULL, 
-		mgrant__dop					SMALLINT NULL, 
-		tran_log_bytes				BIGINT NULL,
+		mgrant__requested_memory_kb	BIGINT NOT NULL,
+		mgrant__granted_memory_kb	BIGINT NOT NULL,
+		mgrant__used_memory_kb		BIGINT NOT NULL, 
+		mgrant__dop					SMALLINT NOT NULL, 
+		tran_log_bytes				BIGINT NOT NULL,
 		calc__tmr_wait				TINYINT NULL, 
 		FKSQLStmtStoreID			BIGINT NOT NULL, 
 		FKInputBufferStoreID		BIGINT NULL, 
@@ -305,19 +305,19 @@ BEGIN TRY
 		--qmem_used__FirstLastDeltaKB
 		--qmem_used__MinMaxDeltaKB
 
-		tasks_FirstSeen		SMALLINT NULL,
-		tasks_LastSeen		SMALLINT NULL,
-		tasks_MinSeen		SMALLINT NULL,
-		tasks_MaxSeen		SMALLINT NULL,
-		tasks_AvgSeen		DECIMAL(7,2) NULL,
+		tasks__FirstSeen		SMALLINT NULL,
+		tasks__LastSeen		SMALLINT NULL,
+		tasks__MinSeen		SMALLINT NULL,
+		tasks__MaxSeen		SMALLINT NULL,
+		tasks__AvgSeen		DECIMAL(7,2) NULL,
 		--no need for calculated fields here. The numbers are small enough
 		-- for people to do it quickly w/their eye
 
-		DOP_FirstSeen		SMALLINT NULL,
-		DOP_LastSeen		SMALLINT NULL,
-		DOP_MinSeen			SMALLINT NULL,
-		DOP_MaxSeen			SMALLINT NULL,
-		DOP_AvgSeen			DECIMAL(7,2) NULL,
+		DOP__FirstSeen		SMALLINT NULL,
+		DOP__LastSeen		SMALLINT NULL,
+		DOP__MinSeen			SMALLINT NULL,
+		DOP__MaxSeen			SMALLINT NULL,
+		DOP__AvgSeen			DECIMAL(7,2) NULL,
 		--no need for calculated fields here. The numbers are small enough
 		-- for people to do it quickly w/their eye
 
@@ -802,11 +802,11 @@ BEGIN TRY
 								ELSE (ISNULL(sar.tempdb__sess_internal_objects_alloc_page_count,0) - ISNULL(sar.tempdb__sess_internal_objects_dealloc_page_count,0)) END
 						),
 		sar.tempdb__CalculatedNumberOfTasks,	--13	
-		sar.mgrant__requested_memory_kb,
-		sar.mgrant__granted_memory_kb,		--14
-		sar.mgrant__used_memory_kb,
-		sar.mgrant__dop,
-		trx.tran_log_bytes,
+		ISNULL(sar.mgrant__requested_memory_kb,0),
+		ISNULL(sar.mgrant__granted_memory_kb,0),		--14
+		ISNULL(sar.mgrant__used_memory_kb,0),
+		ISNULL(sar.mgrant__dop,0),
+		ISNULL(trx.tran_log_bytes,0),
 		sar.calc__tmr_wait,
 		
 		ISNULL(sar.FKSQLStmtStoreID,-1),				--20
@@ -955,13 +955,13 @@ BEGIN TRY
 		qmem_used__MaxKB,				--20
 		qmem_used__AvgKB,
 		
-		tasks_MinSeen,
-		tasks_MaxSeen,
-		tasks_AvgSeen,
+		tasks__MinSeen,
+		tasks__MaxSeen,
+		tasks__AvgSeen,
 
-		DOP_MinSeen,					--25
-		DOP_MaxSeen,
-		DOP_AvgSeen,
+		DOP__MinSeen,					--25
+		DOP__MaxSeen,
+		DOP__AvgSeen,
 
 		TlogUsed__minBytes,
 		TlogUsed__maxBytes,
@@ -1045,10 +1045,10 @@ BEGIN TRY
 		qmem_granted__LastSeenKB = l.mgrant__granted_memory_kb,
 		qmem_used__FirstSeenKB = f.mgrant__used_memory_kb,
 		qmem_used__LastSeenKB = l.mgrant__used_memory_kb,
-		tasks_FirstSeen = f.tempdb__CalculatedNumberOfTasks,
-		tasks_LastSeen = l.tempdb__CalculatedNumberOfTasks,
-		DOP_FirstSeen = f.mgrant__dop,
-		DOP_LastSeen = l.mgrant__dop,
+		tasks__FirstSeen = f.tempdb__CalculatedNumberOfTasks,
+		tasks__LastSeen = l.tempdb__CalculatedNumberOfTasks,
+		DOP__FirstSeen = f.mgrant__dop,
+		DOP__LastSeen = l.mgrant__dop,
 		TlogUsed__FirstSeenBytes = f.tran_log_bytes,
 		TlogUsed__LastSeenBytes = l.tran_log_bytes,
 		CPUused__FirstSeenMs = f.rqst__cpu_time,
@@ -1802,7 +1802,10 @@ BEGIN TRY
 		AND targ.FKQueryPlanStmtStoreID = t0.FKQueryPlanStmtStoreID
 		;
 
-	SET @lv__errorloc = N'Construct final dynSQL';
+	/****************************************************************************************************
+	**********								Final Result Set								   **********
+	*****************************************************************************************************/
+	SET @lv__errorloc = N'Construct calc subquery';
 	DECLARE @lv__CalcSubQuery NVARCHAR(MAX),
 			@lv__FormatSubQuery NVARCHAR(MAX),
 			@lv__UnionSubQuery NVARCHAR(MAX),
@@ -1835,109 +1838,8 @@ BEGIN TRY
 				-- (# tasks, DOP, both tempdb metrics, all qmem metrics)
 				Always print all the columns
 				THIS IS CASE=3
-
-
-		tempdb_task__FirstSeenPages	BIGINT NULL,
-		tempdb_task__LastSeenPages	BIGINT NULL,
-		tempdb_task__MinPages	BIGINT NULL,
-		tempdb_task__MaxPages	BIGINT NULL,
-		tempdb_task__AvgPages	DECIMAL(21,2) NULL,
-		--calculated fields:
-		--tempdb_task__FirstLastDeltaPages
-		--tempdb_task__MinMaxDeltaPages
-
-		tempdb_sess__FirstSeenPages	BIGINT NULL,
-		tempdb_sess__LastSeenPages	BIGINT NULL,
-		tempdb_sess__MinPages	BIGINT NULL,
-		tempdb_sess__MaxPages	BIGINT NULL,
-		tempdb_sess__AvgPages	DECIMAL(21,2) NULL,
-		--calculated fields:
-		--tempdb_sess__FirstLastDeltaPages
-		--tempdb_sess__MinMaxDeltaPages
-
-		qmem_requested__FirstSeenKB	BIGINT NULL,
-		qmem_requested__LastSeenKB	BIGINT NULL,
-		qmem_requested__MinKB			BIGINT,
-		qmem_requested__MaxKB			BIGINT,
-		qmem_requested__AvgKB			DECIMAL(21,2) NULL,
-		--calculated fields:
-		--qmem_requested__FirstLastDeltaKB
-		--qmem_requested__MinMaxDeltaKB
-
-		qmem_granted__FirstSeenKB	BIGINT NULL,
-		qmem_granted__LastSeenKB	BIGINT NULL,
-		qmem_granted__MinKB			BIGINT,
-		qmem_granted__MaxKB			BIGINT,
-		qmem_granted__AvgKB			DECIMAL(21,2) NULL,
-		--calculated fields:
-		--qmem_granted__FirstLastDeltaKB
-		--qmem_granted__MinMaxDeltaKB
-
-		qmem_used__FirstSeenKB	BIGINT NULL,
-		qmem_used__LastSeenKB	BIGINT NULL,
-		qmem_used__MinKB		BIGINT,
-		qmem_used__MaxKB		BIGINT,
-		qmem_used__AvgKB		DECIMAL(21,2) NULL,
-		--calculated fields:
-		--qmem_used__FirstLastDeltaKB
-		--qmem_used__MinMaxDeltaKB
-
-		tasks_FirstSeen		SMALLINT NULL,
-		tasks_LastSeen		SMALLINT NULL,
-		tasks_MinSeen		SMALLINT NULL,
-		tasks_MaxSeen		SMALLINT NULL,
-		tasks_AvgSeen		DECIMAL(7,2) NULL,
-		--no need for calculated fields here. The numbers are small enough
-		-- for people to do it quickly w/their eye
-
-		DOP_FirstSeen		SMALLINT NULL,
-		DOP_LastSeen		SMALLINT NULL,
-		DOP_MinSeen			SMALLINT NULL,
-		DOP_MaxSeen			SMALLINT NULL,
-		DOP_AvgSeen			DECIMAL(7,2) NULL,
-		--no need for calculated fields here. The numbers are small enough
-		-- for people to do it quickly w/their eye
-
-		TlogUsed__FirstSeenBytes	BIGINT NULL,
-		TlogUsed__LastSeenBytes		BIGINT NULL,
-		TlogUsed__minBytes			BIGINT,
-		TlogUsed__maxBytes			BIGINT,
-		--calculated fields:
-		--TlogUsed__FirstLastDeltaKB
-		--TlogUsed__MinMaxDeltaKB
-
-		CPUused__FirstSeenMs	BIGINT NULL,
-		CPUused__LastSeenMs	BIGINT NULL,
-		CPUused__minMs		BIGINT,
-		CPUused__maxMs		BIGINT,
-		--calculated fields:
-		--CPUused__FirstLastDeltaMs
-		--CPUused__MinMaxDeltaMs
-
-		LReads__FirstSeenPages	BIGINT NULL,
-		LReads__LastSeenPages	BIGINT NULL,
-		LReads__MinPages	BIGINT NULL,
-		LReads__MaxPages	BIGINT NULL,
-		--calculated fields:
-		--LReads__FirstLastDeltaPages
-		--LReads__MinMaxDeltaPages
-
-		PReads__FirstSeenPages	BIGINT NULL,
-		PReads__LastSeenPages	BIGINT NULL,
-		PReads__MinPages	BIGINT NULL,
-		PReads__MaxPages	BIGINT NULL,
-		--calculated fields:
-		--PReads__FirstLastDeltaPages
-		--PReads__MinMaxDeltaPages
-
-		Writes__FirstSeenPages	BIGINT NULL,
-		Writes__LastSeenPages	BIGINT NULL,
-		Writes__MinPages	BIGINT NULL,
-		Writes__MaxPages	BIGINT NULL
-		--calculated fields:
-		--Writes__FirstLastDeltaPages
-		--Writes__MinMaxDeltaPages
 	*/
+
 	SET @lv__CalcSubQuery = N'
 		SELECT 
 			--ordering fields
@@ -1951,18 +1853,16 @@ BEGIN TRY
 			[FirstSeen] =			CONVERT(NVARCHAR(20),CONVERT(TIME(0),FirstSeen)), 
 			[LastSeen] =			CONVERT(NVARCHAR(20),CONVERT(TIME(0),LastSeen)),
 			[Extent(sec)] =			CONVERT(NVARCHAR(20),DATEDIFF(second, FirstSeen, LastSeen)),
-			[DBObject] =			CASE 
-										WHEN sss.dbid = 32767 OR sss.dbid = -929 
-											THEN N''''
-										ELSE ISNULL(sss.dbname,N''<null>'') + N''.'' 
-										END + 
+			[DBObject] =			CASE WHEN sss.objectid=-929 THEN N''''
+									ELSE (CASE 
+											WHEN sss.dbid = 32767 OR sss.dbid = -929 THEN N''''
+											ELSE ISNULL(sss.dbname,N''<null>'') + N''.'' 
+										  END + 
+											ISNULL(sss.schname,N''<null>'') + N''.'' +
+											ISNULL(sss.objname,N''<null>'') 
+										)
+									END,
 
-										ISNULL(sss.schname,N''<null>'') + N''.'' +
-										CASE 
-											WHEN sss.objectid = -929 
-												THEN N''''
-										ELSE ISNULL(sss.objname,N''<null>'') 
-										END,
 			[Cmd] =					sss.stmt_xml,
 			[StatusCodes] =			ISNULL(s.StatusCodeAgg,N''<null>''), 
 			[NonCXWaits] =			ISNULL(s.Waits,N''''),
@@ -1975,127 +1875,126 @@ BEGIN TRY
 				END + N'
 			
 			--metrics that are not sensitive to @units param
-			s.tasks_FirstSeen,
-			s.tasks_LastSeen,
-			s.tasks_MinSeen,
-			s.tasks_MaxSeen,
-			s.tasks_AvgSeen,
-			[tasks_CASE] = CASE WHEN [#Seen] = 1 OR s.tasks_MinSeen = s.tasks_MaxSeen THEN 0 ELSE 3 END,
+			[tasks__First] = s.tasks__FirstSeen,
+			[tasks__Last] = s.tasks__LastSeen,
+			[tasks__Min] = s.tasks__MinSeen,
+			[tasks__Max] = s.tasks__MaxSeen,
+			[tasks__Avg] = s.tasks__AvgSeen,
+			[tasks__CASE] = CASE WHEN [#Seen] = 1 OR s.tasks__MinSeen = s.tasks__MaxSeen THEN 0 ELSE 3 END,
 
-			s.DOP_FirstSeen,	
-			s.DOP_LastSeen,
-			s.DOP_MinSeen,
-			s.DOP_MaxSeen,
-			s.DOP_AvgSeen,
-			[DOP_CASE] = CASE WHEN [#Seen] = 1 OR s.DOP_MinSeen = s.DOP_MaxSeen THEN 0 ELSE 3 END,
+			[DOP__First] = s.DOP__FirstSeen,	
+			[DOP__Last] = s.DOP__LastSeen,
+			[DOP__Min] = s.DOP__MinSeen,
+			[DOP__Max] = s.DOP__MaxSeen,
+			[DOP__Avg] = s.DOP__AvgSeen,
+			[DOP__CASE] = CASE WHEN [#Seen] = 1 OR s.DOP__MinSeen = s.DOP__MaxSeen THEN 0 ELSE 3 END,
 
-			[CPUused__FirstSeen] =	CONVERT(MONEY,   s.CPUused__FirstSeenMs   ),
-			[CPUused__LastSeen] =	CONVERT(MONEY,   s.CPUused__LastSeenMs   ),
+			[CPUused__First] =	CONVERT(MONEY,   s.CPUused__FirstSeenMs   ),
+			[CPUused__Last] =	CONVERT(MONEY,   s.CPUused__LastSeenMs   ),
 			[CPUused__FLDelta] =	CONVERT(MONEY,   (s.CPUused__LastSeenMs - s.CPUused__FirstSeenMs)   ),
 			[CPUused__Min] =		CONVERT(MONEY,   s.CPUused__minMs   ),
 			[CPUused__Max] =		CONVERT(MONEY,   s.CPUused__maxMs   ),
 			[CPUused__MMDelta] =	CONVERT(MONEY,   (s.CPUused__maxMs - s.CPUused__minMs)   ),
-			[CPUused_CASE] =		CASE WHEN [#Seen] = 1 OR s.CPUused__minMs = s.CPUused__maxMs 
+			[CPUused__CASE] =		CASE WHEN [#Seen] = 1 OR s.CPUused__minMs = s.CPUused__maxMs 
 											THEN 0 
 										WHEN s.CPUused__FirstSeenMs = s.CPUused__minMs
 											AND s.CPUused__LastSeenMs = s.CPUused__maxMs
 											THEN 1
 										ELSE 2 END,';
 
-
 	IF @units = N'mb'
 	BEGIN
 		SET @lv__CalcSubQuery = @lv__CalcSubQuery + N'
 			--these metrics can vary up or down as queries progress
-			[tempdb_task__FirstSeen] =	CONVERT(MONEY,   s.tempdb_task__FirstSeenPages*8./1024.   ),
-			[tempdb_task__LastSeen] =	CONVERT(MONEY,   s.tempdb_task__LastSeenPages*8./1024.   ),
+			[tempdb_task__First] =	CONVERT(MONEY,   s.tempdb_task__FirstSeenPages*8./1024.   ),
+			[tempdb_task__Last] =	CONVERT(MONEY,   s.tempdb_task__LastSeenPages*8./1024.   ),
 			[tempdb_task__FLDelta] =	CONVERT(MONEY,   (s.tempdb_task__LastSeenPages - s.tempdb_task__FirstSeenPages)*8./1024.   ),
 			[tempdb_task__Min] =		CONVERT(MONEY,   s.tempdb_task__MinPages*8./1024.   ),
 			[tempdb_task__Max] =		CONVERT(MONEY,   s.tempdb_task__MaxPages*8./1024.   ),
 			[tempdb_task__MMDelta] =	CONVERT(MONEY,   (s.tempdb_task__MaxPages - s.tempdb_task__MinPages)*8./1024.   ),
 			[tempdb_task__Avg] =		CONVERT(MONEY,   s.tempdb_task__AvgPages*8./1024.   ),
-			[tempdb_task_CASE] =		CASE WHEN [#Seen] = 1 OR s.tempdb_task__MinPages = s.tempdb_task__MaxPages THEN 0 ELSE 3 END,
+			[tempdb_task__CASE] =		CASE WHEN [#Seen] = 1 OR s.tempdb_task__MinPages = s.tempdb_task__MaxPages THEN 0 ELSE 3 END,
 
-			[tempdb_sess__FirstSeen] =	CONVERT(MONEY,   s.tempdb_sess__FirstSeenPages*8./1024.   ),
-			[tempdb_sess__LastSeen] =	CONVERT(MONEY,   s.tempdb_sess__LastSeenPages*8./1024.   ),
+			[tempdb_sess__First] =	CONVERT(MONEY,   s.tempdb_sess__FirstSeenPages*8./1024.   ),
+			[tempdb_sess__Last] =	CONVERT(MONEY,   s.tempdb_sess__LastSeenPages*8./1024.   ),
 			[tempdb_sess__FLDelta] =	CONVERT(MONEY,   (s.tempdb_sess__LastSeenPages - s.tempdb_sess__FirstSeenPages)*8./1024.   ),
 			[tempdb_sess__Min] =		CONVERT(MONEY,   s.tempdb_sess__MinPages*8./1024.   ),
 			[tempdb_sess__Max] =		CONVERT(MONEY,   s.tempdb_sess__MaxPages*8./1024.   ),
 			[tempdb_sess__MMDelta] =	CONVERT(MONEY,   (s.tempdb_sess__MaxPages - s.tempdb_sess__MinPages)*8./1024.   ),
 			[tempdb_sess__Avg] =		CONVERT(MONEY,   s.tempdb_sess__AvgPages*8./1024.   ),
-			[tempdb_sess_CASE] =		CASE WHEN [#Seen] = 1 OR s.tempdb_sess__MinPages = s.tempdb_sess__MaxPages THEN 0 ELSE 3 END,
+			[tempdb_sess__CASE] =		CASE WHEN [#Seen] = 1 OR s.tempdb_sess__MinPages = s.tempdb_sess__MaxPages THEN 0 ELSE 3 END,
 
-			[qmem_requested__FirstSeen] =	CONVERT(MONEY,   s.qmem_requested__FirstSeenKB/1024.   ),
-			[qmem_requested__LastSeen] =	CONVERT(MONEY,   s.qmem_requested__LastSeenKB/1024.   ),
+			[qmem_requested__First] =	CONVERT(MONEY,   s.qmem_requested__FirstSeenKB/1024.   ),
+			[qmem_requested__Last] =	CONVERT(MONEY,   s.qmem_requested__LastSeenKB/1024.   ),
 			[qmem_requested__Min] =		CONVERT(MONEY,   s.qmem_requested__MinKB/1024.   ),
 			[qmem_requested__Max] =		CONVERT(MONEY,   s.qmem_requested__MaxKB/1024.   ),
 			[qmem_requested__MMDelta] =	CONVERT(MONEY,   (s.qmem_requested__MaxKB - s.qmem_requested__MinKB)/1024.   ),
 			[qmem_requested__Avg] =		CONVERT(MONEY,   s.qmem_requested__AvgKB/1024.   ),
-			[qmem_requested_CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_requested__MinKB = s.qmem_requested__MaxKB THEN 0 ELSE 3 END,
+			[qmem_requested__CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_requested__MinKB = s.qmem_requested__MaxKB THEN 0 ELSE 3 END,
 
-			[qmem_granted__FirstSeen] =	CONVERT(MONEY,   s.qmem_granted__FirstSeenKB/1024.   ),
-			[qmem_granted__LastSeen] =	CONVERT(MONEY,   s.qmem_granted__LastSeenKB/1024.   ),
+			[qmem_granted__First] =	CONVERT(MONEY,   s.qmem_granted__FirstSeenKB/1024.   ),
+			[qmem_granted__Last] =	CONVERT(MONEY,   s.qmem_granted__LastSeenKB/1024.   ),
 			[qmem_granted__Min] =		CONVERT(MONEY,   s.qmem_granted__MinKB/1024.   ),
 			[qmem_granted__Max] =		CONVERT(MONEY,   s.qmem_granted__MaxKB/1024.   ),
 			[qmem_granted__MMDelta] =	CONVERT(MONEY,   (s.qmem_granted__MaxKB - s.qmem_granted__MinKB)/1024.   ),
 			[qmem_granted__Avg] =		CONVERT(MONEY,   s.qmem_granted__AvgKB/1024.   ),
-			[qmem_granted_CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_granted__MinKB = s.qmem_granted__MaxKB THEN 0 ELSE 3 END,
+			[qmem_granted__CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_granted__MinKB = s.qmem_granted__MaxKB THEN 0 ELSE 3 END,
 
-			[qmem_used__FirstSeen] =	CONVERT(MONEY,   s.qmem_used__FirstSeenKB/1024.   ),
-			[qmem_used__LastSeen] =	CONVERT(MONEY,   s.qmem_used__LastSeenKB/1024.   ),
+			[qmem_used__First] =	CONVERT(MONEY,   s.qmem_used__FirstSeenKB/1024.   ),
+			[qmem_used__Last] =	CONVERT(MONEY,   s.qmem_used__LastSeenKB/1024.   ),
 			[qmem_used__Min] =		CONVERT(MONEY,   s.qmem_used__MinKB/1024.   ),
 			[qmem_used__Max] =		CONVERT(MONEY,   s.qmem_used__MaxKB/1024.   ),
 			[qmem_used__MMDelta] =	CONVERT(MONEY,   (s.qmem_used__MaxKB - s.qmem_used__MinKB)/1024.   ),
 			[qmem_used__Avg] =		CONVERT(MONEY,   s.qmem_used__AvgKB/1024.   ),
-			[qmem_used_CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_used__MinKB = s.qmem_used__MaxKB THEN 0 ELSE 3 END,
+			[qmem_used__CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_used__MinKB = s.qmem_used__MaxKB THEN 0 ELSE 3 END,
 
 			--these metrics should be ever-increasing for a given request
-			[TlogUsed__FirstSeen] =	CONVERT(MONEY,   s.TlogUsed__FirstSeenBytes/1024./1024.   ),
-			[TlogUsed__LastSeen] =	CONVERT(MONEY,   s.TlogUsed__LastSeenBytes/1024./1024.   ),
+			[TlogUsed__First] =	CONVERT(MONEY,   s.TlogUsed__FirstSeenBytes/1024./1024.   ),
+			[TlogUsed__Last] =	CONVERT(MONEY,   s.TlogUsed__LastSeenBytes/1024./1024.   ),
 			[TlogUsed__FLDelta] =	CONVERT(MONEY,   (s.TlogUsed__LastSeenBytes - s.TlogUsed__FirstSeenBytes)/1024./1024.    ),
 			[TlogUsed__Min] =		CONVERT(MONEY,   s.TlogUsed__minBytes/1024./1024.   ),
 			[TlogUsed__Max] =		CONVERT(MONEY,   s.TlogUsed__maxBytes/1024./1024.   ),
 			[TlogUsed__MMDelta] =	CONVERT(MONEY,   (s.TlogUsed__maxBytes - s.TlogUsed__minBytes)/1024./1024.    ),
-			[TlogUsed_CASE] =		CASE WHEN [#Seen] = 1 OR s.TlogUsed__minBytes = s.TlogUsed__maxBytes 
+			[TlogUsed__CASE] =		CASE WHEN [#Seen] = 1 OR s.TlogUsed__minBytes = s.TlogUsed__maxBytes 
 											THEN 0 
 										WHEN s.TlogUsed__FirstSeenBytes = s.TlogUsed__minBytes
 											AND s.TlogUsed__LastSeenBytes = s.TlogUsed__maxBytes
 											THEN 1
 										ELSE 2 END,
 
-			[LReads__FirstSeen] =	CONVERT(MONEY,   s.LReads__FirstSeenPages*8./1024.   ),
-			[LReads__LastSeen] =	CONVERT(MONEY,   s.LReads__LastSeenPages*8./1024.   ),
+			[LReads__First] =	CONVERT(MONEY,   s.LReads__FirstSeenPages*8./1024.   ),
+			[LReads__Last] =	CONVERT(MONEY,   s.LReads__LastSeenPages*8./1024.   ),
 			[LReads__FLDelta] =	CONVERT(MONEY,   (s.LReads__LastSeenPages - s.LReads__FirstSeenPages)/8./1024.    ),
 			[LReads__Min] =		CONVERT(MONEY,   s.LReads__MinPages*8./1024.   ),
 			[LReads__Max] =		CONVERT(MONEY,   s.LReads__MaxPages*8./1024.   ),
 			[LReads__MMDelta] =	CONVERT(MONEY,   (s.LReads__MaxPages - s.LReads__MinPages)/8./1024.    ),
-			[LReads_CASE] =		CASE WHEN [#Seen] = 1 OR s.LReads__MinPages = s.LReads__MaxPages
+			[LReads__CASE] =		CASE WHEN [#Seen] = 1 OR s.LReads__MinPages = s.LReads__MaxPages
 											THEN 0 
 										WHEN s.LReads__FirstSeenPages = s.LReads__MinPages
 											AND s.LReads__LastSeenPages = s.LReads__MaxPages
 											THEN 1
 										ELSE 2 END,
 
-			[PReads__FirstSeen] =	CONVERT(MONEY,   s.PReads__FirstSeenPages*8./1024.   ),
-			[PReads__LastSeen] =	CONVERT(MONEY,   s.PReads__LastSeenPages*8./1024.   ),
+			[PReads__First] =	CONVERT(MONEY,   s.PReads__FirstSeenPages*8./1024.   ),
+			[PReads__Last] =	CONVERT(MONEY,   s.PReads__LastSeenPages*8./1024.   ),
 			[PReads__FLDelta] =	CONVERT(MONEY,   (s.PReads__LastSeenPages - s.PReads__FirstSeenPages)*8./1024.    ),
 			[PReads__Min] =		CONVERT(MONEY,   s.PReads__MinPages*8./1024.   ),
 			[PReads__Max] =		CONVERT(MONEY,   s.PReads__MaxPages*8./1024.   ),
 			[PReads__MMDelta] =	CONVERT(MONEY,   (s.PReads__MaxPages - s.PReads__MinPages)*8./1024.    ),
-			[PReads_CASE] =		CASE WHEN [#Seen] = 1 OR s.PReads__MinPages = s.PReads__MaxPages
+			[PReads__CASE] =		CASE WHEN [#Seen] = 1 OR s.PReads__MinPages = s.PReads__MaxPages
 											THEN 0 
 										WHEN s.PReads__FirstSeenPages = s.PReads__MinPages
 											AND s.PReads__LastSeenPages = s.PReads__MaxPages
 											THEN 1
 										ELSE 2 END,
 
-			[Writes__FirstSeen] =	CONVERT(MONEY,   s.Writes__FirstSeenPages*8./1024.   ),
-			[Writes__LastSeen] =	CONVERT(MONEY,   s.Writes__LastSeenPages*8./1024.   ),
+			[Writes__First] =	CONVERT(MONEY,   s.Writes__FirstSeenPages*8./1024.   ),
+			[Writes__Last] =	CONVERT(MONEY,   s.Writes__LastSeenPages*8./1024.   ),
 			[Writes__FLDelta] =	CONVERT(MONEY,   (s.Writes__LastSeenPages - s.Writes__FirstSeenPages)*8./1024.    ),
 			[Writes__Min] =		CONVERT(MONEY,   s.Writes__MinPages*8./1024.   ),
 			[Writes__Max] =		CONVERT(MONEY,   s.Writes__MaxPages*8./1024.   ),
 			[Writes__MMDelta] =	CONVERT(MONEY,   (s.Writes__MaxPages - s.Writes__MinPages)*8./1024.    ),
-			[Writes_CASE] =		CASE WHEN [#Seen] = 1 OR s.Writes__MinPages = s.Writes__MaxPages
+			[Writes__CASE] =		CASE WHEN [#Seen] = 1 OR s.Writes__MinPages = s.Writes__MaxPages
 											THEN 0 
 										WHEN s.Writes__FirstSeenPages = s.Writes__MinPages
 											AND s.Writes__LastSeenPages = s.Writes__MaxPages
@@ -2106,95 +2005,95 @@ BEGIN TRY
 	BEGIN
 		SET @lv__CalcSubQuery = @lv__CalcSubQuery + N'
 			--these metrics can vary up or down as queries progress
-			[tempdb_task__FirstSeen] =	CONVERT(MONEY,   s.tempdb_task__FirstSeenPages   ),
-			[tempdb_task__LastSeen] =	CONVERT(MONEY,   s.tempdb_task__LastSeenPages   ),
+			[tempdb_task__First] =	CONVERT(MONEY,   s.tempdb_task__FirstSeenPages   ),
+			[tempdb_task__Last] =	CONVERT(MONEY,   s.tempdb_task__LastSeenPages   ),
 			[tempdb_task__FLDelta] =	CONVERT(MONEY,   s.tempdb_task__LastSeenPages - s.tempdb_task__FirstSeenPages   ),
 			[tempdb_task__Min] =		CONVERT(MONEY,   s.tempdb_task__MinPages   ),
 			[tempdb_task__Max] =		CONVERT(MONEY,   s.tempdb_task__MaxPages   ),
 			[tempdb_task__MMDelta] =	CONVERT(MONEY,   s.tempdb_task__MaxPages - s.tempdb_task__MinPages   ),
 			[tempdb_task__Avg] =		CONVERT(MONEY,   s.tempdb_task__AvgPages   ),
-			[tempdb_task_CASE] =		CASE WHEN [#Seen] = 1 OR s.tempdb_task__MinPages = s.tempdb_task__MaxPages THEN 0 ELSE 3 END,
+			[tempdb_task__CASE] =		CASE WHEN [#Seen] = 1 OR s.tempdb_task__MinPages = s.tempdb_task__MaxPages THEN 0 ELSE 3 END,
 
-			[tempdb_sess__FirstSeen] =	CONVERT(MONEY,   s.tempdb_sess__FirstSeenPages   ),
-			[tempdb_sess__LastSeen] =	CONVERT(MONEY,   s.tempdb_sess__LastSeenPages   ),
+			[tempdb_sess__First] =	CONVERT(MONEY,   s.tempdb_sess__FirstSeenPages   ),
+			[tempdb_sess__Last] =	CONVERT(MONEY,   s.tempdb_sess__LastSeenPages   ),
 			[tempdb_sess__FLDelta] =	CONVERT(MONEY,   s.tempdb_sess__LastSeenPages - s.tempdb_sess__FirstSeenPages   ),
 			[tempdb_sess__Min] =		CONVERT(MONEY,   s.tempdb_sess__MinPages   ),
 			[tempdb_sess__Max] =		CONVERT(MONEY,   s.tempdb_sess__MaxPages   ),
 			[tempdb_sess__MMDelta] =	CONVERT(MONEY,   s.tempdb_sess__MaxPages - s.tempdb_sess__MinPages   ),
 			[tempdb_sess__Avg] =		CONVERT(MONEY,   s.tempdb_sess__AvgPages   ),
-			[tempdb_sess_CASE] =		CASE WHEN [#Seen] = 1 OR s.tempdb_sess__MinPages = s.tempdb_sess__MaxPages THEN 0 ELSE 3 END,
+			[tempdb_sess__CASE] =		CASE WHEN [#Seen] = 1 OR s.tempdb_sess__MinPages = s.tempdb_sess__MaxPages THEN 0 ELSE 3 END,
 
-			[qmem_requested__FirstSeen] =	CONVERT(MONEY,   s.qmem_requested__FirstSeenKB   ),
-			[qmem_requested__LastSeen] =	CONVERT(MONEY,   s.qmem_requested__LastSeenKB   ),
+			[qmem_requested__First] =	CONVERT(MONEY,   s.qmem_requested__FirstSeenKB   ),
+			[qmem_requested__Last] =	CONVERT(MONEY,   s.qmem_requested__LastSeenKB   ),
 			[qmem_requested__Min] =		CONVERT(MONEY,   s.qmem_requested__MinKB   ),
 			[qmem_requested__Max] =		CONVERT(MONEY,   s.qmem_requested__MaxKB   ),
 			[qmem_requested__MMDelta] =	CONVERT(MONEY,   (s.qmem_requested__MaxKB - s.qmem_requested__MinKB)   ),
 			[qmem_requested__Avg] =		CONVERT(MONEY,   s.qmem_requested__AvgKB   ),
-			[qmem_requested_CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_requested__MinKB = s.qmem_requested__MaxKB THEN 0 ELSE 3 END,
+			[qmem_requested__CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_requested__MinKB = s.qmem_requested__MaxKB THEN 0 ELSE 3 END,
 
-			[qmem_granted__FirstSeen] =	CONVERT(MONEY,   s.qmem_granted__FirstSeenKB   ),
-			[qmem_granted__LastSeen] =	CONVERT(MONEY,   s.qmem_granted__LastSeenKB   ),
+			[qmem_granted__First] =	CONVERT(MONEY,   s.qmem_granted__FirstSeenKB   ),
+			[qmem_granted__Last] =	CONVERT(MONEY,   s.qmem_granted__LastSeenKB   ),
 			[qmem_granted__Min] =		CONVERT(MONEY,   s.qmem_granted__MinKB   ),
 			[qmem_granted__Max] =		CONVERT(MONEY,   s.qmem_granted__MaxKB   ),
 			[qmem_granted__MMDelta] =	CONVERT(MONEY,   (s.qmem_granted__MaxKB - s.qmem_granted__MinKB)   ),
 			[qmem_granted__Avg] =		CONVERT(MONEY,   s.qmem_granted__AvgKB   ),
-			[qmem_granted_CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_granted__MinKB = s.qmem_granted__MaxKB THEN 0 ELSE 3 END,
+			[qmem_granted__CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_granted__MinKB = s.qmem_granted__MaxKB THEN 0 ELSE 3 END,
 
-			[qmem_used__FirstSeen] =	CONVERT(MONEY,   s.qmem_used__FirstSeenKB   ),
-			[qmem_used__LastSeen] =	CONVERT(MONEY,   s.qmem_used__LastSeenKB   ),
+			[qmem_used__First] =	CONVERT(MONEY,   s.qmem_used__FirstSeenKB   ),
+			[qmem_used__Last] =	CONVERT(MONEY,   s.qmem_used__LastSeenKB   ),
 			[qmem_used__Min] =		CONVERT(MONEY,   s.qmem_used__MinKB   ),
 			[qmem_used__Max] =		CONVERT(MONEY,   s.qmem_used__MaxKB   ),
 			[qmem_used__MMDelta] =	CONVERT(MONEY,   (s.qmem_used__MaxKB - s.qmem_used__MinKB)   ),
 			[qmem_used__Avg] =		CONVERT(MONEY,   s.qmem_used__AvgKB   ),
-			[qmem_used_CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_used__MinKB = s.qmem_used__MaxKB THEN 0 ELSE 3 END,
+			[qmem_used__CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_used__MinKB = s.qmem_used__MaxKB THEN 0 ELSE 3 END,
 
 			--these metrics should be ever-increasing for a given request
-			[TlogUsed__FirstSeen] =	CONVERT(MONEY,   s.TlogUsed__FirstSeenBytes   ),
-			[TlogUsed__LastSeen] =	CONVERT(MONEY,   s.TlogUsed__LastSeenBytes   ),
+			[TlogUsed__First] =	CONVERT(MONEY,   s.TlogUsed__FirstSeenBytes   ),
+			[TlogUsed__Last] =	CONVERT(MONEY,   s.TlogUsed__LastSeenBytes   ),
 			[TlogUsed__FLDelta] =	CONVERT(MONEY,   (s.TlogUsed__LastSeenBytes - s.TlogUsed__FirstSeenBytes)    ),
 			[TlogUsed__Min] =		CONVERT(MONEY,   s.TlogUsed__minBytes   ),
 			[TlogUsed__Max] =		CONVERT(MONEY,   s.TlogUsed__maxBytes   ),
 			[TlogUsed__MMDelta] =	CONVERT(MONEY,   (s.TlogUsed__maxBytes - s.TlogUsed__minBytes)    ),
-			[TlogUsed_CASE] =		CASE WHEN [#Seen] = 1 OR s.TlogUsed__minBytes = s.TlogUsed__maxBytes 
+			[TlogUsed__CASE] =		CASE WHEN [#Seen] = 1 OR s.TlogUsed__minBytes = s.TlogUsed__maxBytes 
 											THEN 0 
 										WHEN s.TlogUsed__FirstSeenBytes = s.TlogUsed__minBytes
 											AND s.TlogUsed__LastSeenBytes = s.TlogUsed__maxBytes
 											THEN 1
 										ELSE 2 END,
 
-			[LReads__FirstSeen] =	CONVERT(MONEY,   s.LReads__FirstSeenPages   ),
-			[LReads__LastSeen] =	CONVERT(MONEY,   s.LReads__LastSeenPages   ),
+			[LReads__First] =	CONVERT(MONEY,   s.LReads__FirstSeenPages   ),
+			[LReads__Last] =	CONVERT(MONEY,   s.LReads__LastSeenPages   ),
 			[LReads__FLDelta] =	CONVERT(MONEY,   (s.LReads__LastSeenPages - s.LReads__FirstSeenPages)    ),
 			[LReads__Min] =		CONVERT(MONEY,   s.LReads__MinPages   ),
 			[LReads__Max] =		CONVERT(MONEY,   s.LReads__MaxPages   ),
 			[LReads__MMDelta] =	CONVERT(MONEY,   (s.LReads__MaxPages - s.LReads__MinPages)    ),
-			[LReads_CASE] =		CASE WHEN [#Seen] = 1 OR s.LReads__MinPages = s.LReads__MaxPages
+			[LReads__CASE] =		CASE WHEN [#Seen] = 1 OR s.LReads__MinPages = s.LReads__MaxPages
 											THEN 0 
 										WHEN s.LReads__FirstSeenPages = s.LReads__MinPages
 											AND s.LReads__LastSeenPages = s.LReads__MaxPages
 											THEN 1
 										ELSE 2 END,
 
-			[PReads__FirstSeen] =	CONVERT(MONEY,   s.PReads__FirstSeenPages   ),
-			[PReads__LastSeen] =	CONVERT(MONEY,   s.PReads__LastSeenPages   ),
+			[PReads__First] =	CONVERT(MONEY,   s.PReads__FirstSeenPages   ),
+			[PReads__Last] =	CONVERT(MONEY,   s.PReads__LastSeenPages   ),
 			[PReads__FLDelta] =	CONVERT(MONEY,   (s.PReads__LastSeenPages - s.PReads__FirstSeenPages)    ),
 			[PReads__Min] =		CONVERT(MONEY,   s.PReads__MinPages   ),
 			[PReads__Max] =		CONVERT(MONEY,   s.PReads__MaxPages   ),
 			[PReads__MMDelta] =	CONVERT(MONEY,   (s.PReads__MaxPages - s.PReads__MinPages)    ),
-			[PReads_CASE] =		CASE WHEN [#Seen] = 1 OR s.PReads__MinPages = s.PReads__MaxPages
+			[PReads__CASE] =		CASE WHEN [#Seen] = 1 OR s.PReads__MinPages = s.PReads__MaxPages
 											THEN 0 
 										WHEN s.PReads__FirstSeenPages = s.PReads__MinPages
 											AND s.PReads__LastSeenPages = s.PReads__MaxPages
 											THEN 1
 										ELSE 2 END,
 
-			[Writes__FirstSeen] =	CONVERT(MONEY,   s.Writes__FirstSeenPages   ),
-			[Writes__LastSeen] =	CONVERT(MONEY,   s.Writes__LastSeenPages   ),
+			[Writes__First] =	CONVERT(MONEY,   s.Writes__FirstSeenPages   ),
+			[Writes__Last] =	CONVERT(MONEY,   s.Writes__LastSeenPages   ),
 			[Writes__FLDelta] =	CONVERT(MONEY,   (s.Writes__LastSeenPages - s.Writes__FirstSeenPages)    ),
 			[Writes__Min] =		CONVERT(MONEY,   s.Writes__MinPages   ),
 			[Writes__Max] =		CONVERT(MONEY,   s.Writes__MaxPages   ),
 			[Writes__MMDelta] =	CONVERT(MONEY,   (s.Writes__MaxPages - s.Writes__MinPages)    ),
-			[Writes_CASE] =		CASE WHEN [#Seen] = 1 OR s.Writes__MinPages = s.Writes__MaxPages
+			[Writes__CASE] =		CASE WHEN [#Seen] = 1 OR s.Writes__MinPages = s.Writes__MaxPages
 											THEN 0 
 										WHEN s.Writes__FirstSeenPages = s.Writes__MinPages
 											AND s.Writes__LastSeenPages = s.Writes__MaxPages
@@ -2205,95 +2104,95 @@ BEGIN TRY
 	BEGIN
 		SET @lv__CalcSubQuery = @lv__CalcSubQuery + N'
 			--these metrics can vary up or down as queries progress
-			[tempdb_task__FirstSeen] =	CONVERT(MONEY,   s.tempdb_task__FirstSeenPages   ),
-			[tempdb_task__LastSeen] =	CONVERT(MONEY,   s.tempdb_task__LastSeenPages   ),
+			[tempdb_task__First] =	CONVERT(MONEY,   s.tempdb_task__FirstSeenPages   ),
+			[tempdb_task__Last] =	CONVERT(MONEY,   s.tempdb_task__LastSeenPages   ),
 			[tempdb_task__FLDelta] =	CONVERT(MONEY,   s.tempdb_task__LastSeenPages - s.tempdb_task__FirstSeenPages   ),
 			[tempdb_task__Min] =		CONVERT(MONEY,   s.tempdb_task__MinPages   ),
 			[tempdb_task__Max] =		CONVERT(MONEY,   s.tempdb_task__MaxPages   ),
 			[tempdb_task__MMDelta] =	CONVERT(MONEY,   s.tempdb_task__MaxPages - s.tempdb_task__MinPages   ),
 			[tempdb_task__Avg] =		CONVERT(MONEY,   s.tempdb_task__AvgPages   ),
-			[tempdb_task_CASE] =		CASE WHEN [#Seen] = 1 OR s.tempdb_task__MinPages = s.tempdb_task__MaxPages THEN 0 ELSE 3 END,
+			[tempdb_task__CASE] =		CASE WHEN [#Seen] = 1 OR s.tempdb_task__MinPages = s.tempdb_task__MaxPages THEN 0 ELSE 3 END,
 
-			[tempdb_sess__FirstSeen] =	CONVERT(MONEY,   s.tempdb_sess__FirstSeenPages   ),
-			[tempdb_sess__LastSeen] =	CONVERT(MONEY,   s.tempdb_sess__LastSeenPages   ),
+			[tempdb_sess__First] =	CONVERT(MONEY,   s.tempdb_sess__FirstSeenPages   ),
+			[tempdb_sess__Last] =	CONVERT(MONEY,   s.tempdb_sess__LastSeenPages   ),
 			[tempdb_sess__FLDelta] =	CONVERT(MONEY,   s.tempdb_sess__LastSeenPages - s.tempdb_sess__FirstSeenPages   ),
 			[tempdb_sess__Min] =		CONVERT(MONEY,   s.tempdb_sess__MinPages   ),
 			[tempdb_sess__Max] =		CONVERT(MONEY,   s.tempdb_sess__MaxPages   ),
 			[tempdb_sess__MMDelta] =	CONVERT(MONEY,   s.tempdb_sess__MaxPages - s.tempdb_sess__MinPages   ),
 			[tempdb_sess__Avg] =		CONVERT(MONEY,   s.tempdb_sess__AvgPages   ),
-			[tempdb_sess_CASE] =		CASE WHEN [#Seen] = 1 OR s.tempdb_sess__MinPages = s.tempdb_sess__MaxPages THEN 0 ELSE 3 END,
+			[tempdb_sess__CASE] =		CASE WHEN [#Seen] = 1 OR s.tempdb_sess__MinPages = s.tempdb_sess__MaxPages THEN 0 ELSE 3 END,
 
-			[qmem_requested__FirstSeen] =	CONVERT(MONEY,   s.qmem_requested__FirstSeenKB/8.   ),
-			[qmem_requested__LastSeen] =	CONVERT(MONEY,   s.qmem_requested__LastSeenKB/8.   ),
+			[qmem_requested__First] =	CONVERT(MONEY,   s.qmem_requested__FirstSeenKB/8.   ),
+			[qmem_requested__Last] =	CONVERT(MONEY,   s.qmem_requested__LastSeenKB/8.   ),
 			[qmem_requested__Min] =		CONVERT(MONEY,   s.qmem_requested__MinKB/8.   ),
 			[qmem_requested__Max] =		CONVERT(MONEY,   s.qmem_requested__MaxKB/8.   ),
 			[qmem_requested__MMDelta] =	CONVERT(MONEY,   (s.qmem_requested__MaxKB - s.qmem_requested__MinKB)/8.   ),
 			[qmem_requested__Avg] =		CONVERT(MONEY,   s.qmem_requested__AvgKB/8.   ),
-			[qmem_requested_CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_requested__MinKB = s.qmem_requested__MaxKB THEN 0 ELSE 3 END,
+			[qmem_requested__CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_requested__MinKB = s.qmem_requested__MaxKB THEN 0 ELSE 3 END,
 
-			[qmem_granted__FirstSeen] =	CONVERT(MONEY,   s.qmem_granted__FirstSeenKB/8.   ),
-			[qmem_granted__LastSeen] =	CONVERT(MONEY,   s.qmem_granted__LastSeenKB/8.   ),
+			[qmem_granted__First] =	CONVERT(MONEY,   s.qmem_granted__FirstSeenKB/8.   ),
+			[qmem_granted__Last] =	CONVERT(MONEY,   s.qmem_granted__LastSeenKB/8.   ),
 			[qmem_granted__Min] =		CONVERT(MONEY,   s.qmem_granted__MinKB/8.   ),
 			[qmem_granted__Max] =		CONVERT(MONEY,   s.qmem_granted__MaxKB/8.   ),
 			[qmem_granted__MMDelta] =	CONVERT(MONEY,   (s.qmem_granted__MaxKB - s.qmem_granted__MinKB)/8.   ),
 			[qmem_granted__Avg] =		CONVERT(MONEY,   s.qmem_granted__AvgKB/8.   ),
-			[qmem_granted_CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_granted__MinKB = s.qmem_granted__MaxKB THEN 0 ELSE 3 END,
+			[qmem_granted__CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_granted__MinKB = s.qmem_granted__MaxKB THEN 0 ELSE 3 END,
 
-			[qmem_used__FirstSeen] =	CONVERT(MONEY,   s.qmem_used__FirstSeenKB/8.   ),
-			[qmem_used__LastSeen] =	CONVERT(MONEY,   s.qmem_used__LastSeenKB/8.   ),
+			[qmem_used__First] =	CONVERT(MONEY,   s.qmem_used__FirstSeenKB/8.   ),
+			[qmem_used__Last] =	CONVERT(MONEY,   s.qmem_used__LastSeenKB/8.   ),
 			[qmem_used__Min] =		CONVERT(MONEY,   s.qmem_used__MinKB/8.   ),
 			[qmem_used__Max] =		CONVERT(MONEY,   s.qmem_used__MaxKB/8.   ),
 			[qmem_used__MMDelta] =	CONVERT(MONEY,   (s.qmem_used__MaxKB - s.qmem_used__MinKB)/8.   ),
 			[qmem_used__Avg] =		CONVERT(MONEY,   s.qmem_used__AvgKB/8.   ),
-			[qmem_used_CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_used__MinKB = s.qmem_used__MaxKB THEN 0 ELSE 3 END,
+			[qmem_used__CASE] =		CASE WHEN [#Seen] = 1 OR s.qmem_used__MinKB = s.qmem_used__MaxKB THEN 0 ELSE 3 END,
 
 			--these metrics should be ever-increasing for a given request
-			[TlogUsed__FirstSeen] =	CONVERT(MONEY,   s.TlogUsed__FirstSeenBytes/8192.   ),
-			[TlogUsed__LastSeen] =	CONVERT(MONEY,   s.TlogUsed__LastSeenBytes/8192.   ),
+			[TlogUsed__First] =	CONVERT(MONEY,   s.TlogUsed__FirstSeenBytes/8192.   ),
+			[TlogUsed__Last] =	CONVERT(MONEY,   s.TlogUsed__LastSeenBytes/8192.   ),
 			[TlogUsed__FLDelta] =	CONVERT(MONEY,   (s.TlogUsed__LastSeenBytes - s.TlogUsed__FirstSeenBytes)/8192.    ),
 			[TlogUsed__Min] =		CONVERT(MONEY,   s.TlogUsed__minBytes/8192.   ),
 			[TlogUsed__Max] =		CONVERT(MONEY,   s.TlogUsed__maxBytes/8192.   ),
 			[TlogUsed__MMDelta] =	CONVERT(MONEY,   (s.TlogUsed__maxBytes - s.TlogUsed__minBytes)/8192.    ),
-			[TlogUsed_CASE] =		CASE WHEN [#Seen] = 1 OR s.TlogUsed__minBytes = s.TlogUsed__maxBytes 
+			[TlogUsed__CASE] =		CASE WHEN [#Seen] = 1 OR s.TlogUsed__minBytes = s.TlogUsed__maxBytes 
 											THEN 0 
 										WHEN s.TlogUsed__FirstSeenBytes = s.TlogUsed__minBytes
 											AND s.TlogUsed__LastSeenBytes = s.TlogUsed__maxBytes
 											THEN 1
 										ELSE 2 END,
 
-			[LReads__FirstSeen] =	CONVERT(MONEY,   s.LReads__FirstSeenPages   ),
-			[LReads__LastSeen] =	CONVERT(MONEY,   s.LReads__LastSeenPages   ),
+			[LReads__First] =	CONVERT(MONEY,   s.LReads__FirstSeenPages   ),
+			[LReads__Last] =	CONVERT(MONEY,   s.LReads__LastSeenPages   ),
 			[LReads__FLDelta] =	CONVERT(MONEY,   (s.LReads__LastSeenPages - s.LReads__FirstSeenPages)    ),
 			[LReads__Min] =		CONVERT(MONEY,   s.LReads__MinPages   ),
 			[LReads__Max] =		CONVERT(MONEY,   s.LReads__MaxPages   ),
 			[LReads__MMDelta] =	CONVERT(MONEY,   (s.LReads__MaxPages - s.LReads__MinPages)    ),
-			[LReads_CASE] =		CASE WHEN [#Seen] = 1 OR s.LReads__MinPages = s.LReads__MaxPages
+			[LReads__CASE] =		CASE WHEN [#Seen] = 1 OR s.LReads__MinPages = s.LReads__MaxPages
 											THEN 0 
 										WHEN s.LReads__FirstSeenPages = s.LReads__MinPages
 											AND s.LReads__LastSeenPages = s.LReads__MaxPages
 											THEN 1
 										ELSE 2 END,
 
-			[PReads__FirstSeen] =	CONVERT(MONEY,   s.PReads__FirstSeenPages   ),
-			[PReads__LastSeen] =	CONVERT(MONEY,   s.PReads__LastSeenPages   ),
+			[PReads__First] =	CONVERT(MONEY,   s.PReads__FirstSeenPages   ),
+			[PReads__Last] =	CONVERT(MONEY,   s.PReads__LastSeenPages   ),
 			[PReads__FLDelta] =	CONVERT(MONEY,   (s.PReads__LastSeenPages - s.PReads__FirstSeenPages)    ),
 			[PReads__Min] =		CONVERT(MONEY,   s.PReads__MinPages   ),
 			[PReads__Max] =		CONVERT(MONEY,   s.PReads__MaxPages   ),
 			[PReads__MMDelta] =	CONVERT(MONEY,   (s.PReads__MaxPages - s.PReads__MinPages)    ),
-			[PReads_CASE] =		CASE WHEN [#Seen] = 1 OR s.PReads__MinPages = s.PReads__MaxPages
+			[PReads__CASE] =		CASE WHEN [#Seen] = 1 OR s.PReads__MinPages = s.PReads__MaxPages
 											THEN 0 
 										WHEN s.PReads__FirstSeenPages = s.PReads__MinPages
 											AND s.PReads__LastSeenPages = s.PReads__MaxPages
 											THEN 1
 										ELSE 2 END,
 
-			[Writes__FirstSeen] =	CONVERT(MONEY,   s.Writes__FirstSeenPages   ),
-			[Writes__LastSeen] =	CONVERT(MONEY,   s.Writes__LastSeenPages   ),
+			[Writes__First] =	CONVERT(MONEY,   s.Writes__FirstSeenPages   ),
+			[Writes__Last] =	CONVERT(MONEY,   s.Writes__LastSeenPages   ),
 			[Writes__FLDelta] =	CONVERT(MONEY,   (s.Writes__LastSeenPages - s.Writes__FirstSeenPages)    ),
 			[Writes__Min] =		CONVERT(MONEY,   s.Writes__MinPages   ),
 			[Writes__Max] =		CONVERT(MONEY,   s.Writes__MaxPages   ),
 			[Writes__MMDelta] =	CONVERT(MONEY,   (s.Writes__MaxPages - s.Writes__MinPages)    ),
-			[Writes_CASE] =		CASE WHEN [#Seen] = 1 OR s.Writes__MinPages = s.Writes__MaxPages
+			[Writes__CASE] =		CASE WHEN [#Seen] = 1 OR s.Writes__MinPages = s.Writes__MaxPages
 											THEN 0 
 										WHEN s.Writes__FirstSeenPages = s.Writes__MinPages
 											AND s.Writes__LastSeenPages = s.Writes__MaxPages
@@ -2311,21 +2210,18 @@ BEGIN TRY
 				END + N'
 	';
 
-	/* For debugging: 
-		SELECT dyntxt, TxtLink
-		from (SELECT @lv__CalcSubQuery AS dyntxt) t0
-			cross apply (select TxtLink=(select [processing-instruction(q)]=dyntxt
-                            for xml path(''),type)) F2
+	/* For debugging:
+	SELECT dyntxt, TxtLink
+	from (SELECT @lv__CalcSubQuery AS dyntxt) t0
+		cross apply (select TxtLink=(select [processing-instruction(q)]=dyntxt
+                        for xml path(''),type)) F2;
+	--RETURN 0;
+
+	EXEC sp_executesql @lv__CalcSubQuery;
+	RETURN 0;
 	*/
-		SELECT dyntxt, TxtLink
-		from (SELECT @lv__CalcSubQuery AS dyntxt) t0
-			cross apply (select TxtLink=(select [processing-instruction(q)]=dyntxt
-                            for xml path(''),type)) F2
-	RETURN 0;
 
-	EXEC sp_executesql @lv__FormatSubQuery;
-	RETURN 0;
-
+	SET @lv__errorloc = N'Construct format subquery';
 	SET @lv__FormatSubQuery = N'
 	SELECT 
 		BatchOrderBy,
@@ -2344,368 +2240,363 @@ BEGIN TRY
 		CASE WHEN @attr=N'n' AND @plan = N'n' THEN N'' 
 			ELSE N'PNI,'
 			END + N'
-		[Tasks_First] = CONVERT(NVARCHAR(20), tasks_FirstSeen),
-		[Tasks_Last] = CASE WHEN tasks_CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), tasks_LastSeen) END,
-		[Tasks_Min] =  CASE WHEN tasks_CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), tasks_MinSeen) END,
-		[Tasks_Max] =  CASE WHEN tasks_CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), tasks_MaxSeen) END,
-		[Tasks_Avg] =  CASE WHEN tasks_CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), tasks_AvgSeen) END,
+		[tasks__First] = CONVERT(NVARCHAR(20), tasks__First),
+		[tasks__Last] = CASE WHEN tasks__CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), tasks__Last) END,
+		[tasks__Min] =  CASE WHEN tasks__CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), tasks__Min) END,
+		[tasks__Max] =  CASE WHEN tasks__CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), tasks__Max) END,
+		[tasks__Avg] =  CASE WHEN tasks__CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), tasks__Avg) END,
 
-		[DOP_First] = CONVERT(NVARCHAR(20), DOP_FirstSeen),
-		[DOP_Last] = CASE WHEN DOP_CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), DOP_LastSeen) END,
-		[DOP_Min] =  CASE WHEN DOP_CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), DOP_MinSeen) END,
-		[DOP_Max] =  CASE WHEN DOP_CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), DOP_MaxSeen) END,
-		[DOP_Avg] =  CASE WHEN DOP_CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), DOP_AvgSeen) END,
+		[DOP__First] = CONVERT(NVARCHAR(20), DOP__First),
+		[DOP__Last] = CASE WHEN DOP__CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), DOP__Last) END,
+		[DOP__Min] =  CASE WHEN DOP__CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), DOP__Min) END,
+		[DOP__Max] =  CASE WHEN DOP__CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), DOP__Max) END,
+		[DOP__Avg] =  CASE WHEN DOP__CASE = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), DOP__Avg) END,
 
-		[CPUused_FirstSeen] = REPLACE(CONVERT(NVARCHAR(20),CPUused__FirstSeen,1),N''.00'',N''''),
-		[CPUused_LastSeen] = CASE WHEN CPUused_CASE = 0 THEN N'''' 
-								ELSE REPLACE(CONVERT(NVARCHAR(20),CPUused__LastSeen,1),N''.00'',N'''')
+		[CPUused__First] = REPLACE(CONVERT(NVARCHAR(20),CPUused__First,1),N''.00'',N''''),
+		[CPUused__Last] = CASE WHEN CPUused__CASE = 0 THEN N'''' 
+								ELSE REPLACE(CONVERT(NVARCHAR(20),CPUused__Last,1),N''.00'',N'''')
 								END,
-		[CPUused_FLDelta] = CASE WHEN CPUused_CASE = 0 THEN N'''' ELSE REPLACE(CONVERT(NVARCHAR(20),CPUused__FLDelta,1),N''.00'',N'''') END,
-		[CPUused_Min] = CASE WHEN CPUused_CASE IN (0,1) THEN N'''' 
+		[CPUused__FLDelta] = CASE WHEN CPUused__CASE = 0 THEN N'''' ELSE REPLACE(CONVERT(NVARCHAR(20),CPUused__FLDelta,1),N''.00'',N'''') END,
+		[CPUused__Min] = CASE WHEN CPUused__CASE IN (0,1) THEN N'''' 
 								ELSE REPLACE(CONVERT(NVARCHAR(20),CPUused__Min,1),N''.00'',N'''')
 								END,
-		[CPUused_Max] = CASE WHEN CPUused_CASE IN (0,1) THEN N'''' 
+		[CPUused__Max] = CASE WHEN CPUused__CASE IN (0,1) THEN N'''' 
 								ELSE REPLACE(CONVERT(NVARCHAR(20),CPUused__Max,1),N''.00'',N'''')
 								END,
-		[CPUused_MMDelta] = CASE WHEN CPUused_CASE IN (0,1) THEN N'''' 
+		[CPUused__MMDelta] = CASE WHEN CPUused__CASE IN (0,1) THEN N'''' 
 								ELSE REPLACE(CONVERT(NVARCHAR(20),CPUused__MMDelta,1),N''.00'',N'''')
 								END,
 
-		[tempdb_task__FirstSeen] = ' + 
-						CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_task__FirstSeen,1),N''.00'',N'''')'
-							ELSE N'CONVERT(NVARCHAR(20),tempdb_task__FirstSeen,1)'
+		[tempdb_task__First] = ' + 
+						CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_task__First,1),N''.00'',N'''')'
+							ELSE N'CONVERT(NVARCHAR(20),tempdb_task__First,1)'
 							END + N',
-		[tempdb_task__LastSeen] = CASE WHEN tempdb_task_CASE = 0 THEN N''''
+		[tempdb_task__Last] = CASE WHEN tempdb_task__CASE = 0 THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_task__LastSeen,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),tempdb_task__LastSeen,1)'
+							CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_task__Last,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),tempdb_task__Last,1)'
 								END + N' 
 									END,
-		[tempdb_task__FLDelta] = CASE WHEN tempdb_task_CASE = 0 THEN N''''
+		[tempdb_task__FLDelta] = CASE WHEN tempdb_task__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_task__FLDelta,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),tempdb_task__FLDelta,1)'
 								END + N' 
 									END,
-		[tempdb_task__Min] = CASE WHEN tempdb_task_CASE = 0 THEN N''''
+		[tempdb_task__Min] = CASE WHEN tempdb_task__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_task__Min,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),tempdb_task__Min,1)'
 								END + N' 
 									END,
-		[tempdb_task__Max] = CASE WHEN tempdb_task_CASE = 0 THEN N''''
+		[tempdb_task__Max] = CASE WHEN tempdb_task__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_task__Max,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),tempdb_task__Max,1)'
 								END + N' 
 									END,
-		[tempdb_task__MMDelta] = CASE WHEN tempdb_task_CASE = 0 THEN N''''
+		[tempdb_task__MMDelta] = CASE WHEN tempdb_task__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_task__MMDelta,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),tempdb_task__MMDelta,1)'
 								END + N' 
 									END,
-		[tempdb_task__Avg] = CASE WHEN tempdb_task_CASE = 0 THEN N''''
+		[tempdb_task__Avg] = CASE WHEN tempdb_task__CASE = 0 THEN N''''
 									ELSE CONVERT(NVARCHAR(20),tempdb_task__Avg,1)
 									END,
 
-		[tempdb_sess__FirstSeen] = ' + 
-						CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_sess__FirstSeen,1),N''.00'',N'''')'
-							ELSE N'CONVERT(NVARCHAR(20),tempdb_sess__FirstSeen,1)'
+		[tempdb_sess__First] = ' + 
+						CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_sess__First,1),N''.00'',N'''')'
+							ELSE N'CONVERT(NVARCHAR(20),tempdb_sess__First,1)'
 							END + N',
-		[tempdb_sess__LastSeen] = CASE WHEN tempdb_sess_CASE = 0 THEN N''''
+		[tempdb_sess__Last] = CASE WHEN tempdb_sess__CASE = 0 THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_sess__LastSeen,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),tempdb_sess__LastSeen,1)'
+							CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_sess__Last,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),tempdb_sess__Last,1)'
 								END + N' 
 									END,
-		[tempdb_sess__FLDelta] = CASE WHEN tempdb_sess_CASE = 0 THEN N''''
+		[tempdb_sess__FLDelta] = CASE WHEN tempdb_sess__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_sess__FLDelta,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),tempdb_sess__FLDelta,1)'
 								END + N' 
 									END,
-		[tempdb_sess__Min] = CASE WHEN tempdb_sess_CASE = 0 THEN N''''
+		[tempdb_sess__Min] = CASE WHEN tempdb_sess__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_sess__Min,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),tempdb_sess__Min,1)'
 								END + N' 
 									END,
-		[tempdb_sess__Max] = CASE WHEN tempdb_sess_CASE = 0 THEN N''''
+		[tempdb_sess__Max] = CASE WHEN tempdb_sess__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_sess__Max,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),tempdb_sess__Max,1)'
 								END + N' 
 									END,
-		[tempdb_sess__MMDelta] = CASE WHEN tempdb_sess_CASE = 0 THEN N''''
+		[tempdb_sess__MMDelta] = CASE WHEN tempdb_sess__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'pages', N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),tempdb_sess__MMDelta,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),tempdb_sess__MMDelta,1)'
 								END + N' 
 									END,
-		[tempdb_sess__Avg] = CASE WHEN tempdb_sess_CASE = 0 THEN N''''
+		[tempdb_sess__Avg] = CASE WHEN tempdb_sess__CASE = 0 THEN N''''
 									ELSE CONVERT(NVARCHAR(20),tempdb_sess__Avg,1)
 									END,
 									';
 
 	SET @lv__FormatSubQuery = @lv__FormatSubQuery + N'
-		[qmem_requested__FirstSeen] = ' + 
-						CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_requested__FirstSeen,1),N''.00'',N'''')'
-							ELSE N'CONVERT(NVARCHAR(20),qmem_requested__FirstSeen,1)'
+		[qmem_requested__First] = ' + 
+						CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_requested__First,1),N''.00'',N'''')'
+							ELSE N'CONVERT(NVARCHAR(20),qmem_requested__First,1)'
 							END + N',
-		[qmem_requested__LastSeen] = CASE WHEN qmem_requested_CASE = 0 THEN N''''
+		[qmem_requested__Last] = CASE WHEN qmem_requested__CASE = 0 THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_requested__LastSeen,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),qmem_requested__LastSeen,1)'
+							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_requested__Last,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),qmem_requested__Last,1)'
 								END + N' 
 									END,
-		[qmem_requested__Min] = CASE WHEN qmem_requested_CASE = 0 THEN N''''
+		[qmem_requested__Min] = CASE WHEN qmem_requested__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_requested__Min,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),qmem_requested__Min,1)'
 								END + N' 
 									END,
-		[qmem_requested__Max] = CASE WHEN qmem_requested_CASE = 0 THEN N''''
+		[qmem_requested__Max] = CASE WHEN qmem_requested__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_requested__Max,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),qmem_requested__Max,1)'
 								END + N' 
 									END,
-		[qmem_requested__MMDelta] = CASE WHEN qmem_requested_CASE = 0 THEN N''''
+		[qmem_requested__MMDelta] = CASE WHEN qmem_requested__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_requested__MMDelta,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),qmem_requested__MMDelta,1)'
 								END + N' 
 									END,
-		[qmem_requested__Avg] = CASE WHEN qmem_requested_CASE = 0 THEN N''''
+		[qmem_requested__Avg] = CASE WHEN qmem_requested__CASE = 0 THEN N''''
 									ELSE CONVERT(NVARCHAR(20),qmem_requested__Avg,1)
 									END,
 
-		[qmem_granted__FirstSeen] = ' + 
-						CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_granted__FirstSeen,1),N''.00'',N'''')'
-							ELSE N'CONVERT(NVARCHAR(20),qmem_granted__FirstSeen,1)'
+		[qmem_granted__First] = ' + 
+						CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_granted__First,1),N''.00'',N'''')'
+							ELSE N'CONVERT(NVARCHAR(20),qmem_granted__First,1)'
 							END + N',
-		[qmem_granted__LastSeen] = CASE WHEN qmem_granted_CASE = 0 THEN N''''
+		[qmem_granted__Last] = CASE WHEN qmem_granted__CASE = 0 THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_granted__LastSeen,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),qmem_granted__LastSeen,1)'
+							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_granted__Last,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),qmem_granted__Last,1)'
 								END + N' 
 									END,
-		[qmem_granted__Min] = CASE WHEN qmem_granted_CASE = 0 THEN N''''
+		[qmem_granted__Min] = CASE WHEN qmem_granted__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_granted__Min,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),qmem_granted__Min,1)'
 								END + N' 
 									END,
-		[qmem_granted__Max] = CASE WHEN qmem_granted_CASE = 0 THEN N''''
+		[qmem_granted__Max] = CASE WHEN qmem_granted__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_granted__Max,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),qmem_granted__Max,1)'
 								END + N' 
 									END,
-		[qmem_granted__MMDelta] = CASE WHEN qmem_granted_CASE = 0 THEN N''''
+		[qmem_granted__MMDelta] = CASE WHEN qmem_granted__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_granted__MMDelta,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),qmem_granted__MMDelta,1)'
 								END + N' 
 									END,
-		[qmem_granted__Avg] = CASE WHEN qmem_granted_CASE = 0 THEN N''''
+		[qmem_granted__Avg] = CASE WHEN qmem_granted__CASE = 0 THEN N''''
 									ELSE CONVERT(NVARCHAR(20),qmem_granted__Avg,1)
 									END,
 
-		[qmem_used__FirstSeen] = ' + 
-						CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_used__FirstSeen,1),N''.00'',N'''')'
-							ELSE N'CONVERT(NVARCHAR(20),qmem_used__FirstSeen,1)'
+		[qmem_used__First] = ' + 
+						CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_used__First,1),N''.00'',N'''')'
+							ELSE N'CONVERT(NVARCHAR(20),qmem_used__First,1)'
 							END + N',
-		[qmem_used__LastSeen] = CASE WHEN qmem_used_CASE = 0 THEN N''''
+		[qmem_used__Last] = CASE WHEN qmem_used__CASE = 0 THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_used__LastSeen,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),qmem_used__LastSeen,1)'
+							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_used__Last,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),qmem_used__Last,1)'
 								END + N' 
 									END,
-		[qmem_used__Min] = CASE WHEN qmem_used_CASE = 0 THEN N''''
+		[qmem_used__Min] = CASE WHEN qmem_used__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_used__Min,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),qmem_used__Min,1)'
 								END + N' 
 									END,
-		[qmem_used__Max] = CASE WHEN qmem_used_CASE = 0 THEN N''''
+		[qmem_used__Max] = CASE WHEN qmem_used__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_used__Max,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),qmem_used__Max,1)'
 								END + N' 
 									END,
-		[qmem_used__MMDelta] = CASE WHEN qmem_used_CASE = 0 THEN N''''
+		[qmem_used__MMDelta] = CASE WHEN qmem_used__CASE = 0 THEN N''''
 									ELSE ' + 
 							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),qmem_used__MMDelta,1),N''.00'',N'''')'
 								ELSE N'CONVERT(NVARCHAR(20),qmem_used__MMDelta,1)'
 								END + N' 
 									END,
-		[qmem_used__Avg] = CASE WHEN qmem_used_CASE = 0 THEN N''''
+		[qmem_used__Avg] = CASE WHEN qmem_used__CASE = 0 THEN N''''
 									ELSE CONVERT(NVARCHAR(20),qmem_used__Avg,1)
 									END,
 
-		[TlogUsed_FirstSeen] = ' + 
-						CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),TlogUsed_FirstSeen,1),N''.00'',N'''')'
-							ELSE N'CONVERT(NVARCHAR(20),TlogUsed_FirstSeen,1)'
+		[TlogUsed__First] = ' + 
+						CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),TlogUsed__First,1),N''.00'',N'''')'
+							ELSE N'CONVERT(NVARCHAR(20),TlogUsed__First,1)'
 							END + N',
-		[TlogUsed_LastSeen] = CASE WHEN TlogUsed_CASE = 0 THEN N''''
+		[TlogUsed__Last] = CASE WHEN TlogUsed__CASE = 0 THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),TlogUsed_LastSeen,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),TlogUsed_LastSeen,1)'
+							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),TlogUsed__Last,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),TlogUsed__Last,1)'
 								END + N' 
 									END,
-		[TlogUsed_FLDelta] = CASE WHEN TlogUsed_CASE = 0 THEN N''''
+		[TlogUsed__FLDelta] = CASE WHEN TlogUsed__CASE = 0 THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),TlogUsed_FLDelta,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),TlogUsed_FLDelta,1)'
+							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),TlogUsed__FLDelta,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),TlogUsed__FLDelta,1)'
 								END + N' 
 									END,
-		[TlogUsed_Min] = CASE WHEN TlogUsed_CASE IN (0,1) THEN N''''
+		[TlogUsed__Min] = CASE WHEN TlogUsed__CASE IN (0,1) THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),TlogUsed_Min,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),TlogUsed_Min,1)'
+							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),TlogUsed__Min,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),TlogUsed__Min,1)'
 								END + N' 
 									END,
-		[TlogUsed_Max] = CASE WHEN TlogUsed_CASE IN (0,1) THEN N''''
+		[TlogUsed__Max] = CASE WHEN TlogUsed__CASE IN (0,1) THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),TlogUsed_Max,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),TlogUsed_Max,1)'
+							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),TlogUsed__Max,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),TlogUsed__Max,1)'
 								END + N' 
 									END,
-		[TlogUsed_MMDelta] = CASE WHEN TlogUsed_CASE IN (0,1) THEN N''''
+		[TlogUsed__MMDelta] = CASE WHEN TlogUsed__CASE IN (0,1) THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),TlogUsed_MMDelta,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),TlogUsed_MMDelta,1)'
+							CASE WHEN @units IN (N'native') THEN N'REPLACE(CONVERT(NVARCHAR(20),TlogUsed__MMDelta,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),TlogUsed__MMDelta,1)'
 								END + N' 
 									END,
 
-		[LReads_FirstSeen] = ' + 
-						CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),LReads_FirstSeen,1),N''.00'',N'''')'
-							ELSE N'CONVERT(NVARCHAR(20),LReads_FirstSeen,1)'
+		[LReads__First] = ' + 
+						CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),LReads__First,1),N''.00'',N'''')'
+							ELSE N'CONVERT(NVARCHAR(20),LReads__First,1)'
 							END + N',
-		[LReads_LastSeen] = CASE WHEN LReads_CASE = 0 THEN N''''
+		[LReads__Last] = CASE WHEN LReads__CASE = 0 THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),LReads_LastSeen,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),LReads_LastSeen,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),LReads__Last,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),LReads__Last,1)'
 								END + N' 
 									END,
-		[LReads_FLDelta] = CASE WHEN LReads_CASE = 0 THEN N''''
+		[LReads__FLDelta] = CASE WHEN LReads__CASE = 0 THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),LReads_FLDelta,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),LReads_FLDelta,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),LReads__FLDelta,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),LReads__FLDelta,1)'
 								END + N' 
 									END,
-		[LReads_Min] = CASE WHEN LReads_CASE IN (0,1) THEN N''''
+		[LReads__Min] = CASE WHEN LReads__CASE IN (0,1) THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),LReads_Min,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),LReads_Min,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),LReads__Min,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),LReads__Min,1)'
 								END + N' 
 									END,
-		[LReads_Max] = CASE WHEN LReads_CASE IN (0,1) THEN N''''
+		[LReads__Max] = CASE WHEN LReads__CASE IN (0,1) THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),LReads_Max,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),LReads_Max,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),LReads__Max,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),LReads__Max,1)'
 								END + N' 
 									END,
-		[LReads_MMDelta] = CASE WHEN LReads_CASE IN (0,1) THEN N''''
+		[LReads__MMDelta] = CASE WHEN LReads__CASE IN (0,1) THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),LReads_MMDelta,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),LReads_MMDelta,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),LReads__MMDelta,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),LReads__MMDelta,1)'
 								END + N' 
 									END,';
 
 
 	SET @lv__FormatSubQuery = @lv__FormatSubQuery + N'
-		[PReads_FirstSeen] = ' + 
-						CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),PReads_FirstSeen,1),N''.00'',N'''')'
-							ELSE N'CONVERT(NVARCHAR(20),PReads_FirstSeen,1)'
+		[PReads__First] = ' + 
+						CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),PReads__First,1),N''.00'',N'''')'
+							ELSE N'CONVERT(NVARCHAR(20),PReads__First,1)'
 							END + N',
-		[PReads_LastSeen] = CASE WHEN PReads_CASE = 0 THEN N''''
+		[PReads__Last] = CASE WHEN PReads__CASE = 0 THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),PReads_LastSeen,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),PReads_LastSeen,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),PReads__Last,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),PReads__Last,1)'
 								END + N' 
 									END,
-		[PReads_FLDelta] = CASE WHEN PReads_CASE = 0 THEN N''''
+		[PReads__FLDelta] = CASE WHEN PReads__CASE = 0 THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),PReads_FLDelta,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),PReads_FLDelta,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),PReads__FLDelta,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),PReads__FLDelta,1)'
 								END + N' 
 									END,
-		[PReads_Min] = CASE WHEN PReads_CASE IN (0,1) THEN N''''
+		[PReads__Min] = CASE WHEN PReads__CASE IN (0,1) THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),PReads_Min,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),PReads_Min,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),PReads__Min,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),PReads__Min,1)'
 								END + N' 
 									END,
-		[PReads_Max] = CASE WHEN PReads_CASE IN (0,1) THEN N''''
+		[PReads__Max] = CASE WHEN PReads__CASE IN (0,1) THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),PReads_Max,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),PReads_Max,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),PReads__Max,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),PReads__Max,1)'
 								END + N' 
 									END,
-		[PReads_MMDelta] = CASE WHEN PReads_CASE IN (0,1) THEN N''''
+		[PReads__MMDelta] = CASE WHEN PReads__CASE IN (0,1) THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),PReads_MMDelta,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),PReads_MMDelta,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),PReads__MMDelta,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),PReads__MMDelta,1)'
 								END + N' 
 									END,
 
-		[Writes_FirstSeen] = ' + 
-						CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),Writes_FirstSeen,1),N''.00'',N'''')'
-							ELSE N'CONVERT(NVARCHAR(20),Writes_FirstSeen,1)'
+		[Writes__First] = ' + 
+						CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),Writes__First,1),N''.00'',N'''')'
+							ELSE N'CONVERT(NVARCHAR(20),Writes__First,1)'
 							END + N',
-		[Writes_LastSeen] = CASE WHEN Writes_CASE = 0 THEN N''''
+		[Writes__Last] = CASE WHEN Writes__CASE = 0 THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),Writes_LastSeen,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),Writes_LastSeen,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),Writes__Last,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),Writes__Last,1)'
 								END + N' 
 									END,
-		[Writes_FLDelta] = CASE WHEN Writes_CASE = 0 THEN N''''
+		[Writes__FLDelta] = CASE WHEN Writes__CASE = 0 THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),Writes_FLDelta,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),Writes_FLDelta,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),Writes__FLDelta,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),Writes__FLDelta,1)'
 								END + N' 
 									END,
-		[Writes_Min] = CASE WHEN Writes_CASE IN (0,1) THEN N''''
+		[Writes__Min] = CASE WHEN Writes__CASE IN (0,1) THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),Writes_Min,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),Writes_Min,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),Writes__Min,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),Writes__Min,1)'
 								END + N' 
 									END,
-		[Writes_Max] = CASE WHEN Writes_CASE IN (0,1) THEN N''''
+		[Writes__Max] = CASE WHEN Writes__CASE IN (0,1) THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),Writes_Max,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),Writes_Max,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),Writes__Max,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),Writes__Max,1)'
 								END + N' 
 									END,
-		[Writes_MMDelta] = CASE WHEN Writes_CASE IN (0,1) THEN N''''
+		[Writes__MMDelta] = CASE WHEN Writes__CASE IN (0,1) THEN N''''
 									ELSE ' + 
-							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),Writes_MDelta,1),N''.00'',N'''')'
-								ELSE N'CONVERT(NVARCHAR(20),Writes_MMDelta,1)'
+							CASE WHEN @units IN (N'native',N'pages') THEN N'REPLACE(CONVERT(NVARCHAR(20),Writes__MMDelta,1),N''.00'',N'''')'
+								ELSE N'CONVERT(NVARCHAR(20),Writes__MMDelta,1)'
 								END + N' 
 									END
 	FROM (' + @lv__CalcSubQuery + N'
 		) calc
 	';
 
-	/* For debugging: 
-		SELECT dyntxt, TxtLink
-		from (SELECT @lv__FormatSubQuery AS dyntxt) t0
-			cross apply (select TxtLink=(select [processing-instruction(q)]=dyntxt
-                            for xml path(''),type)) F2
-	*/
-		SELECT dyntxt, TxtLink
-		from (SELECT @lv__FormatSubQuery AS dyntxt) t0
-			cross apply (select TxtLink=(select [processing-instruction(q)]=dyntxt
-                            for xml path(''),type)) F2
-	RETURN 0;
+	/* For debugging:
+	SELECT dyntxt, TxtLink
+	from (SELECT @lv__FormatSubQuery AS dyntxt) t0
+		cross apply (select TxtLink=(select [processing-instruction(q)]=dyntxt
+                        for xml path(''),type)) F2;
 
 	EXEC sp_executesql @lv__FormatSubQuery;
 	RETURN 0;
+	*/
 
-
+	SET @lv__errorloc = N'Construct union subquery';
 	SET @lv__UnionSubQuery = N'
 	SELECT 
 		--ordering fields
@@ -2734,89 +2625,89 @@ BEGIN TRY
 					END)
 			END + N'
 
-		[Tasks_First]=N'''',
-		[Tasks_Last]=N'''',
-		[Tasks_Min]=N'''',
-		[Tasks_Max]=N'''',
-		[Tasks_Avg]=N'''',
+		[Tasks__First]=N'''',
+		[Tasks__Last]=N'''',
+		[Tasks__Min]=N'''',
+		[Tasks__Max]=N'''',
+		[Tasks__Avg]=N'''',
 
-		[DOP_First]=N'''',
-		[DOP_Last]=N'''',
-		[DOP_Min]=N'''',
-		[DOP_Max]=N'''',
-		[DOP_Avg]=N'''',
+		[DOP__First]=N'''',
+		[DOP__Last]=N'''',
+		[DOP__Min]=N'''',
+		[DOP__Max]=N'''',
+		[DOP__Avg]=N'''',
 
-		[CPUused_FirstSeen]=N'''',
-		[CPUused_LastSeen]=N'''',
-		[CPUused_FLDelta]=N'''',
-		[CPUused_Min]=N'''',
-		[CPUused_Max]=N'''',
-		[CPUused_MMDelta]=N'''',
+		[CPUused__First]=N'''',
+		[CPUused__Last]=N'''',
+		[CPUused__FLDelta]=N'''',
+		[CPUused__Min]=N'''',
+		[CPUused__Max]=N'''',
+		[CPUused__MMDelta]=N'''',
 
-		[tempdb_task__FirstSeen]=N'''',
-		[tempdb_task__LastSeen]=N'''',
+		[tempdb_task__First]=N'''',
+		[tempdb_task__Last]=N'''',
 		[tempdb_task__FLDelta]=N'''',
 		[tempdb_task__Min]=N'''',
 		[tempdb_task__Max]=N'''',
 		[tempdb_task__MMDelta]=N'''',
 		[tempdb_task__Avg]=N'''',
 
-		[tempdb_sess__FirstSeen]=N'''',
-		[tempdb_sess__LastSeen]=N'''',
+		[tempdb_sess__First]=N'''',
+		[tempdb_sess__Last]=N'''',
 		[tempdb_sess__FLDelta]=N'''',
 		[tempdb_sess__Min]=N'''',
 		[tempdb_sess__Max]=N'''',
 		[tempdb_sess__MMDelta]=N'''',
 		[tempdb_sess__Avg]=N'''',
 
-		[qmem_requested__FirstSeen]=N'''',
-		[qmem_requested__LastSeen]=N'''',
+		[qmem_requested__First]=N'''',
+		[qmem_requested__Last]=N'''',
 		[qmem_requested__Min]=N'''',
 		[qmem_requested__Max]=N'''',
 		[qmem_requested__MMDelta]=N'''',
 		[qmem_requested__Avg]=N'''',
 
-		[qmem_granted__FirstSeen]=N'''',
-		[qmem_granted__LastSeen]=N'''',
+		[qmem_granted__First]=N'''',
+		[qmem_granted__Last]=N'''',
 		[qmem_granted__Min]=N'''',
 		[qmem_granted__Max]=N'''',
 		[qmem_granted__MMDelta]=N'''',
 		[qmem_granted__Avg]=N'''',
 
-		[qmem_used__FirstSeen]=N'''',
-		[qmem_used__LastSeen]=N'''',
+		[qmem_used__First]=N'''',
+		[qmem_used__Last]=N'''',
 		[qmem_used__Min]=N'''',
 		[qmem_used__Max]=N'''',
 		[qmem_used__MMDelta]=N'''',
 		[qmem_used__Avg]=N'''',
 
-		[TlogUsed_FirstSeen]=N'''',
-		[TlogUsed_LastSeen]=N'''',
-		[TlogUsed_FLDelta]=N'''',
-		[TlogUsed_Min]=N'''',
-		[TlogUsed_Max]=N'''',
-		[TlogUsed_MMDelta]=N'''',
+		[TlogUsed__First]=N'''',
+		[TlogUsed__Last]=N'''',
+		[TlogUsed__FLDelta]=N'''',
+		[TlogUsed__Min]=N'''',
+		[TlogUsed__Max]=N'''',
+		[TlogUsed__MMDelta]=N'''',
 
-		[LReads_FirstSeen]=N'''',
-		[LReads_LastSeen]=N'''',
-		[LReads_FLDelta]=N'''',
-		[LReads_Min]=N'''',
-		[LReads_Max]=N'''',
-		[LReads_MMDelta]=N'''',
+		[LReads__First]=N'''',
+		[LReads__Last]=N'''',
+		[LReads__FLDelta]=N'''',
+		[LReads__Min]=N'''',
+		[LReads__Max]=N'''',
+		[LReads__MMDelta]=N'''',
 
-		[PReads_FirstSeen]=N'''',
-		[PReads_LastSeen]=N'''',
-		[PReads_FLDelta]=N'''',
-		[PReads_Min]=N'''',
-		[PReads_Max]=N'''',
-		[PReads_MMDelta]=N'''',
+		[PReads__First]=N'''',
+		[PReads__Last]=N'''',
+		[PReads__FLDelta]=N'''',
+		[PReads__Min]=N'''',
+		[PReads__Max]=N'''',
+		[PReads__MMDelta]=N'''',
 
-		[Writes_FirstSeen]=N'''',
-		[Writes_LastSeen]=N'''',
-		[Writes_FLDelta]=N'''',
-		[Writes_Min]=N'''',
-		[Writes_Max]=N'''',
-		[Writes_MMDelta]=N''''
+		[Writes__First]=N'''',
+		[Writes__Last]=N'''',
+		[Writes__FLDelta]=N'''',
+		[Writes__Min]=N'''',
+		[Writes__Max]=N'''',
+		[Writes__MMDelta]=N''''
 		
 	FROM #LongBatches lb
 		OUTER APPLY (
@@ -2827,428 +2718,150 @@ BEGIN TRY
 
 	UNION ALL
 
-	SELECT 
-		--ordering fields
-		BatchOrderBy,
-		StmtStartOrderBy,
-		TieBreaker,
-
-		--Visible fields
-		SPID, 
-		[#Seen], 
-		FirstSeen,
-		LastSeen,
-		[Extent(sec)],
-		[DBObject],
-		[Cmd], 
-		[StatusCodes],
-		[NonCXWaits],
-		[CXWaits],' + 
-		CASE WHEN @attr=N'n' AND @plan = N'n' THEN N'' 
-			ELSE N'PNI,'
-			END + N'
-		[Tasks_First],
-		[Tasks_Last],
-		[Tasks_Min],
-		[Tasks_Max],
-		[Tasks_Avg],
-
-		[DOP_First],
-		[DOP_Last],
-		[DOP_Min],
-		[DOP_Max],
-		[DOP_Avg],
-
-		[CPUused_FirstSeen],
-		[CPUused_LastSeen],
-		[CPUused_FLDelta],
-		[CPUused_Min],
-		[CPUused_Max],
-		[CPUused_MMDelta],
-
-		[tempdb_task__FirstSeen],
-		[tempdb_task__LastSeen],
-		[tempdb_task__FLDelta],
-		[tempdb_task__Min],
-		[tempdb_task__Max],
-		[tempdb_task__MMDelta],
-		[tempdb_task__Avg],
-
-		[tempdb_sess__FirstSeen],
-		[tempdb_sess__LastSeen],
-		[tempdb_sess__FLDelta],
-		[tempdb_sess__Min],
-		[tempdb_sess__Max],
-		[tempdb_sess__MMDelta],
-		[tempdb_sess__Avg],
-
-		[qmem_requested__FirstSeen],
-		[qmem_requested__LastSeen],
-		[qmem_requested__Min],
-		[qmem_requested__Max],
-		[qmem_requested__MMDelta],
-		[qmem_requested__Avg],
-
-		[qmem_granted__FirstSeen],
-		[qmem_granted__LastSeen],
-		[qmem_granted__Min],
-		[qmem_granted__Max],
-		[qmem_granted__MMDelta],
-		[qmem_granted__Avg],
-
-		[qmem_used__FirstSeen],
-		[qmem_used__LastSeen],
-		[qmem_used__Min],
-		[qmem_used__Max],
-		[qmem_used__MMDelta],
-		[qmem_used__Avg],
-
-		[TlogUsed_FirstSeen],
-		[TlogUsed_LastSeen],
-		[TlogUsed_FLDelta],
-		[TlogUsed_Min],
-		[TlogUsed_Max],
-		[TlogUsed_MMDelta],
-
-		[LReads_FirstSeen],
-		[LReads_LastSeen],
-		[LReads_FLDelta],
-		[LReads_Min],
-		[LReads_Max],
-		[LReads_MMDelta],
-
-		[PReads_FirstSeen],
-		[PReads_LastSeen],
-		[PReads_FLDelta],
-		[PReads_Min],
-		[PReads_Max],
-		[PReads_MMDelta],
-
-		[Writes_FirstSeen],
-		[Writes_LastSeen],
-		[Writes_FLDelta],
-		[Writes_Min],
-		[Writes_Max],
-		[Writes_MMDelta]
-	FROM (' + @lv__FormatSubQuery + N'
-	) fmt
 	';
 
-	/* For debugging: 
-		SELECT dyntxt, TxtLink
-		from (SELECT @lv__UnionSubQuery AS dyntxt) t0
-			cross apply (select TxtLink=(select [processing-instruction(q)]=dyntxt
-                            for xml path(''),type)) F2
-	*/
-		SELECT dyntxt, TxtLink
-		from (SELECT @lv__UnionSubQuery AS dyntxt) t0
-			cross apply (select TxtLink=(select [processing-instruction(q)]=dyntxt
-                            for xml path(''),type)) F2
-	RETURN 0;
+	SET @lv__UnionSubQuery = @lv__UnionSubQuery + @lv__FormatSubQuery;
+
+	/* For debugging:
+	SELECT dyntxt, TxtLink
+	from (SELECT @lv__UnionSubQuery AS dyntxt) t0
+		cross apply (select TxtLink=(select [processing-instruction(q)]=dyntxt
+			for xml path(''),type)) F2;
+	--RETURN 0;
 
 	EXEC sp_executesql @lv__UnionSubQuery;
 	RETURN 0;
+	*/
 
+	SET @lv__errorloc = N'Construct final query';
 	SET @lv__OuterSelect = N'
 	SELECT 
 		--ordering fields
-		BatchOrderBy,
-		StmtStartOrderBy,
-		TieBreaker,
+		--BatchOrderBy,
+		--StmtStartOrderBy,
+		--TieBreaker,
 
 		--Visible fields
 		SPID, 
-		[#Seen], 
 		FirstSeen,
 		LastSeen,
 		[Extent(sec)],
+		[#Seen], 
 		[DBObject],
 		[Cmd], 
 		[StatusCodes],
 		[NonCXWaits],
 		[CXWaits],' + 
 		CASE WHEN @attr=N'n' AND @plan = N'n' THEN N'' 
-			ELSE N'PNI,'
+			ELSE N'[Plan&Info]=PNI,'
 			END + N'
-		[Tasks_First],
-		[Tasks_Last],
-		[Tasks_Min],
-		[Tasks_Max],
-		[Tasks_Avg],
+		[#Tasks_First] =	[Tasks__First],
+		[Last] =			[Tasks__Last],
+		[Min] =				[Tasks__Min],
+		[Max] =				[Tasks__Max],
+		[Avg] =				[Tasks__Avg],
 
-		[DOP_First],
-		[DOP_Last],
-		[DOP_Min],
-		[DOP_Max],
-		[DOP_Avg],
+		[DOP_First] =		[DOP__First],
+		[Last] =			[DOP__Last],
+		[Min] =				[DOP__Min],
+		[Max] =				[DOP__Max],
+		[Avg] =				[DOP__Avg],
 
-		[CPUused_FirstSeen],
-		[CPUused_LastSeen],
-		[CPUused_FLDelta],
-		[CPUused_Min],
-		[CPUused_Max],
-		[CPUused_MMDelta],
+		[CPU_First] =		[CPUused__First],
+		[Last] =			[CPUused__Last],
+		[FLDelta] =			[CPUused__FLDelta],
+		[Min] =				[CPUused__Min],
+		[Max] =				[CPUused__Max],
+		[MMDelta] =			[CPUused__MMDelta],
 
-		[tempdb_task__FirstSeen],
-		[tempdb_task__LastSeen],
-		[tempdb_task__FLDelta],
-		[tempdb_task__Min],
-		[tempdb_task__Max],
-		[tempdb_task__MMDelta],
-		[tempdb_task__Avg],
+		[TaskTDB_First] =	[tempdb_task__First],
+		[Last] =			[tempdb_task__Last],
+		[FLDelta] =			[tempdb_task__FLDelta],
+		[Min] =				[tempdb_task__Min],
+		[Max] =				[tempdb_task__Max],
+		[MMDelta] =			[tempdb_task__MMDelta],
+		[Avg] =				[tempdb_task__Avg],
 
-		[tempdb_sess__FirstSeen],
-		[tempdb_sess__LastSeen],
-		[tempdb_sess__FLDelta],
-		[tempdb_sess__Min],
-		[tempdb_sess__Max],
-		[tempdb_sess__MMDelta],
-		[tempdb_sess__Avg],
+		[SessTDB_First] =	[tempdb_sess__First],
+		[Last] =			[tempdb_sess__Last],
+		[FLDelta] =			[tempdb_sess__FLDelta],
+		[Min] =				[tempdb_sess__Min],
+		[Max] =				[tempdb_sess__Max],
+		[MMDelta] =			[tempdb_sess__MMDelta],
+		[Avg] =				[tempdb_sess__Avg],
 
-		[qmem_requested__FirstSeen],
-		[qmem_requested__LastSeen],
-		[qmem_requested__Min],
-		[qmem_requested__Max],
-		[qmem_requested__MMDelta],
-		[qmem_requested__Avg],
+		--[Extent(sec)],
+		--[DBObject],
+		--[Cmd], 
 
-		[qmem_granted__FirstSeen],
-		[qmem_granted__LastSeen],
-		[qmem_granted__Min],
-		[qmem_granted__Max],
-		[qmem_granted__MMDelta],
-		[qmem_granted__Avg],
+		[QMemReq_First] =	[qmem_requested__First],
+		[Last] =			[qmem_requested__Last],
+		[Min] =				[qmem_requested__Min],
+		[Max] =				[qmem_requested__Max],
+		[MMDelta] =			[qmem_requested__MMDelta],
+		[Avg] =				[qmem_requested__Avg],
 
-		[qmem_used__FirstSeen],
-		[qmem_used__LastSeen],
-		[qmem_used__Min],
-		[qmem_used__Max],
-		[qmem_used__MMDelta],
-		[qmem_used__Avg],
+		[QMemGr_First] =	[qmem_granted__First],
+		[Last] =			[qmem_granted__Last],
+		[Min] =				[qmem_granted__Min],
+		[Max] =				[qmem_granted__Max],
+		[MMDelta] =			[qmem_granted__MMDelta],
+		[Avg] =				[qmem_granted__Avg],
 
-		[TlogUsed_FirstSeen],
-		[TlogUsed_LastSeen],
-		[TlogUsed_FLDelta],
-		[TlogUsed_Min],
-		[TlogUsed_Max],
-		[TlogUsed_MMDelta],
+		[QMemUse_First] =	[qmem_used__First],
+		[Last] =			[qmem_used__Last],
+		[Min] =				[qmem_used__Min],
+		[Max] =				[qmem_used__Max],
+		[MMDelta] =			[qmem_used__MMDelta],
+		[Avg] =				[qmem_used__Avg],
 
-		[LReads_FirstSeen],
-		[LReads_LastSeen],
-		[LReads_FLDelta],
-		[LReads_Min],
-		[LReads_Max],
-		[LReads_MMDelta],
+		[TlogUse_First] =	[TlogUsed__First],
+		[Last] =			[TlogUsed__Last],
+		[FLDelta] =			[TlogUsed__FLDelta],
+		[Min] =				[TlogUsed__Min],
+		[Max] =				[TlogUsed__Max],
+		[MMDelta] =			[TlogUsed__MMDelta],
 
-		[PReads_FirstSeen],
-		[PReads_LastSeen],
-		[PReads_FLDelta],
-		[PReads_Min],
-		[PReads_Max],
-		[PReads_MMDelta],
+		--[Extent(sec)],
+		--[DBObject],
+		--[Cmd], 
 
-		[Writes_FirstSeen],
-		[Writes_LastSeen],
-		[Writes_FLDelta],
-		[Writes_Min],
-		[Writes_Max],
-		[Writes_MMDelta]
+		[LReads_First] =	[LReads__First],
+		[Last] =			[LReads__Last],
+		[FLDelta] =			[LReads__FLDelta],
+		[Min] =				[LReads__Min],
+		[Max] =				[LReads__Max],
+		[MMDelta] =			[LReads__MMDelta],
+
+		[PReads_First] =	[PReads__First],
+		[Last] =			[PReads__Last],
+		[FLDelta] =			[PReads__FLDelta],
+		[Min] =				[PReads__Min],
+		[Max] =				[PReads__Max],
+		[MMDelta] =			[PReads__MMDelta],
+
+		[Writes_First] =	[Writes__First],
+		[Last] =			[Writes__Last],
+		[FLDelta] =			[Writes__FLDelta],
+		[Min] =				[Writes__Min],
+		[Max] =				[Writes__Max],
+		[MMDelta] =			[Writes__MMDelta]
 	FROM (' + @lv__UnionSubQuery + N'
 	) un1
 	ORDER BY BatchOrderBy, 
 		-- orders the statements
 		StmtStartOrderBy, TieBreaker
 	;';
-
 	
-	/* For debugging: 
-		SELECT dyntxt, TxtLink
-		from (SELECT @lv__OuterSelect AS dyntxt) t0
-			cross apply (select TxtLink=(select [processing-instruction(q)]=dyntxt
-                            for xml path(''),type)) F2
+	/* For debugging:
+	SELECT dyntxt, TxtLink
+	FROM (SELECT @lv__OuterSelect AS dyntxt) t0
+		CROSS APPLY (SELECT TxtLink=(SELECT [processing-instruction(q)]=dyntxt
+			FOR XML PATH(''),TYPE)) F2
 	*/
-		SELECT dyntxt, TxtLink
-		from (SELECT @lv__OuterSelect AS dyntxt) t0
-			cross apply (select TxtLink=(select [processing-instruction(q)]=dyntxt
-                            for xml path(''),type)) F2
-RETURN 0;
 
-	EXEC sp_executesql @lv__OuterSelect;
-	RETURN 0;
-	--everything below is going to be thrown away once we get this working
-	
-
-	/****************************************************************************************************
-	**********								Final Result Set								   **********
-	*****************************************************************************************************/
-	SET @lv__OuterSelect = N'
-	SELECT 
-		[SPID], 
-		[FirstSeen], 
-		[LastSeen], 
-		[Extent(sec)],
-		[#Seen], 
-		[DB&Object] = DBObject, 
-		[Cmd],
-		[Statuses] = StatusCodes,
-		[NonCXwaits],
-		[CXWaits],
-		[Tasks], 
-		[DOP],
-		[MaxTdb], 
-		[MaxQMem],
-		[MaxUsedMem],
-		[Tlog],
-		[CPU] = CASE WHEN CPU = N'''' THEN N'''' ELSE 
-			SUBSTRING(CPU, 1, CHARINDEX(N''.'',CPU)-1) END, 
-		[MemReads],
-		[PhysReads],
-		[Writes]
-	' + CASE WHEN @attr = N'y' OR @plan = N'y' THEN N',[Plan&Info] = PNI'
-			ELSE N'' END
-
-	SET @lv__UnionSubQuery = N'
-
-	FROM (
-		SELECT 
-			--ordering fields
-			[BatchOrderBy] =		BatchIdentifier, 
-			[StmtStartOrderBy] =	rqst__start_time, 
-			[TieBreaker] =			1,
-
-			--visible fields
-			[SPID] =				CASE 
-										WHEN request_id = 0 
-											THEN CONVERT(NVARCHAR(20), session_id) 
-										ELSE CONVERT(NVARCHAR(20), session_id) + N'':'' + CONVERT(NVARCHAR(20), request_id) 
-									END,
-			[CPU] =					N'''',
-			[PhysReads] =			N'''',
-			[Writes] =				N'''',
-			[MemReads] =			N'''',
-			[Tlog] =				N'''',
-			[MaxTdb] =				N'''', 
-			[MaxQMem] =				N'''',
-			[MaxUsedMem] =			N'''',
-			[#Seen] =				N'''',
-			[FirstSeen] =			CONVERT(NVARCHAR(20),lb.rqst__start_time),
-			[LastSeen] =			CONVERT(NVARCHAR(20),lb.LastSeen),
-			[Extent(sec)] =			CONVERT(NVARCHAR(20),DATEDIFF(SECOND, rqst__start_time, LastSeen)),
-
-			[DBObject] =			ISNULL(DB_NAME(StartingDBID),N''''),
-			[Cmd] =					xapp1.inputbuffer_xml,
-			[StatusCodes] =			N'''',
-			[NonCXWaits] =			N'''',
-			[CXWaits] =				N'''',
-			[Tasks] =				N'''',
-			[DOP] =					N'''' 
-			' + CASE WHEN @attr=N'n' AND @plan = N'n' THEN N'' 
-				ELSE (CASE WHEN @attr=N'n' THEN N',PNI = N'''' '
-						ELSE N',PNI = CONVERT(XML,lb.SessAttr)' 
-						END)
-				END + N'
-		FROM #LongBatches lb
-			OUTER APPLY (
-				SELECT TOP 1 ib.inputbuffer_xml
-				FROM #InputBufferStore ib
-				WHERE ib.PKInputBufferStoreID = lb.FKInputBufferStore 
-			) xapp1
-
-		UNION ALL
-
-		SELECT 
-			--ordering fields
-			[BatchOrderBy] =		s.BatchIdentifier, 
-			[StmtStartOrderBy] =	FirstSeen, 
-			[TieBreaker] =			2,
-
-			--Visible fields
-			[SPID] =				N'''', 
-			[CPU] =					CONVERT(NVARCHAR(20),CONVERT(MONEY,s.MaxCPUTime),1),';
-
-		IF @units = N'mb'
-		BEGIN
-			SET @lv__UnionSubQuery = @lv__UnionSubQuery + N'
-			[PhysReads] =			CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxReads*8./1024.   ),1),
-			[Writes] =				CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxWrites*8./1024.   ),1),
-			[MemReads] =			CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxLogicalReads*8./1024.   ),1),
-			[Tlog] =				ISNULL(CONVERT(NVARCHAR(20), CONVERT(MONEY, s.MaxTlog/1024./1024.   ),1),N''''),
-
-			[TaskTdb] =				
-
-			[MaxTdb] =				CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxTempDB__CurrentlyAllocatedPages*8./1024.   ),1), 
-			[MaxQMem] =				ISNULL(CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxGrantedMemoryKB/1024.   ),1),N''''), 
-			[MaxUsedMem] =			ISNULL(CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxUsedMemoryKB/1024.   ),1),N''''),';
-		END
-		ELSE IF @units = N'native'
-		BEGIN
-			SET @lv__UnionSubQuery = @lv__UnionSubQuery + N'
-			[PhysReads] =			CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxReads   ),1),
-			[Writes] =				CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxWrites   ),1),
-			[MemReads] =			CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxLogicalReads   ),1),
-			[Tlog] =				ISNULL(CONVERT(NVARCHAR(20), CONVERT(MONEY,   s.MaxTlog   ),1),N''''),
-			[MaxTdb] =				CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxTempDB__CurrentlyAllocatedPages   ),1), 
-			[MaxQMem] =				ISNULL(CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxGrantedMemoryKB   ),1),N''''), 
-			[MaxUsedMem] =			ISNULL(CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxUsedMemoryKB   ),1),N''''),';
-		END
-		ELSE IF @units = N'pages'
-		BEGIN
-			SET @lv__UnionSubQuery = @lv__UnionSubQuery + N'
-			[PhysReads] =			CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxReads   ),1),
-			[Writes] =				CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxWrites   ),1),
-			[MemReads] =			CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxLogicalReads   ),1),
-			[Tlog] =				ISNULL(CONVERT(NVARCHAR(20), CONVERT(MONEY,   s.MaxTlog/8192.   ),1),N''''),
-
-
-			------LEFT OFF HERE: was in the middle of calculating TaskTdb, but cannot format it as string yet because I need to 
-			--- get rid of the decimal part (here and in the "native" formatting) since it is in its base units.
-			--  That means doing the final formatting at a different layer. Maybe for simplicity I need to introduce
-			-- a new layer of subquery so that there is "calc subquery", "formatting" subquery, and "final display outer SELECT"
-
-
-			[TaskTdb] =				CASE WHEN [#Seen] = 1 OR tempdb__MinTaskPages = tempdb__MaxTaskPages 
-											THEN CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.tempdb__MaxTaskPages   ),1)
-										WHEN [#Seen] = 2 
-											THEN CONVERT(NVARCHAR(20), s.MinNumTasks) + N'' / '' + CONVERT(NVARCHAR(20), s.MaxNumTasks)
-
-			[MaxTdb] =				CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxTempDB__CurrentlyAllocatedPages   ),1), 
-			[MaxQMem] =				ISNULL(CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxGrantedMemoryKB/8.   ),1),N''''), 
-			[MaxUsedMem] =			ISNULL(CONVERT(NVARCHAR(20),CONVERT(MONEY,   s.MaxUsedMemoryKB/8.   ),1),N''''),';
-		END	--unit-conditional logic
-
-		SET @lv__UnionSubQuery = @lv__UnionSubQuery + N'
-
-			[Tasks] =				CASE WHEN [#Seen] = 1 OR MinNumTasks = MaxNumTasks THEN CONVERT(NVARCHAR(20), s.MaxNumTasks)
-										WHEN [#Seen] = 2 THEN CONVERT(NVARCHAR(20), s.MinNumTasks) + N'' / '' + CONVERT(NVARCHAR(20), s.MaxNumTasks)
-										ELSE CONVERT(NVARCHAR(20), s.MinNumTasks) + N'' / '' + CONVERT(NVARCHAR(20), s.MaxNumTasks) + N'' ['' + CONVERT(NVARCHAR(20), s.AvgNumTasks) + N'']''
-									END,
-			[DOP] =					CASE WHEN [#Seen] = 1 OR LoDOP = HiDOP THEN CONVERT(NVARCHAR(20), s.HiDOP)
-										WHEN [#Seen] = 2 THEN CONVERT(NVARCHAR(20), s.LoDOP) + N'' / '' + CONVERT(NVARCHAR(20), s.HiDOP)
-										ELSE CONVERT(NVARCHAR(20), s.LoDOP) + N'' / '' + CONVERT(NVARCHAR(20), s.HiDOP) + N'' ['' + CONVERT(NVARCHAR(20), s.AvgDOP) + N'']''
-									END
-			' + CASE WHEN @attr=N'n' AND @plan = N'n' THEN N'' 
-				ELSE (CASE WHEN @plan=N'n' THEN N',PNI = N'''' '
-						ELSE N',PNI = qp.query_plan_xml' 
-						END)
-				END + N'
-		FROM #stmtstats s
-			INNER JOIN #SQLStmtStore sss
-				ON s.FKSQLStmtStoreID = sss.PKSQLStmtStoreID
-			' + CASE WHEN @plan=N'n' THEN N''
-				ELSE N'LEFT OUTER JOIN #QueryPlanStmtStore qp 
-					ON qp.PKQueryPlanStmtStoreID = s.FKQueryPlanStmtStoreID' 
-				END + N'
-	) ss
-	ORDER BY BatchOrderBy, 
-		-- orders the statements
-		StmtStartOrderBy, TieBreaker
-	;
-	';
-
-	SET @lv__DynSQL = @lv__OuterSelect + @lv__UnionSubQuery;
 	SET @lv__errorloc = N'Exec final dyn sql';
-	--print @lv__DynSQL;
-	EXEC sp_executesql @lv__DynSQL;
+	EXEC sp_executesql @lv__OuterSelect;
 	RETURN 0;
 END TRY
 BEGIN CATCH
