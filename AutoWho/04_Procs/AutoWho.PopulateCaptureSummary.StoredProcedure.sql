@@ -186,12 +186,12 @@ BEGIN
 
 		SET @codeloc = 'CaptureSummary INSERT';
 		INSERT INTO AutoWho.CaptureSummary (
-			CollectionInitiatorID,
-			SPIDCaptureTime,		--1
+			CollectionInitiatorID,	--1
+			SPIDCaptureTime,
 			CapturedSPIDs, 
 			Active, 
-			ActLongest_ms, 
-			ActAvg_ms,				--5
+			ActLongest_ms,			--5
+			ActAvg_ms,
 
 			--We use histograms (instead of just MIN/MAX/AVG) for the various durations to give the user a better sense of the typical length of most SPIDs.
 			-- This can be very helpful when trying to determine when/whether an OLTP-style app's user activity has "shifted to the right".
@@ -243,23 +243,24 @@ BEGIN
 			WaitingTask60to300,
 			WaitingTask300plus,
 			AllocatedTasks,
-			QueryMemory_MB,
-			LargestMemoryGrant_MB,	--55
-			TempDB_MB,
-			LargestTempDBConsumer_MB, 
+			QueryMemoryRequested_KB,
+			QueryMemoryGranted_KB,	--55
+			LargestMemoryGrant_KB,
+			TempDB_pages,
+			LargestTempDBConsumer_pages, 
 			CPUused, 
-			LargestCPUConsumer,
-			WritesDone,				--60
+			LargestCPUConsumer,		--60
+			WritesDone,
 			LargestWriter,
 			LogicalReadsDone, 
 			LargestLogicalReader, 
-			PhysicalReadsDone,
-			LargestPhysicalReader,	--65
-			TlogUsed_MB,
-			LargestLogWriter_MB, 
+			PhysicalReadsDone,		--65
+			LargestPhysicalReader,
+			TlogUsed_bytes,
+			LargestLogWriter_bytes, 
 			BlockingGraph,
-			LockDetails,
-			TranDetails				--70
+			LockDetails,			--70
+			TranDetails
 		)
 		SELECT 
 			@CollectionInitiatorID,
@@ -316,10 +317,11 @@ BEGIN
 			WaitingTask60to300,
 			WaitingTask300plus,
 			AllocatedTasks,
-			QueryMemory_MB,		
-			LargestMemoryGrant_MB,	--55
-			TempDB_MB,
-			LargestTempDBConsumer_MB,
+			QueryMemoryRequested_KB,		
+			QueryMemoryGranted_KB,		
+			LargestMemoryGrant_KB,	--55
+			TempDB_pages,
+			LargestTempDBConsumer_pages,
 			CPUused,
 			LargestCPUConsumer,
 			WritesDone,				--60
@@ -328,9 +330,10 @@ BEGIN
 			LargestLogicalReader,
 			PhysicalReadsDone,
 			LargestPhysicalReader,	--65
-			--can't use this, as this could be double-counted (same tran across sessions): TLogUsed_MB,
-			AggTLog_MB = ISNULL(td2.Tlog_Agg,0)/1024./1024.,
-			LargestLogWriter_MB,
+			--can't use the one from our driving subquery, as this could be double-counted (same tran across sessions): TLogUsed_MB,
+			-- Instead, use the one from our "td2" outer apply subquery:
+			AggTLog_bytes = ISNULL(td2.Tlog_Agg,0),
+			LargestLogWriter_bytes,		--this is ok to use from our driving subquery
 			hasBG,
 			hasLD,
 			hasTD					--70
@@ -395,10 +398,11 @@ BEGIN
 				WaitingTask300plus	=   SUM(CASE WHEN SPIDIsWaiting = 1 AND LongestWaitingUserTask > 300000 THEN 1 ELSE 0 END),
 
 				AllocatedTasks =		ISNULL(SUM(AllocatedTasks),0),
-				QueryMemory_MB =		CONVERT(DECIMAL(38,3),ISNULL(SUM(QueryMemoryRequest)/1024.,0.0)),
-				LargestMemoryGrant_MB = CONVERT(DECIMAL(38,3),MAX(QueryMemoryGrant)/1024.),
-				TempDB_MB =				CONVERT(DECIMAL(38,3),SUM(ISNULL(TempDB_Use_pages,0)*8./1024.)),
-				LargestTempDBConsumer_MB = CONVERT(DECIMAL(38,3),MAX(ISNULL(TempDB_Use_pages,0))*8./1024.),
+				QueryMemoryRequested_KB =	SUM(CONVERT(BIGINT,ISNULL(QueryMemoryRequest,0))),
+				QueryMemoryGranted_KB =		SUM(CONVERT(BIGINT,ISNULL(QueryMemoryGrant,0))),
+				LargestMemoryGrant_KB = MAX(CONVERT(BIGINT,ISNULL(QueryMemoryGrant,0))),
+				TempDB_pages =				SUM(CONVERT(BIGINT,ISNULL(TempDB_Use_pages,0))),
+				LargestTempDBConsumer_pages = MAX(CONVERT(BIGINT,ISNULL(TempDB_Use_pages,0))),
 				CPUused =				ISNULL(SUM(CPUused),0),
 				LargestCPUConsumer =	MAX(CPUused),
 				WritesDone =			ISNULL(SUM(WritesDone),0),
@@ -407,8 +411,8 @@ BEGIN
 				LargestLogicalReader =	MAX(LogicalReadsDone),
 				PhysicalReadsDone =		ISNULL(SUM(PhysicalReadsDone),0),
 				LargestPhysicalReader = SUM(PhysicalReadsDone),
-				TLogUsed_MB =			SUM(TLogUsed)/1024/1024,
-				LargestLogWriter_MB =	CONVERT(DECIMAL(38,3),MAX(TlogUsed)/1024./1024.),
+				--can't use this, see note above: TLogUsed_MB =			SUM(TLogUsed)/1024/1024,
+				LargestLogWriter_bytes =	CONVERT(BIGINT,MAX(TlogUsed)),
 				hasBG =					MAX(hasBG),
 				hasLD =					MAX(hasLD),
 				hasTD =					MAX(hasTD)
@@ -502,8 +506,8 @@ BEGIN
 									-- (from the DMV's point of view, "multiple transactions"), we take the duration
 									-- of the longest one.
 								[TranLength_ms] = MAX(DATEDIFF(MILLISECOND, td.dtat_transaction_begin_time,td.SPIDCaptureTime)),
-								[TranBytes] = SUM(ISNULL(td.dtdt_database_transaction_log_bytes_reserved,0) + 
-											ISNULL(td.dtdt_database_transaction_log_bytes_reserved_system,0))
+								[TranBytes] = SUM(ISNULL(td.dtdt_database_transaction_log_bytes_used,0) + 
+											ISNULL(td.dtdt_database_transaction_log_bytes_used_system,0))
 							FROM AutoWho.TransactionDetails td
 							WHERE td.CollectionInitiatorID = @CollectionInitiatorID
 							AND td.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
@@ -602,14 +606,16 @@ BEGIN
 			-- again to TranDetails to get our aggregate number for t-log used
 			LEFT OUTER JOIN (
 				SELECT SPIDCaptureTime,
-					SUM(ISNULL(dtdt_database_transaction_log_bytes_reserved,0) + 
-						ISNULL(dtdt_database_transaction_log_bytes_reserved_system,0)) as Tlog_Agg
+					[Tlog_Agg] = SUM(
+						ISNULL(CONVERT(BIGINT,dtdt_database_transaction_log_bytes_used),0) + 
+						ISNULL(CONVERT(BIGINT,dtdt_database_transaction_log_bytes_used_system),0)
+						)
 				FROM (
 					SELECT DISTINCT td.SPIDCaptureTime, 
 						td.dtat_transaction_id, 
 						dtdt_database_id,
-						dtdt_database_transaction_log_bytes_reserved, 
-						dtdt_database_transaction_log_bytes_reserved_system
+						dtdt_database_transaction_log_bytes_used, 
+						dtdt_database_transaction_log_bytes_used_system
 					FROM AutoWho.TransactionDetails td
 					WHERE td.CollectionInitiatorID = @CollectionInitiatorID
 					AND td.SPIDCaptureTime BETWEEN @StartTime_Effective AND @EndTime_Effective
@@ -641,11 +647,11 @@ BEGIN
 			Blocked, --nullable: BlockedLongest_ms, Blocked0to1, Blocked1to5, Blocked5to10, Blocked10to30, Blocked30to60, Blocked60to300, Blocked300plus, 
 			WaitingSPIDs, WaitingTasks, 
 				--nullable: WaitingTaskLongest_ms, WaitingTask0to1, WaitingTask1to5, WaitingTask5to10, WaitingTask10to30, WaitingTask30to60, WaitingTask60to300, WaitingTask300plus, 
-			AllocatedTasks, QueryMemory_MB, LargestMemoryGrant_MB, TempDB_MB, LargestTempDBConsumer_MB, 
+			AllocatedTasks, QueryMemoryRequested_KB, QueryMemoryGranted_KB, LargestMemoryGrant_KB, TempDB_pages, LargestTempDBConsumer_pages, 
 			CPUused, CPUDelta, LargestCPUConsumer, WritesDone, WritesDelta, LargestWriter, 
 			LogicalReadsDone, LogicalReadsDelta, LargestLogicalReader, 
 			PhysicalReadsDone, PhysicalReadsDelta, LargestPhysicalReader, 
-			TlogUsed_MB, LargestLogWriter_MB, BlockingGraph, LockDetails, TranDetails
+			TlogUsed_bytes, LargestLogWriter_bytes, BlockingGraph, LockDetails, TranDetails
 		)
 		SELECT @CollectionInitiatorID,
 			ss1.CaptureTimesToProcess, 0 as CapturedSPIDs, 
@@ -654,11 +660,11 @@ BEGIN
 			0 as WithOpenTran,
 			0 as Blocked,
 			0 as WaitingSPIDs, 0 as WaitingTasks, 
-			0 as AllocatedTasks, 0.0, null, 0.0, null, 
+			0 as AllocatedTasks, 0, 0, null, 0, null, 
 			0 as CPUused, null, null, 0, null, null, 
 			0 as LogicalReadsDone, null, null,
 			0 as PhysicalReadsDone, null, null, 
-			null as TlogUsed_MB, null, 0, 0, 0
+			null as TlogUsed_bytes, null, 0, 0, 0
 		FROM (SELECT t.CaptureTimesToProcess
 				FROM #CTTP t
 				WHERE t.RowsActuallyFound = 'N') ss1;

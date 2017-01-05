@@ -50,6 +50,7 @@ To Execute
 EXEC AutoWho.PostProcessor
 */
 (
+	@optionset	NVARCHAR(50),
 	@init		TINYINT,		--which CollectionInitiatorID are we doing this for?
 	@singletime	DATETIME=NULL,
 	@start		DATETIME=NULL,
@@ -218,10 +219,22 @@ BEGIN TRY
 	WHERE dwt.wait_type = N'CXPACKET';
 
 	SET @errorloc = N'Obtain options';
-	SELECT 
-		@opt__ResolvePageLatches				= [ResolvePageLatches],
-		@opt__ResolveLockWaits					= [ResolveLockWaits]
-	FROM AutoWho.Options o;
+	IF @optionset = N'BackgroundTrace'
+	BEGIN
+		SELECT 
+			@opt__ResolvePageLatches	= [ResolvePageLatches],
+			@opt__ResolveLockWaits		= [ResolveLockWaits]
+		FROM AutoWho.Options o;
+	END
+	ELSE
+	BEGIN
+		SELECT 
+			@opt__ResolvePageLatches	= [ResolvePageLatches],
+			@opt__ResolveLockWaits		= [ResolveLockWaits]
+		FROM AutoWho.UserCollectionOptions o
+		WHERE o.OptionSet = @optionset
+		;
+	END
 
 	CREATE TABLE #ToPostProcess (
 		SPIDCaptureTime DATETIME

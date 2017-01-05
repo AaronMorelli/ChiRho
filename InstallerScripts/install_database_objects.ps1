@@ -517,37 +517,36 @@ Write-Host "" -foregroundcolor cyan -backgroundcolor black
 #Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
 
-#$masterproc_LR = $masterprocs_parent + "sp_XR_LongRequests__TEMPLATE.sql"
-#$masterproc_LR_Replace = $masterprocs_parent + "sp_XR_LongRequests__" + $Database + ".sql"
+$masterproc_LR = $masterprocs_parent + "sp_XR_LongRequests__TEMPLATE.sql"
+$masterproc_LR_Replace = $masterprocs_parent + "sp_XR_LongRequests__" + $Database + ".sql"
 
-#$curtime = Get-Date -format s
-#$outmsg = $curtime + "------> Creating sp_XR_LongRequests"
-#Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+$curtime = Get-Date -format s
+$outmsg = $curtime + "------> Creating sp_XR_LongRequests"
+Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
-#if (Test-Path $masterproc_LR_Replace) {
-#	Remove-Item $masterproc_LR_Replace
-#}
+if (Test-Path $masterproc_LR_Replace) {
+	Remove-Item $masterproc_LR_Replace
+}
 
-#(Get-Content $masterproc_LR) | Foreach-Object { $_ -replace '@@XRDATABASENAME@@', $Database } | Set-Content $masterproc_LR_Replace
+(Get-Content $masterproc_LR) | Foreach-Object { $_ -replace '@@XRDATABASENAME@@', $Database } | Set-Content $masterproc_LR_Replace
 
-#try {
-#	invoke-sqlcmd -inputfile $masterproc_LR_Replace -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
-#	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
-#	CD $curScriptLocation
+try {
+	invoke-sqlcmd -inputfile $masterproc_LR_Replace -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+	CD $curScriptLocation
 
-#	Write-Host "Finished creating sp_XR_LongRequests" -foregroundcolor cyan -backgroundcolor black
+	Write-Host "Finished creating sp_XR_LongRequests" -foregroundcolor cyan -backgroundcolor black
+}
+catch [system.exception] {
+	Write-Host "Error occurred while creating sp_XR_LongRequests: " -foregroundcolor red -backgroundcolor black
+	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+    $curtime = Get-Date -format s
+	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+    throw "Installation failed"
+	break
+}
 
-#}
-#catch [system.exception] {
-#	Write-Host "Error occurred while creating sp_XR_LongRequests: " -foregroundcolor red -backgroundcolor black
-#	Write-Host "$_" -foregroundcolor red -backgroundcolor black
-#    $curtime = Get-Date -format s
-#	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
-#    throw "Installation failed"
-#	break
-#}
-
-#Write-Host "" -foregroundcolor cyan -backgroundcolor black
+Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
 #$masterproc_QC = $masterprocs_parent + "sp_XR_QueryCamera__TEMPLATE.sql"
 #$masterproc_QC_Replace = $masterprocs_parent + "sp_XR_QueryCamera__" + $Database + ".sql"

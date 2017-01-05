@@ -19,30 +19,25 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: AutoWho.Options_History.Table.sql
+	FILE NAME: AutoWho.UserCollectionOptions_History.Table.sql
 
-	TABLE NAME: AutoWho.Options_History
+	TABLE NAME: AutoWho.UserCollectionOptions_History
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Populated by triggers on the AutoWho.Options table every time
-	any option value changes.
+	PURPOSE: Populated by triggers on the AutoWho.UserCollectionOptions table every time any option value changes.
 */
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE TABLE [AutoWho].[Options_History](
+CREATE TABLE [AutoWho].[UserCollectionOptions_History](
 	[HistoryInsertDate] [datetime] NOT NULL,
 	[TriggerAction] [nvarchar](40) NOT NULL,
-	[RowID] [int] NOT NULL,
-	[AutoWhoEnabled] [nchar](1) NOT NULL,
-	[BeginTime] [smallint] NOT NULL,
-	[EndTime] [smallint] NOT NULL,
-	[IntervalLength] [smallint] NOT NULL,
+	[OptionSet] [nvarchar](50) NOT NULL,
 	[IncludeIdleWithTran] [nchar](1) NOT NULL,
 	[IncludeIdleWithoutTran] [nchar](1) NOT NULL,
 	[DurationFilter] [int] NOT NULL,
@@ -62,30 +57,18 @@ CREATE TABLE [AutoWho].[Options_History](
 	[BlockingChainThreshold] [int] NOT NULL,
 	[BlockingChainDepth] [tinyint] NOT NULL,
 	[TranDetailsThreshold] [int] NOT NULL,
-	[MediumDurationThreshold] [int] NOT NULL,
-	[HighDurationThreshold] [int] NOT NULL,
-	[BatchDurationThreshold] [int] NOT NULL,
-	[LongTransactionThreshold] [int] NOT NULL,
-	[Retention_IdleSPIDs_NoTran] [int] NOT NULL,
-	[Retention_IdleSPIDs_WithShortTran] [int] NOT NULL,
-	[Retention_IdleSPIDs_WithLongTran] [int] NOT NULL,
-	[Retention_IdleSPIDs_HighTempDB] [int] NOT NULL,
-	[Retention_ActiveLow] [int] NOT NULL,
-	[Retention_ActiveMedium] [int] NOT NULL,
-	[Retention_ActiveHigh] [int] NOT NULL,
-	[Retention_ActiveBatch] [int] NOT NULL,
-	[Retention_CaptureTimes] [int] NOT NULL,
 	[DebugSpeed] [nchar](1) NOT NULL,
-	[ThresholdFilterRefresh] [smallint] NOT NULL,
 	[SaveBadDims] [nchar](1) NOT NULL,
 	[Enable8666] [nchar](1) NOT NULL,
 	[ResolvePageLatches] [nchar](1) NOT NULL,
 	[ResolveLockWaits] [nchar](1) NOT NULL,
+	[UseBackgroundThresholdIgnore] [nchar](1),
 	[LastModifiedUser] [nvarchar](128) NOT NULL,
- CONSTRAINT [PKAutoWhoOptions_History] PRIMARY KEY CLUSTERED 
+ CONSTRAINT [PKUserCollectionOptions_History] PRIMARY KEY CLUSTERED 
 (
 	[HistoryInsertDate] ASC,
-	[TriggerAction] ASC
+	[TriggerAction] ASC,
+	[OptionSet] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 

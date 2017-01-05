@@ -68,6 +68,7 @@ EXEC [AutoWho].[PresentSessionViewer] @hct='2016-04-25 08:12', @dur=0,
 */
 (
 	@init				TINYINT,				-- CollectionInitiatorID (which method the data was collected)
+	@currentmode		BIT,					--0 or 1
 	@hct				DATETIME,				-- cannot be NULL
 
 	--filters:
@@ -187,24 +188,63 @@ BEGIN
 	SET @enum__waitspecial__cxp =			CONVERT(TINYINT, 30);
 	SET @enum__waitspecial__other =			CONVERT(TINYINT, 25);
 
-	--Our final result set's top row indicates whether the BGraph, LockDetails, and TranDetails data was collected at this @hct, so that
-	-- the user knows whether inspecting that data is even an option. Simple 1/0 flags are stored in AutoWho.CaptureSummary by the 
-	-- AutoWho.PopulateCaptureSummary table (which looks at the base data in the AutoWho tables to determine these bit flag values). 
-	-- Thus, pull those values
-	SELECT 
-		@lv__BChainAvailable = ISNULL(BlockingGraph,0),
-		@lv__LockDetailsAvailable = ISNULL(LockDetails,0),
-		@lv__TranDetailsAvailable = ISNULL(TranDetails,0)
-	FROM (SELECT 1 as col1) t
-		OUTER APPLY (
-			SELECT 
-				BlockingGraph,
-				LockDetails,
-				TranDetails
-			FROM AutoWho.CaptureSummary cs
-			WHERE cs.SPIDCaptureTime = @hct
-			AND cs.CollectionInitiatorID = @init
-		) xapp1;
+	/*
+		Our final result set's top row indicates whether the BGraph, LockDetails, and TranDetails data was collected at this @hct, so that
+		the user knows whether inspecting that data is even an option. 
+	
+		For historical runs, we can just use the simple 1/0 flags that are stored in AutoWho.CaptureSummary by the 
+		AutoWho.PopulateCaptureSummary procedure (which looks at the base data in the AutoWho tables to determine these bit flag values). 
+		Thus, pull those values.
+
+		For current runs, AutoWho.CaptureSummary doesn't have any data in it, so we can't check it to see if bchain data was
+		just captured by the Collector. We need to use a different method. For current mode, we check the base tables
+		directly
+	*/
+	IF @currentmode = 1
+	BEGIN
+		SELECT 
+			@lv__BChainAvailable = CASE WHEN b.SPIDCaptureTime IS NULL THEN 0 ELSE 1 END,
+			@lv__LockDetailsAvailable = CASE WHEN l.SPIDCaptureTime IS NULL THEN 0 ELSE 1 END,
+			@lv__TranDetailsAvailable = CASE WHEN tr.SPIDCaptureTime IS NULL THEN 0 ELSE 1 END
+		FROM (SELECT 1 as col1) t
+			OUTER APPLY (
+				SELECT TOP 1 b.SPIDCaptureTime
+				FROM AutoWho.BlockingGraphs b
+				WHERE b.CollectionInitiatorID = @init
+				AND b.SPIDCaptureTime = @hct
+			) b
+			OUTER APPLY (
+				SELECT TOP 1 l.SPIDCaptureTime
+				FROM AutoWho.LockDetails l
+				WHERE l.CollectionInitiatorID = @init
+				AND l.SPIDCaptureTime = @hct
+			) l
+			OUTER APPLY (
+				SELECT TOP 1 t.SPIDCaptureTime
+				FROM AutoWho.TransactionDetails t
+				WHERE t.CollectionInitiatorID = @init
+				AND t.SPIDCaptureTime = @hct
+			) tr
+	END
+	ELSE
+	BEGIN
+		--Regardless of the Collection Initiator ID that we're pulling, its profile should
+		-- be in CaptureSummary
+		SELECT 
+			@lv__BChainAvailable = ISNULL(BlockingGraph,0),
+			@lv__LockDetailsAvailable = ISNULL(LockDetails,0),
+			@lv__TranDetailsAvailable = ISNULL(TranDetails,0)
+		FROM (SELECT 1 as col1) t
+			OUTER APPLY (
+				SELECT 
+					BlockingGraph,
+					LockDetails,
+					TranDetails
+				FROM AutoWho.CaptureSummary cs
+				WHERE cs.SPIDCaptureTime = @hct
+				AND cs.CollectionInitiatorID = @init
+			) xapp1;
+	END
 
 	--If the user has requested any of these 3 options, include them. Otherwise, we'll merely indicate that they are viewable
 	IF @bchain > 0 AND @lv__BChainAvailable = 1
@@ -1878,7 +1918,7 @@ N' -- ?>';
 				ELSE N'''' END
 			';
 		END
-		ELSE	--lotsa detail
+		ELSE	--@wait IN (2,3): lotsa detail
 		BEGIN
 			--Note that LCK_M waits don't have a "short" version, and thus the dwt.wait_type tag hasn't been
 			-- replaced in the below code
