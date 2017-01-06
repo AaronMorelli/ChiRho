@@ -2,21 +2,23 @@ InstallationLogs/*.log
 
 InstallationLogs/*.txt
 
-masterobjs/*.sql
+master/*.sql
 
-!masterobjs/sp_XR_FileUsage.sql
+!master/sp_XR_FileUsage.sql
 
-!masterobjs/sp_XR_JobMatrix.sql
+!master/sp_XR_JobMatrix.sql
 
-!masterobjs/sp_XR_LongRequests__TEMPLATE.sql
+!master/sp_XR_LongRequests__TEMPLATE.sql
 
-!masterobjs/sp_XR_MDFused.sql
+!master/sp_XR_FrequentQueries__TEMPLATE.sql
 
-!masterobjs/sp_XR_QueryCamera__TEMPLATE.sql
+!master/sp_XR_MDFused.sql
 
-!masterobjs/sp_XR_QueryProgress__TEMPLATE.sql
+!master/sp_XR_QueryCamera__TEMPLATE.sql
 
-!masterobjs/sp_XR_SessionSummary__TEMPLATE.sql
+!master/sp_XR_QueryProgress__TEMPLATE.sql
 
-!masterobjs/sp_XR_SessionViewer__TEMPLATE.sql
+!master/sp_XR_SessionSummary__TEMPLATE.sql
+
+!master/sp_XR_SessionViewer__TEMPLATE.sql
 

@@ -4260,8 +4260,8 @@ There are a number of points worth noting re: the below scoping queries:
 			rqst__wait_time, rqst__wait_resource, rqst__open_transaction_count, rqst__open_resultset_count, rqst__percent_complete, 
 			rqst__cpu_time, rqst__total_elapsed_time, rqst__scheduler_id, rqst__reads, rqst__writes, rqst__logical_reads, 
 			rqst__transaction_isolation_level, rqst__lock_timeout, rqst__deadlock_priority, rqst__row_count, rqst__granted_query_memory, 
-			rqst__executing_managed_code, rqst__group_id, rqst__FKDimCommand, rqst__FKDimWaitType, tempdb__sess_user_objects_alloc_page_count, 
-			tempdb__sess_user_objects_dealloc_page_count, tempdb__sess_internal_objects_alloc_page_count, 
+			rqst__executing_managed_code, rqst__group_id, rqst__query_hash, rqst__query_plan_hash, rqst__FKDimCommand, rqst__FKDimWaitType, 
+			tempdb__sess_user_objects_alloc_page_count, tempdb__sess_user_objects_dealloc_page_count, tempdb__sess_internal_objects_alloc_page_count, 
 			tempdb__sess_internal_objects_dealloc_page_count, tempdb__task_user_objects_alloc_page_count, 
 			tempdb__task_user_objects_dealloc_page_count, tempdb__task_internal_objects_alloc_page_count, 
 			tempdb__task_internal_objects_dealloc_page_count, tempdb__CalculatedNumberOfTasks, 
@@ -4285,8 +4285,8 @@ There are a number of points worth noting re: the below scoping queries:
 			rqst__wait_time, rqst__wait_resource, rqst__open_transaction_count, rqst__open_resultset_count, rqst__percent_complete, 
 			rqst__cpu_time, rqst__total_elapsed_time, rqst__scheduler_id, rqst__reads, rqst__writes, rqst__logical_reads, 
 			rqst__transaction_isolation_level, rqst__lock_timeout, rqst__deadlock_priority, rqst__row_count, rqst__granted_query_memory, 
-			rqst__executing_managed_code, rqst__group_id, rqst__FKDimCommand, rqst__FKDimWaitType, tempdb__sess_user_objects_alloc_page_count, 
-			tempdb__sess_user_objects_dealloc_page_count, tempdb__sess_internal_objects_alloc_page_count, 
+			rqst__executing_managed_code, rqst__group_id, rqst__query_hash, rqst__query_plan_hash, rqst__FKDimCommand, rqst__FKDimWaitType, 
+			tempdb__sess_user_objects_alloc_page_count, tempdb__sess_user_objects_dealloc_page_count, tempdb__sess_internal_objects_alloc_page_count, 
 			tempdb__sess_internal_objects_dealloc_page_count, tempdb__task_user_objects_alloc_page_count, 
 			tempdb__task_user_objects_dealloc_page_count, tempdb__task_internal_objects_alloc_page_count, 
 			tempdb__task_internal_objects_dealloc_page_count, tempdb__CalculatedNumberOfTasks, 
@@ -4626,42 +4626,44 @@ There are a number of points worth noting re: the below scoping queries:
 		rqst__granted_query_memory,
 		rqst__executing_managed_code,
 		rqst__group_id,	
-		rqst__FKDimCommand,				--50
+		rqst__query_hash,				--50
+		rqst__query_plan_hash,
+		rqst__FKDimCommand,
 		rqst__FKDimWaitType,
 		tempdb__sess_user_objects_alloc_page_count,
-		tempdb__sess_user_objects_dealloc_page_count,
+		tempdb__sess_user_objects_dealloc_page_count,		--55
 		tempdb__sess_internal_objects_alloc_page_count,
-		tempdb__sess_internal_objects_dealloc_page_count, --55
+		tempdb__sess_internal_objects_dealloc_page_count,
 		tempdb__task_user_objects_alloc_page_count,
 		tempdb__task_user_objects_dealloc_page_count,
-		tempdb__task_internal_objects_alloc_page_count,
+		tempdb__task_internal_objects_alloc_page_count,		--60
 		tempdb__task_internal_objects_dealloc_page_count,
-		tempdb__CalculatedNumberOfTasks,			--60
+		tempdb__CalculatedNumberOfTasks,
 		mgrant__request_time,
 		mgrant__grant_time,	
-		mgrant__requested_memory_kb,
+		mgrant__requested_memory_kb,				--65
 		mgrant__required_memory_kb,
-		mgrant__granted_memory_kb,					--65
+		mgrant__granted_memory_kb,
 		mgrant__used_memory_kb,
 		mgrant__max_used_memory_kb,
-		mgrant__dop,
+		mgrant__dop,								--70
 		calc__record_priority, 
-		calc__is_compiling,							--70
+		calc__is_compiling,
 		calc__duration_ms,
 		calc__blocking_session_id,
-		calc__block_relevant,
+		calc__block_relevant,						--75
 		calc__return_to_user, 
-		calc__is_blocker,							--75
+		calc__is_blocker,
 		calc__sysspid_isinteresting,
 		calc__tmr_wait,
-		calc__threshold_ignore,
+		calc__threshold_ignore,						--80
 		calc__node_info,
-		calc__status_info,							--80
+		calc__status_info,
 		FKSQLStmtStoreID,
 		FKSQLBatchStoreID,
-		FKInputBufferStoreID,
+		FKInputBufferStoreID,						--85
 		FKQueryPlanBatchStoreID,
-		FKQueryPlanStmtStoreID						--85
+		FKQueryPlanStmtStoreID						--87
 	)
 	';
 
@@ -4716,37 +4718,39 @@ There are a number of points worth noting re: the below scoping queries:
 		sar.rqst__granted_query_memory,
 		sar.rqst__executing_managed_code,
 		sar.rqst__group_id,
-		sar.rqst__FKDimCommand,				--50
+		sar.rqst__query_hash,				--50
+		sar.rqst__query_plan_hash,
+		sar.rqst__FKDimCommand,
 		sar.rqst__FKDimWaitType,
 		sar.tempdb__sess_user_objects_alloc_page_count,
-		sar.tempdb__sess_user_objects_dealloc_page_count,
+		sar.tempdb__sess_user_objects_dealloc_page_count,		--55
 		sar.tempdb__sess_internal_objects_alloc_page_count,
-		sar.tempdb__sess_internal_objects_dealloc_page_count,	--55
+		sar.tempdb__sess_internal_objects_dealloc_page_count,
 		sar.tempdb__task_user_objects_alloc_page_count,
 		sar.tempdb__task_user_objects_dealloc_page_count,
-		sar.tempdb__task_internal_objects_alloc_page_count,
+		sar.tempdb__task_internal_objects_alloc_page_count,		--60
 		sar.tempdb__task_internal_objects_dealloc_page_count,
-		sar.tempdb__CalculatedNumberOfTasks,			--60
+		sar.tempdb__CalculatedNumberOfTasks,
 		sar.mgrant__request_time,
 		sar.mgrant__grant_time,
-		sar.mgrant__requested_memory_kb,
+		sar.mgrant__requested_memory_kb,				--65
 		sar.mgrant__required_memory_kb, 
-		sar.mgrant__granted_memory_kb,					--65
+		sar.mgrant__granted_memory_kb,
 		sar.mgrant__used_memory_kb,
 		sar.mgrant__max_used_memory_kb,	
-		sar.mgrant__dop,
+		sar.mgrant__dop,								--70
 		sar.calc__record_priority, 
-		sar.calc__is_compiling,							--70
+		sar.calc__is_compiling,
 		sar.calc__duration_ms,
 		sar.calc__blocking_session_id,
-		sar.calc__block_relevant,
+		sar.calc__block_relevant,						--75
 		sar.calc__return_to_user,
-		sar.calc__is_blocker,							--75
+		sar.calc__is_blocker,
 		sar.calc__sysspid_isinteresting,
 		sar.calc__tmr_wait,
-		sar.calc__threshold_ignore,
+		sar.calc__threshold_ignore,						--80
 		calc__node_info = N''<placeholder>'',
-		calc__status_info = N''<placeholder>'',			--80
+		calc__status_info = N''<placeholder>'',
 		sar.calc__FKSQLStmtStoreID,
 		sar.calc__FKSQLBatchStoreID,
 		' + 
@@ -4789,7 +4793,7 @@ There are a number of points worth noting re: the below scoping queries:
 		' ELSE N'' END + 
 		
 		N'
-		WHERE sar.calc__return_to_user > 0;
+	WHERE sar.calc__return_to_user > 0;
 		';
 
 	SET @errorloc = N'SAR permanence SQLExec';
