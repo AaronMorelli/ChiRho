@@ -137,6 +137,8 @@ BEGIN TRY
 			@errorstate				INT,
 			@scratch__int			INT,
 			@cxpacketwaitid			SMALLINT,
+			@lv__FirstCaptureTime	DATETIME,
+			@lv__LastCaptureTime	DATETIME,
 			@lv__curloopdbid		SMALLINT,
 			@lv__curcontextdbid		SMALLINT,
 			@lv__curfileid			SMALLINT,
@@ -237,7 +239,7 @@ BEGIN TRY
 	END
 
 	CREATE TABLE #ToPostProcess (
-		SPIDCaptureTime DATETIME
+		SPIDCaptureTime DATETIME NOT NULL
 	);
 
 	INSERT INTO #ToPostProcess (SPIDCaptureTime)
@@ -245,8 +247,25 @@ BEGIN TRY
 	FROM AutoWho.CaptureTimes ct
 	WHERE ct.CollectionInitiatorID = @init
 	AND SPIDCaptureTime BETWEEN @start AND @end
-	AND PostProcessed = 0
-	;
+	AND PostProcessed = 0;
+
+	IF NOT EXISTS (SELECT * FROM #ToPostProcess)
+	BEGIN
+		EXEC sp_releaseapplock @Resource = @lv__AppLockResource, @LockOwner = 'Session';
+		RETURN 0;
+	END
+
+	SELECT 
+		@lv__FirstCaptureTime = MIN(t.SPIDCaptureTime),
+		@lv__LastCaptureTime = MAX(t.SPIDCaptureTime)
+	FROM #ToPostProcess t;
+
+	--If this is the background trace we're processing, update the batch and statement stats
+	IF @init = 255
+	BEGIN
+		EXEC [AutoWho].[CalcBatchStmtStats] @FirstCaptureTime = @lv__FirstCaptureTime, @LastCaptureTime = @lv__LastCaptureTime;
+	END
+
 
 	/*
 	SET @errorloc = N'Obtain Last Resolve';
