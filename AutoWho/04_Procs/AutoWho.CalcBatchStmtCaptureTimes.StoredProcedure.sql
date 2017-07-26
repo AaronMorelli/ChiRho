@@ -2,7 +2,7 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-ALTER PROCEDURE [AutoWho].[CalcBatchStmtStats] 
+CREATE PROCEDURE [AutoWho].[CalcBatchStmtCaptureTimes] 
 /*   
 	Copyright 2016 Aaron Morelli
 
@@ -24,9 +24,9 @@ ALTER PROCEDURE [AutoWho].[CalcBatchStmtStats]
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: AutoWho.CalcBatchStmtStats.StoredProcedure.sql
+	FILE NAME: AutoWho.CalcBatchStmtCaptureTimes.StoredProcedure.sql
 
-	PROCEDURE NAME: AutoWho.CalcBatchStmtStats
+	PROCEDURE NAME: AutoWho.CalcBatchStmtCaptureTimes
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
@@ -37,7 +37,7 @@ ALTER PROCEDURE [AutoWho].[CalcBatchStmtStats]
 
 To Execute
 ------------------------
-EXEC AutoWho.CalcBatchStmtStats @FirstCaptureTime='2017-07-24 04:00', @LastCaptureTime='2017-07-24 06:00'
+EXEC AutoWho.CalcBatchStmtCaptureTimes @FirstCaptureTime='2017-07-24 04:00', @LastCaptureTime='2017-07-24 06:00'
 */
 (
 	@FirstCaptureTime		DATETIME,
@@ -66,32 +66,27 @@ BEGIN
 
 	SET @lv__nullsmallint = -929;
 
-	--Construct a list of SPIDCaptureTimes that form our "unprocessed" set
-	--TODO: currently I'm not really using this table. Do I need it?
-	CREATE TABLE #UnprocessedCaptureTimes (
-		SPIDCaptureTime DATETIME NOT NULL
-	);
 
-	CREATE TABLE #ClosingTimeFrame (
-		[SPIDCaptureTime]		[datetime] NOT NULL,
-		[session_id]			[smallint] NOT NULL,
-		[request_id]			[smallint] NOT NULL,
-		[TimeIdentifier]		[datetime] NOT NULL
-	);
-
+	--This is a list of rows from SAR between @FirstCaptureTime and @LastCaptureTime
 	CREATE TABLE #WorkingSet (
-		[SPIDCaptureTime]		[datetime] NOT NULL,
 		[session_id]			[smallint] NOT NULL,
 		[request_id]			[smallint] NOT NULL,
 		[TimeIdentifier]		[datetime] NOT NULL,
+		[SPIDCaptureTime]		[datetime] NOT NULL,
 
-		[PKSQLStmtStoreID]		[bigint] NOT NULL,		--we set this to -1 if it is NULL in SAR. (This is typically TMR waits, I think)
-													--Note that for TMR waits, for now we *always* assume it is a new statement even if
-													--the calc__tmr_wait value matches between the most recent SPIDCaptureTime in this table
-													--and the "current" statement.
-		[rqst__query_hash]		[binary](8) NULL,
+		[StatementFirstCapture] [datetime] NULL,	--The first SPIDCaptureTime for the statement that this row belongs to. This acts as a grouping
+													 --field (that is also ascending as statements run for the batch! a nice property)
+		[StatementSequenceNumber] [int] NOT NULL,	 --statement # within the batch. We use this instead of PKSQLStmtStoreID b/c that could be revisited
 
-		--To properly set these fields, we need to examine both #ClosingTimeFrame and AutoWho.StmtCaptureTimes
+		[PKSQLStmtStoreID]		[bigint] NOT NULL,	--TODO: still need to implement TMR wait logic. Note that for TMR waits, the current plan is to 
+													--*always* assume it is a new statement even if the calc__tmr_wait value matches between the 
+													--most recent SPIDCaptureTime in this table and the "current" statement.
+
+		[rqst__query_hash]		[binary](8) NULL,	--storing this makes some presentation procs more quickly able to find high-frequency queries.
+
+		--These fields start at 0 and are only set to 1 when we KNOW that a row is the first and/or last of a statement or batch.
+		--Thus, once set to 1 they should never change.
+		--To properly set these fields, we need to examine both #BatchesInLast3Caps and AutoWho.StatementCaptureTimes
 		[IsStmtFirstCapture]	[bit] NOT NULL,		
 		[IsStmtLastCapture]		[bit] NOT NULL,
 		[IsBatchFirstCapture]	[bit] NOT NULL,		
@@ -99,19 +94,16 @@ BEGIN
 
 		[IsCurrentLastRowOfBatch]	[bit] NOT NULL,
 		[IsFromPermTable]		[bit] NOT NULL,
-
-		[StatementFirstCapture] [datetime] NULL,	--grouping column for grouping rows together into the same statement.
-		[StatementSequenceNumber] [int] NOT NULL,		--Unlike the perm table, this is just the sequence of statements within the #WorkingSet data
+		[IsInLast3Captures]		[bit] NOT NULL,
 
 		[ProcessingState]		[tinyint] NOT NULL	/*
 														0 = completely unprocessed; 
 														1 = Self-contained Single-stmt batch, completed
-														2 = Self-contained multi-stmt batch, after first UPDATE
-														3 = Self-contained multi-stmt batch, after second UPDATE
-														4 = Self-contained multi-stmt batch, after final UPDATE (to set StatementSequenceNumber)
-
+														2 = Normal processing Phase 1 complete: found rows where stmt <> prev.stmt, and applied Batch first/last info.
+														3 = Normal processing Phase 2 complete: generate a range of stmt first/last captures and apply to #WorkingSet
 													*/
 	);
+	CREATE UNIQUE CLUSTERED INDEX CL1 ON #WorkingSet (session_id, request_id, TimeIdentifier, SPIDCaptureTime);
 
 	CREATE TABLE #WorkingSetBatches (
 		[session_id]			[smallint] NOT NULL,
@@ -120,24 +112,10 @@ BEGIN
 		[NumCaptures]			[int] NOT NULL,
 		[FirstCapture]			[datetime] NOT NULL,
 		[LastCapture]			[datetime] NOT NULL,
-		[IsInClosingSet]		[bit] NOT NULL,
+		[IsInLast3Captures]		[bit] NOT NULL,
 		[IsInPermTable]			[bit] NOT NULL
 	);
-
-	INSERT INTO #UnprocessedCaptureTimes (
-		SPIDCaptureTime
-	)
-	SELECT ct.SPIDCaptureTime
-	FROM AutoWho.CaptureTimes ct
-	WHERE ct.CollectionInitiatorID = 255		--background trace only
-	AND ct.SPIDCaptureTime BETWEEN @FirstCaptureTime AND @LastCaptureTime;
-
-	/* We don't need this logic because the caller [AutoWho.PostProcessor] handles this validation
-	IF NOT EXISTS (SELECT * FROM #UnprocessedCaptureTimes)
-	BEGIN
-		RETURN 0;
-	END
-	*/
+	CREATE UNIQUE CLUSTERED INDEX CL1 ON #WorkingSetBatches (session_id, request_id, TimeIdentifier);
 
 	/*
 		We close a batch or statement when our permanent table shows it as open and it is not found in the SAR
@@ -166,81 +144,65 @@ BEGIN
 		ORDER BY ct.SPIDCaptureTime DESC
 	) ss;
 
-	INSERT INTO #ClosingTimeFrame (
-		[SPIDCaptureTime],
-		[session_id],
-		[request_id],
-		[TimeIdentifier]
-	)
-	SELECT 
-		sar.SPIDCaptureTime,
-		sar.session_id,
-		sar.request_id,
-		sar.TimeIdentifier
-	FROM AutoWho.SessionsAndRequests sar
-	WHERE sar.CollectionInitiatorID = 255
-	AND sar.request_id <> @lv__nullsmallint
-	AND sar.sess__is_user_process = 1
-	AND sar.calc__threshold_ignore = 0
-	AND sar.SPIDCaptureTime IN (
-		@LastCaptureTime,
-		@LastCaptureTimeMinus1,
-		@LastCaptureTimeMinus2
-	);
 
 	--TODO: need to add logic to handle when PKSQLStmtStoreID is NULL, and for the TMR wait value.
 	INSERT INTO #WorkingSet (
-		SPIDCaptureTime,
 		session_id,
 		request_id,
 		TimeIdentifier,
+		SPIDCaptureTime,
+
+		StatementFirstCapture,
+		StatementSequenceNumber,
 		PKSQLStmtStoreID,
 		rqst__query_hash,
-		
-		IsCurrentLastRowOfBatch,
-		IsFromPermTable,
-
 		IsStmtFirstCapture,
 		IsStmtLastCapture,
 		IsBatchFirstCapture,
 		IsBatchLastCapture,
-		StatementSequenceNumber,
+		IsCurrentLastRowOfBatch,
+		IsFromPermTable,
+		IsInLast3Captures,
 		ProcessingState
 	)
 	SELECT 
-		sar.SPIDCaptureTime,
 		sar.session_id,
 		sar.request_id,
 		sar.TimeIdentifier,
+		sar.SPIDCaptureTime,
+		
+		[StatementFirstCapture] = NULL,
+		[StatementSequenceNumber] = 0,
 		sar.FKSQLStmtStoreID,
 		sar.rqst__query_hash,
-
-		[IsCurrentLastRowOfBatch] = 0,
-		[IsFromPermTable] = 0,
-		
 		[IsStmtFirstCapture] = 0,
 		[IsStmtLastCapture] = 0,
 		[IsBatchFirstCapture] = 0,
 		[IsBatchLastCapture] = 0,
-		[StatementSequenceNumber] = 0,
+		[IsCurrentLastRowOfBatch] = 0,
+		[IsFromPermTable] = 0,
+		[IsInLast3Captures] = CASE WHEN sar.SPIDCaptureTime IN (@LastCaptureTime, @LastCaptureTimeMinus1, @LastCaptureTimeMinus2) 
+								THEN 1 ELSE 0 END,
 		[ProcessingState] = 0
 	FROM AutoWho.SessionsAndRequests sar
 	WHERE sar.CollectionInitiatorID = 255
 	AND sar.request_id <> @lv__nullsmallint
 	AND sar.sess__is_user_process = 1
 	AND sar.calc__threshold_ignore = 0
-	AND sar.SPIDCaptureTime BETWEEN @FirstCaptureTime AND @LastCaptureTime;		--Note: we don't expect @FirstCaptureTime to ever be AFTER @LastCaptureMinus1 or 2.
+	AND sar.SPIDCaptureTime BETWEEN @FirstCaptureTime AND @LastCaptureTime;		
+		--Note: we don't expect @FirstCaptureTime to ever be AFTER @LastCaptureMinus1 or 2.
+		--If that assumption could be false, we need to rethink our logic to see if there are bugs.
 
 	--Grab some basic batch stats
 	INSERT INTO #WorkingSetBatches (
-		[session_id],
-		[request_id],
-		[TimeIdentifier],
-		[NumCaptures],
-		[FirstCapture],
-		[LastCapture],
-		[IsInClosingSet],
-		[IsInPermTable]
+		session_id,
+		request_id,
+		TimeIdentifier,
+		NumCaptures,
+		FirstCapture,
+		LastCapture,
+		IsInLast3Captures,
+		IsInPermTable
 	)
 	SELECT 
 		ss.session_id,
@@ -249,13 +211,14 @@ BEGIN
 		ss.NumCaptures,
 		ss.FirstCapture,
 		ss.LastCapture,
-		[IsInClosingSet] = CASE WHEN c.session_id IS NOT NULL THEN 1 ELSE 0 END,
+		[IsInLast3Captures] = ss.IsInLast3Captures,
 		[IsInPermTable] = CASE WHEN p.session_id IS NOT NULL THEN 1 ELSE 0 END
 	FROM (
 		SELECT 
 			ws.session_id,
 			ws.request_id,
 			ws.TimeIdentifier,
+			[IsInLast3Captures] = CONVERT(BIT,MAX(CONVERT(INT,ws.IsInLast3Captures))),
 			NumCaptures = COUNT(*),
 			FirstCapture = MIN(ws.SPIDCaptureTime),
 			LastCapture = MAX(ws.SPIDCaptureTime)
@@ -265,17 +228,9 @@ BEGIN
 			ws.TimeIdentifier
 	) ss
 		OUTER APPLY (
-			SELECT TOP 1		--TODO: we only need the top 1 b/c the grain of #ClosingTimeFrame doesn't have a DISTINCT b/c I haven't decided yet whether to add more attributes.
-				c.session_id		--If we add a DISTINCT to #ctf, then we can remove the top 1 here.
-			FROM #ClosingTimeFrame c
-			WHERE c.session_id = ss.session_id
-			AND c.request_id = ss.request_id
-			AND c.TimeIdentifier = ss.TimeIdentifier
-		) c
-		OUTER APPLY (
 			SELECT TOP 1		--TODO: we only have a TOP 1 here b/c we are consulting a table whose grain is the statement/capture time rather than an overall list of
 				p.session_id	--batches. If we ever do add a batch table, we can change this and remove the TOP 1.
-			FROM AutoWho.StmtCaptureTimes p
+			FROM AutoWho.StatementCaptureTimes p
 			WHERE p.session_id = ss.session_id
 			AND p.request_id = ss.request_id
 			AND p.TimeIdentifier = ss.TimeIdentifier
@@ -292,7 +247,7 @@ BEGIN
 	SET IsCurrentLastRowOfBatch = 0,
 		IsStmtLastCapture = 1,
 		IsBatchLastCapture = 1
-	FROM AutoWho.StmtCaptureTimes p
+	FROM AutoWho.StatementCaptureTimes p
 	WHERE p.IsCurrentLastRowOfBatch = 1
 	AND NOT EXISTS (
 		SELECT *
@@ -304,19 +259,19 @@ BEGIN
 
 	/* For a typical OLTP system, there should be a number of batches in our working set that are short-lived enough
 		that they don't exist in either the perm table or in the closing set. Thus, they are completely self-contained
-		in #WorkingSet. Additionally, we expect single-statement batches to be fairly common (perhaps even VERY common),
-		since most OLTP systems have them.
-		
-		We call these "self-contained" batches and they can be either single-statement or multi-statement.
-		This statement handles single-statement self-contained batches.
+		in #WorkingSet. These "self-contained" batches can be either single-statement or multi-statement.
+		Additionally, we expect single-statement batches to be fairly common (perhaps even VERY common),
+		since most OLTP systems have them. Thus, the below statement represents a special-but-common case
+		where we can set all our necessary flags in one statement with simple logic.
 	*/
 	UPDATE ws 
 	SET 
+		StatementFirstCapture = ws.SPIDCaptureTime,	--the grouping value is its own capture time, of course.
+		StatementSequenceNumber = 1,
 		IsStmtFirstCapture = 1,
 		IsStmtLastCapture = 1,
 		IsBatchFirstCapture = 1,
 		IsBatchLastCapture = 1,
-		StatementSequenceNumber = 1,
 		ProcessingState = 1
 	FROM #WorkingSetBatches wsb
 		INNER JOIN #WorkingSet ws
@@ -325,48 +280,59 @@ BEGIN
 			AND wsb.TimeIdentifier = ws.TimeIdentifier
 	WHERE wsb.NumCaptures = 1
 	AND wsb.IsInPermTable = 0
-	AND wsb.IsInClosingSet = 0;
+	AND wsb.IsInLast3Captures = 0;
 
 
 	--Now, insert the last row from the remaining "active" batches into our working set
 	INSERT INTO #WorkingSet (
-		SPIDCaptureTime,
 		session_id,
 		request_id,
 		TimeIdentifier,
+		SPIDCaptureTime,
+
+		StatementFirstCapture,
+		StatementSequenceNumber,
 		PKSQLStmtStoreID,
 		rqst__query_hash,
-		
-		IsCurrentLastRowOfBatch,
-		IsFromPermTable,
-
 		IsStmtFirstCapture,
 		IsStmtLastCapture,
 		IsBatchFirstCapture,
 		IsBatchLastCapture,
-		StatementSequenceNumber,
+		IsCurrentLastRowOfBatch,
+		IsFromPermTable,
+		IsInLast3Captures,
 		ProcessingState
 	)
 	SELECT 
-		p.SPIDCaptureTime,
 		p.session_id,
 		p.request_id,
 		p.TimeIdentifier,
+		p.SPIDCaptureTime,
+
+		p.StatementFirstCapture,
+		p.StatementSequenceNumber,
 		p.PKSQLStmtStoreID,
 		p.rqst__query_hash,
-		
-		IsCurrentLastRowOfBatch = 0,	--Note, b/c we closed out batches that were in the perm table but not in our working set (above)
-										--we know that the row we just pulled that was previously the last-of-batch now has records in
-										--the working set and thus cannot be the last-of-batch.
-		--p.IsCurrentLastRowOfBatch,
-		[IsFromPermTable] = 1,
 		p.IsStmtFirstCapture,
 		p.IsStmtLastCapture,
 		p.IsBatchFirstCapture,
 		p.IsBatchLastCapture,
-		p.StatementSequenceNumber,
-		ProcessingState = 0			--TODO: Figure out what state # I want here.
-	FROM AutoWho.StmtCaptureTimes p
+		[IsCurrentLastRowOfBatch] = 0,	--p.IsCurrentLastRowOfBatch,
+										--Note, b/c we closed out batches that were in the perm table but not in our working set (above)
+										--we know that the row we just pulled that was previously the last-of-batch now has records in
+										--the working set and thus cannot be the last-of-batch. It may have been 1 in the perm table,
+										-- but we are effectively re-setting it.
+		[IsFromPermTable] = 1,
+		[IsInLast3Captures] = last3cap.IsInLast3Captures,
+		ProcessingState = 0			--We give rows from the perm table the same status as the working set rows that they are joining.
+	FROM AutoWho.StatementCaptureTimes p
+		CROSS APPLY (
+			SELECT wsb.IsInLast3Captures
+			FROM #WorkingSetBatches wsb
+			WHERE wsb.session_id = p.session_id
+			AND wsb.request_id = p.request_id
+			AND wsb.TimeIdentifier = p.TimeIdentifier
+		) last3cap
 	WHERE p.IsCurrentLastRowOfBatch = 1;
 
 
@@ -374,26 +340,35 @@ BEGIN
 	--We also apply the info we have in #WSB re: batch first and last capture times to our working set
 	UPDATE ws
 	SET	
-		IsCurrentLastRowOfBatch = CASE WHEN ws.IsFromPermTable = 1 THEN 0
-										WHEN wsb.LastCapture = ws.SPIDCaptureTime THEN 1 ELSE 0 END,
-
-		IsBatchFirstCapture = CASE WHEN ws.IsFromPermTable = 1 THEN 0
+		IsBatchFirstCapture = CASE WHEN ws.IsFromPermTable = 1 THEN ws.IsBatchFirstCapture	--For this field, we leave rows from the perm table alone
 									WHEN wsb.IsInPermTable = 0		--If the batch already is in the perm table, we already have the Batch first capture there
-									AND wsb.FirstCapture = ws.SPIDCaptureTime THEN 1 ELSE 0 END,
+										AND wsb.FirstCapture = ws.SPIDCaptureTime THEN 1   --otherwise, we know this is the first-ever row of our batch!
+								ELSE 0 END,
 
-		IsBatchLastCapture = CASE WHEN ws.IsFromPermTable = 1 THEN 0
-									WHEN wsb.IsInClosingSet = 0	--If the batch DOES have a row in our closing set, we don't consider closing the batch
-									AND wsb.LastCapture = ws.SPIDCaptureTime THEN 1 ELSE 0 END,
+		IsBatchLastCapture = CASE WHEN ws.IsFromPermTable = 1 THEN 0	--For perm rows, we DO update this field. If a perm row is in this table, we know that it has later WS rows.
+																		--Of course, we shouldn't actually have to change this value b/c IsBatchLastCapture should never go to 1 unless
+																		--we don't see it in the last 3 caps (and having 3 SPIDCaptureTimes in a row w/o a batch should mean the SPID/Request/TimeIdentifier
+																		-- will never be seen again)
+									WHEN wsb.IsInLast3Captures = 0	--If the batch has a row in our last 3 caps, we don't consider closing the batch
+									AND wsb.LastCapture = ws.SPIDCaptureTime THEN 1 
+								ELSE 0 END,
+
+		--This field is mutually exclusive w/IsBatchLastCapture. They both can't be 1. So we only set this to 1 
+		-- if this row is the last working set capture for the batch and the batch DOES exist in the closing set
+		IsCurrentLastRowOfBatch = CASE WHEN ws.IsFromPermTable = 1 THEN 0	-- a perm row in #WS must have later WS rows, so we know we can set it to 0.
+										WHEN wsb.IsInLast3Captures = 1
+										AND wsb.LastCapture = ws.SPIDCaptureTime THEN 1 
+									ELSE 0 END,
 
 		--TODO: need to add logic for when PKSQLStmtStoreID is null and there is a TMR wait.
 		IsStmtFirstCapture = CASE WHEN ws.IsFromPermTable = 1 THEN ws.IsStmtFirstCapture		--retain whatever we had from the perm table
 									WHEN prevCap.session_id IS NULL THEN 1						--if we hit this case, it means the batch had no recs in the perm table,
-																								--and this row has no prev captures, so it is automatically the statement start
+																								--and therefore this batch has no prev captures, so it is automatically the statement start
 																								--It also in the batch start (which should be handled by the block a few lines above).
 									WHEN ws.PKSQLStmtStoreID <> ISNULL(prevCap.PKSQLStmtStoreID,-99) THEN 1
 									ELSE 0
 									END,
-		ProcessingState = 2		--TODO: revisit statuses
+		ProcessingState = 2
 	FROM #WorkingSetBatches wsb
 		INNER JOIN #WorkingSet ws
 			ON wsb.session_id = ws.session_id
@@ -403,6 +378,7 @@ BEGIN
 			--Find the prev cap time, so we can compare SQL Stmt IDs
 			SELECT TOP 1 
 				prev.session_id,
+				prev.IsFromPermTable,
 				prev.PKSQLStmtStoreID
 			FROM #WorkingSet prev
 			WHERE prev.session_id = ws.session_id
@@ -411,15 +387,8 @@ BEGIN
 			AND prev.SPIDCaptureTime < ws.SPIDCaptureTime
 			ORDER BY prev.SPIDCaptureTime DESC
 		) prevCap
-	WHERE ws.ProcessingState = 0		--currently this should include IsFromPermTable=1 rows.
-	--OR ws.IsFromPermTable = 1
-	AND ws.IsFromPermTable <> 1
-	;
+	WHERE ws.ProcessingState = 0;		--This includes IsFromPermTable=1 rows.
 
-	--I originally coded the above statement for "self-contained multi-stmt batches". I'm trying to make this logic more general.
-	--AND wsb.IsInPermTable = 0
-	--AND wsb.IsInClosingSet = 0
-	;
 
 	/*
 			2. For each IsStmtFirstCapture = 1 (aka "this stmt start"), find the next IsStmtFirstCapture = 1 (aka "next stmt start"),
@@ -429,23 +398,46 @@ BEGIN
 	SET StatementFirstCapture = ss.StatementFirstCapture,	--StatementFirstCapture acts as a grouping field. The logic in this statement
 															--ensures that it is the same for every row between IsStmtFirstCapture=1 and IsStmtLastCapture=1
 															--Having a grouping key that is also ascending lets us easily set the StatementSequenceNumber next.
-		IsStmtLastCapture = ss.StatementLastCapture,
+
+		--If the last cap time for a statement is NOT the last row of a batch, then we can definitively say that it is the true last cap time for that statement.
+		--Any further rows that come in will not add more capture times for this statement.
+		--If the last cap time for a statement is also the last cap time for a batch with NO presence in our closing set, then similarly we know that no
+		--new rows are going to come in for this statement.
+		--But, if the last cap time for this statement is also the last cap time for a batch WITH a presence in our closing set, then we don't know whether
+		--more rows will arrive, and whether they will be for this statement.
+		IsStmtLastCapture = CASE WHEN ws.IsCurrentLastRowOfBatch = 1 THEN 0
+								WHEN ws.IsBatchLastCapture = 1 THEN 1
+								WHEN ws.SPIDCaptureTime = ss.StatementLastCapture THEN 1 
+								ELSE 0
+								END,
 		ProcessingState = 3
 	FROM #WorkingSet ws
 		INNER JOIN (
-			SELECT
+			/*
+				This sub-query gives us a list of capture ranges, for each batch, that define the start/stop of each statement within the batch
+				Note the WHERE: ws.IsStmtFirstCapture = 1 OR ws.IsFromPermTable = 1
+				The perm row isn't necessarily the start of a stmt, but it carries the info of the start of the statement (the SPIDCaptureTime)
+				and thus effectively supplies the range. 
+			*/
+			SELECT DISTINCT
 				ws.session_id,
 				ws.request_id,
 				ws.TimeIdentifier,
-				[StatementFirstCapture] = ws.SPIDCaptureTime,
-				[StatementLastCapture] = CASE WHEN lastCap.session_id IS NULL --not able to find a "last cap time", so there are no intervening
-																				--cap times for this statement. Thus, "last cap" is the same as first cap
-												THEN ws.SPIDCaptureTime
+
+				[StatementFirstCapture] = CASE WHEN ws.IsFromPermTable = 1 THEN ws.StatementFirstCapture	--for perm rows, always keep the first cap that we calculated previously
+											ELSE --based on the OR in the below WHERE clause, this must be ws.IsStmtFirstCapture = 1
+												--therefore, this row's stmt first cap is its own SPIDCaptureTime
+												ws.SPIDCaptureTime 
+											END,
+
+				[StatementLastCapture] = CASE WHEN lastCap.session_id IS NULL --not able to find a "last cap time", so there are no later
+																				--cap times for this statement. Thus, "last cap" is this SPIDCaptureTime
+												THEN ws.SPIDCaptureTime 
 											ELSE lastCap.SPIDCaptureTime
 											END
 			FROM #WorkingSet ws
 				OUTER APPLY (
-					--Get the next statement start
+					--Get the next statement start. Remember that it may not exist!
 					SELECT TOP 1
 						nxt.session_id,
 						nxt.PKSQLStmtStoreID,
@@ -461,6 +453,7 @@ BEGIN
 				OUTER APPLY (
 					--once we have the next statement start, get the cap time immediately before that.
 					--this should be the last cap for this statement.
+					--If there is no "next", we trust that our last cap will have occurred before the year 3000.
 					SELECT TOP 1
 						l.session_id,
 						l.SPIDCaptureTime
@@ -472,16 +465,60 @@ BEGIN
 					AND l.SPIDCaptureTime < ISNULL(nextStmt.SPIDCaptureTime,'3000-01-01')
 					ORDER BY l.SPIDCaptureTime DESC
 				) lastCap
-			WHERE ws.IsStmtFirstCapture = 1
-			AND ws.ProcessingState = 2
+			WHERE ws.ProcessingState = 2
+			AND (ws.IsStmtFirstCapture = 1
+				OR ws.IsFromPermTable = 1		--If the first (non-perm) row in our working set is NOT a new statement, i.e. the same stmt ID as the preceding perm row
+												--we want to associate the first row of our working set with the same stmt as its preceding perm row, whether or not
+												--the perm row was the start of a new statement. So we need to include perm rows here.
+				)
 		) ss
 			ON ws.session_id = ss.session_id
 			AND ws.request_id = ss.request_id
 			AND ws.TimeIdentifier = ss.TimeIdentifier
 			AND ws.SPIDCaptureTime BETWEEN ss.StatementFirstCapture AND ss.StatementLastCapture;
 
+	--Ok, we're ready to insert the working set into our perm table!
+	INSERT INTO [AutoWho].[StatementCaptureTimes] (
+		--Identifier columns
+		[session_id],
+		[request_id],
+		[TimeIdentifier],
+		[SPIDCaptureTime],
 
-	--Ok, now just update StatementSequenceNumber and we're done with this set of batches!
+		--attribute cols
+		[StatementFirstCapture],
+		[StatementSequenceNumber],
+		[PKSQLStmtStoreID],
+		[rqst__query_hash],
+		[IsStmtFirstCapture],
+		[IsStmtLastCapture],
+		[IsBatchFirstCapture],
+		[IsBatchLastCapture],
+		[IsCurrentLastRowOfBatch]
+	)
+	SELECT 
+		ws.session_id,
+		ws.request_id,
+		ws.TimeIdentifier,
+		ws.SPIDCaptureTime,
+
+		ws.StatementFirstCapture,
+		ws.StatementSequenceNumber,
+		ws.PKSQLStmtStoreID,
+		ws.rqst__query_hash,
+		ws.IsStmtFirstCapture,
+		ws.IsStmtLastCapture,
+		ws.IsBatchFirstCapture,
+		ws.IsBatchLastCapture,
+		ws.IsCurrentLastRowOfBatch
+	FROM #WorkingSet ws
+	WHERE ws.IsFromPermTable = 0;
+
+
+
+	/* For now, I'm not going to implement the StatementSequenceNumber logic. I currently don't see a need for that data.
+		I may revisit this after writing presentation logic that relies on AutoWho.StatementCaptureTimes
+	
 	UPDATE ws
 	SET StatementSequenceNumber = ss.StatementSequenceNumber,
 		ProcessingState = 4
@@ -501,27 +538,6 @@ BEGIN
 			AND ws.TimeIdentifier = ss.TimeIdentifier
 			AND ws.SPIDCaptureTime = ss.SPIDCaptureTime
 	WHERE ws.ProcessingState = 3;
-
-
-	/*
-		Ok, now we're done with self-contained batches (the batch has no records either in the closing set or in the perm table.
-		We have these situations left:
-
-			1. Batch is in the perm table and has no records in #WorkingSet
-
-				We need to close these
-
-			2. Batch is not in perm table, only in #WorkingSet
-
-				a. Batch is in closing set
-
-				b. Batch is not in closing set (this is already handled by the above logic)
-
-			3. Batch is in perm table and HAS records in #WorkingSet
-			
-				a. has records in closing set
-
-				b. does NOT have records in closing set
 	*/
 
 	RETURN 0;
