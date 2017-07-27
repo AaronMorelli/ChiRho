@@ -74,19 +74,18 @@ BEGIN
 		[TimeIdentifier]		[datetime] NOT NULL,
 		[SPIDCaptureTime]		[datetime] NOT NULL,
 
-		[StatementFirstCapture] [datetime] NULL,	--The first SPIDCaptureTime for the statement that this row belongs to. This acts as a grouping
-													 --field (that is also ascending as statements run for the batch! a nice property)
+		[StatementFirstCapture] [datetime] NULL,	--The first SPIDCaptureTime for the statement that this row belongs to. This acts as a grouping field (that is also ascending as statements 
+													--run for the batch! a nice property)
+		[PreviousCaptureTime]	[datetime] NULL,	--The cap time immediately previous to this row (for the same batch of course)
 		[StatementSequenceNumber] [int] NOT NULL,	 --statement # within the batch. We use this instead of PKSQLStmtStoreID b/c that could be revisited
 
-		[PKSQLStmtStoreID]		[bigint] NOT NULL,	--TODO: still need to implement TMR wait logic. Note that for TMR waits, the current plan is to 
-													--*always* assume it is a new statement even if the calc__tmr_wait value matches between the 
-													--most recent SPIDCaptureTime in this table and the "current" statement.
+		[PKSQLStmtStoreID]		[bigint] NOT NULL,	--TODO: still need to implement TMR wait logic. Note that for TMR waits, the current plan is to *always* assume it is a new statement even if 
+													--the calc__tmr_wait value matches between the most recent SPIDCaptureTime in this table and the "current" statement.
 
 		[rqst__query_hash]		[binary](8) NULL,	--storing this makes some presentation procs more quickly able to find high-frequency queries.
 
 		--These fields start at 0 and are only set to 1 when we KNOW that a row is the first and/or last of a statement or batch.
 		--Thus, once set to 1 they should never change.
-		--To properly set these fields, we need to examine both #BatchesInLast3Caps and AutoWho.StatementCaptureTimes
 		[IsStmtFirstCapture]	[bit] NOT NULL,		
 		[IsStmtLastCapture]		[bit] NOT NULL,
 		[IsBatchFirstCapture]	[bit] NOT NULL,		
@@ -153,6 +152,7 @@ BEGIN
 		SPIDCaptureTime,
 
 		StatementFirstCapture,
+		PreviousCaptureTime,
 		StatementSequenceNumber,
 		PKSQLStmtStoreID,
 		rqst__query_hash,
@@ -172,6 +172,7 @@ BEGIN
 		sar.SPIDCaptureTime,
 		
 		[StatementFirstCapture] = NULL,
+		[PreviousCaptureTime] = NULL,
 		[StatementSequenceNumber] = 0,
 		sar.FKSQLStmtStoreID,
 		sar.rqst__query_hash,
@@ -267,6 +268,7 @@ BEGIN
 	UPDATE ws 
 	SET 
 		StatementFirstCapture = ws.SPIDCaptureTime,	--the grouping value is its own capture time, of course.
+		--we leave this NULL, obviously: PreviousCaptureTime
 		StatementSequenceNumber = 1,
 		IsStmtFirstCapture = 1,
 		IsStmtLastCapture = 1,
@@ -291,6 +293,7 @@ BEGIN
 		SPIDCaptureTime,
 
 		StatementFirstCapture,
+		PreviousCaptureTime,
 		StatementSequenceNumber,
 		PKSQLStmtStoreID,
 		rqst__query_hash,
@@ -310,6 +313,7 @@ BEGIN
 		p.SPIDCaptureTime,
 
 		p.StatementFirstCapture,
+		p.PreviousCaptureTime,
 		p.StatementSequenceNumber,
 		p.PKSQLStmtStoreID,
 		p.rqst__query_hash,
@@ -317,11 +321,7 @@ BEGIN
 		p.IsStmtLastCapture,
 		p.IsBatchFirstCapture,
 		p.IsBatchLastCapture,
-		[IsCurrentLastRowOfBatch] = 0,	--p.IsCurrentLastRowOfBatch,
-										--Note, b/c we closed out batches that were in the perm table but not in our working set (above)
-										--we know that the row we just pulled that was previously the last-of-batch now has records in
-										--the working set and thus cannot be the last-of-batch. It may have been 1 in the perm table,
-										-- but we are effectively re-setting it.
+		p.IsCurrentLastRowOfBatch,
 		[IsFromPermTable] = 1,
 		[IsInLast3Captures] = last3cap.IsInLast3Captures,
 		ProcessingState = 0			--We give rows from the perm table the same status as the working set rows that they are joining.
@@ -354,7 +354,7 @@ BEGIN
 								ELSE 0 END,
 
 		--This field is mutually exclusive w/IsBatchLastCapture. They both can't be 1. So we only set this to 1 
-		-- if this row is the last working set capture for the batch and the batch DOES exist in the closing set
+		-- if this row is the last working set capture for the batch and the batch DOES exist in the last 3 caps
 		IsCurrentLastRowOfBatch = CASE WHEN ws.IsFromPermTable = 1 THEN 0	-- a perm row in #WS must have later WS rows, so we know we can set it to 0.
 										WHEN wsb.IsInLast3Captures = 1
 										AND wsb.LastCapture = ws.SPIDCaptureTime THEN 1 
@@ -368,6 +368,9 @@ BEGIN
 									WHEN ws.PKSQLStmtStoreID <> ISNULL(prevCap.PKSQLStmtStoreID,-99) THEN 1
 									ELSE 0
 									END,
+		PreviousCaptureTime = CASE WHEN ws.IsFromPermTable = 1 THEN ws.PreviousCaptureTime
+										ELSE prevCap.SPIDCaptureTime
+								END,
 		ProcessingState = 2
 	FROM #WorkingSetBatches wsb
 		INNER JOIN #WorkingSet ws
@@ -378,6 +381,7 @@ BEGIN
 			--Find the prev cap time, so we can compare SQL Stmt IDs
 			SELECT TOP 1 
 				prev.session_id,
+				prev.SPIDCaptureTime,
 				prev.IsFromPermTable,
 				prev.PKSQLStmtStoreID
 			FROM #WorkingSet prev
@@ -477,6 +481,18 @@ BEGIN
 			AND ws.TimeIdentifier = ss.TimeIdentifier
 			AND ws.SPIDCaptureTime BETWEEN ss.StatementFirstCapture AND ss.StatementLastCapture;
 
+	--Now, update the IsCurrentLastRowOfBatch values for the perm rows that we pulled into #WS
+	UPDATE targ 
+	SET IsCurrentLastRowOfBatch = 0
+	FROM AutoWho.StatementCaptureTimes targ
+		INNER JOIN #WorkingSet ws
+			ON ws.session_id = targ.session_id
+			AND ws.request_id = targ.request_id
+			AND ws.TimeIdentifier = targ.TimeIdentifier
+			AND ws.SPIDCaptureTime = targ.SPIDCaptureTime
+	WHERE targ.IsCurrentLastRowOfBatch = 1
+	AND ws.IsFromPermTable = 1;
+
 	--Ok, we're ready to insert the working set into our perm table!
 	INSERT INTO [AutoWho].[StatementCaptureTimes] (
 		--Identifier columns
@@ -487,6 +503,7 @@ BEGIN
 
 		--attribute cols
 		[StatementFirstCapture],
+		[PreviousCaptureTime],
 		[StatementSequenceNumber],
 		[PKSQLStmtStoreID],
 		[rqst__query_hash],
@@ -503,6 +520,7 @@ BEGIN
 		ws.SPIDCaptureTime,
 
 		ws.StatementFirstCapture,
+		ws.PreviousCaptureTime,
 		ws.StatementSequenceNumber,
 		ws.PKSQLStmtStoreID,
 		ws.rqst__query_hash,
@@ -513,6 +531,8 @@ BEGIN
 		ws.IsCurrentLastRowOfBatch
 	FROM #WorkingSet ws
 	WHERE ws.IsFromPermTable = 0;
+
+
 
 
 

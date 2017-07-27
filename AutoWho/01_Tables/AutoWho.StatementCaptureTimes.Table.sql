@@ -46,6 +46,7 @@ CREATE TABLE [AutoWho].[StatementCaptureTimes] (
 	--attribute cols
 	[StatementFirstCapture] [datetime] NOT NULL,	--The first SPIDCaptureTime for the statement that this row belongs to. This acts as a grouping
 													--field (that is also ascending as statements run for the batch! a nice property)
+	[PreviousCaptureTime]	[datetime] NULL,
 	[StatementSequenceNumber] [int] NOT NULL,		--statement # within the batch. We use this instead of PKSQLStmtStoreID b/c that could be revisited
 
 	[PKSQLStmtStoreID]		[bigint] NOT NULL,		--TODO: still need to implement TMR wait logic. Note that for TMR waits, the current plan is to 
