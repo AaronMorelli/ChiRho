@@ -53,7 +53,10 @@ CREATE TABLE [AutoWho].[StatementCaptureTimes] (
 													--*always* assume it is a new statement even if the calc__tmr_wait value matches between the 
 													--most recent SPIDCaptureTime in this table and the "current" statement.
 
+	[PKQueryPlanStmtStoreID] [bigint] NULL,
+
 	[rqst__query_hash]		[binary](8) NULL,		--storing this makes some presentation procs more quickly able to find high-frequency queries.
+	[sess__database_id]		[smallint] NOT NULL,	--this is -1 if we can't find a valid DBID in SAR
 
 	--These fields start at 0 and are only set to 1 when we KNOW that a row is the first and/or last of a statement or batch.
 	--Thus, once set to 1 they should never change.
@@ -74,7 +77,7 @@ CREATE TABLE [AutoWho].[StatementCaptureTimes] (
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 GO
---We keep the PK cols in the NCL key to support merge joins on the commonly-joined cols (after a seek on IsCurrentLastRowOfBatch=1)
+--We keep the PK cols in this NCL key to support merge joins on the commonly-joined cols (after a seek on IsCurrentLastRowOfBatch=1)
 CREATE NONCLUSTERED INDEX [NCL_ActiveBatchFinalRow] ON [AutoWho].[StatementCaptureTimes]
 (
 	[IsCurrentLastRowOfBatch] ASC,
@@ -82,6 +85,29 @@ CREATE NONCLUSTERED INDEX [NCL_ActiveBatchFinalRow] ON [AutoWho].[StatementCaptu
 	[request_id] ASC,
 	[TimeIdentifier] ASC,
 	[SPIDCaptureTime] ASC
+)
+WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+CREATE NONCLUSTERED INDEX [NCL_StatementFirstCapture] ON [AutoWho].[StatementCaptureTimes]
+(
+	[StatementFirstCapture] ASC
+)
+INCLUDE (
+	session_id,
+	request_id,
+	TimeIdentifier,
+	SPIDCaptureTime,
+	PreviousCaptureTime,
+	StatementSequenceNumber,
+	PKSQLStmtStoreID,
+	PKQueryPlanStmtStoreID,
+	rqst__query_hash,
+	sess__database_id,
+	IsStmtFirstCapture,
+	IsStmtLastCapture,
+	IsBatchFirstCapture,
+	IsBatchLastCapture,
+	IsCurrentLastRowOfBatch
 )
 WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 GO

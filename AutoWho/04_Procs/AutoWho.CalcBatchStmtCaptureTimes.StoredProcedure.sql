@@ -81,8 +81,10 @@ BEGIN
 
 		[PKSQLStmtStoreID]		[bigint] NOT NULL,	--TODO: still need to implement TMR wait logic. Note that for TMR waits, the current plan is to *always* assume it is a new statement even if 
 													--the calc__tmr_wait value matches between the most recent SPIDCaptureTime in this table and the "current" statement.
+		[PKQueryPlanStmtStoreID] [bigint] NULL,
 
 		[rqst__query_hash]		[binary](8) NULL,	--storing this makes some presentation procs more quickly able to find high-frequency queries.
+		[sess__database_id]		[smallint] NOT NULL,
 
 		--These fields start at 0 and are only set to 1 when we KNOW that a row is the first and/or last of a statement or batch.
 		--Thus, once set to 1 they should never change.
@@ -155,7 +157,9 @@ BEGIN
 		PreviousCaptureTime,
 		StatementSequenceNumber,
 		PKSQLStmtStoreID,
+		PKQueryPlanStmtStoreID,
 		rqst__query_hash,
+		sess__database_id,
 		IsStmtFirstCapture,
 		IsStmtLastCapture,
 		IsBatchFirstCapture,
@@ -175,7 +179,9 @@ BEGIN
 		[PreviousCaptureTime] = NULL,
 		[StatementSequenceNumber] = 0,
 		sar.FKSQLStmtStoreID,
+		sar.FKQueryPlanStmtStoreID,
 		sar.rqst__query_hash,
+		ISNULL(sar.sess__database_id,-1),
 		[IsStmtFirstCapture] = 0,
 		[IsStmtLastCapture] = 0,
 		[IsBatchFirstCapture] = 0,
@@ -296,6 +302,7 @@ BEGIN
 		PreviousCaptureTime,
 		StatementSequenceNumber,
 		PKSQLStmtStoreID,
+		PKQueryPlanStmtStoreID,
 		rqst__query_hash,
 		IsStmtFirstCapture,
 		IsStmtLastCapture,
@@ -316,6 +323,7 @@ BEGIN
 		p.PreviousCaptureTime,
 		p.StatementSequenceNumber,
 		p.PKSQLStmtStoreID,
+		p.PKQueryPlanStmtStoreID,
 		p.rqst__query_hash,
 		p.IsStmtFirstCapture,
 		p.IsStmtLastCapture,
@@ -481,6 +489,53 @@ BEGIN
 			AND ws.TimeIdentifier = ss.TimeIdentifier
 			AND ws.SPIDCaptureTime BETWEEN ss.StatementFirstCapture AND ss.StatementLastCapture;
 
+
+	--DMV data is quirky, and it is technically possible to get NULL rqst__query_hash values for some captures for a statement but not for all.
+	--It is also possible to have the rqst__query_hash value change (e.g. from 0x0 to something else). Therefore, our presentation logic needs to
+	--pull query hash data from the last cap for the statement (IsStmtLastCapture=1 OR IsCurrentLastRowOfBatch=1). If the last row is unluckily NULL
+	--when the rest of the statement's captures was something else, we choose to handle that unfortunate case by populating that NULL hash with
+	--the most recent non-null hash for the statement.
+	UPDATE ws
+	SET rqst__query_hash = prev.rqst__query_hash
+	FROM #WorkingSet ws
+		CROSS APPLY (
+			SELECT TOP 1 
+				p.rqst__query_hash
+			FROM #WorkingSet p
+			WHERE p.session_id = ws.session_id
+			AND p.request_id = ws.request_id
+			AND p.TimeIdentifier = ws.TimeIdentifier
+			AND p.StatementFirstCapture = ws.StatementFirstCapture
+			AND p.rqst__query_hash IS NOT NULL
+			AND p.rqst__query_hash <> 0x0
+			AND p.SPIDCaptureTime < ws.SPIDCaptureTime
+			ORDER BY p.SPIDCaptureTime DESC
+		) prev
+	WHERE ws.IsFromPermTable = 0
+	AND (ws.IsStmtLastCapture = 1 OR IsCurrentLastRowOfBatch = 1)
+	AND (ws.rqst__query_hash IS NULL OR ws.rqst__query_hash = 0x0)
+	;
+
+	--We do the same thing for query plans
+	UPDATE ws
+	SET PKQueryPlanStmtStoreID = prev.PKQueryPlanStmtStoreID
+	FROM #WorkingSet ws
+		CROSS APPLY (
+			SELECT TOP 1 
+				p.PKQueryPlanStmtStoreID
+			FROM #WorkingSet p
+			WHERE p.session_id = ws.session_id
+			AND p.request_id = ws.request_id
+			AND p.TimeIdentifier = ws.TimeIdentifier
+			AND p.StatementFirstCapture = ws.StatementFirstCapture
+			AND p.PKQueryPlanStmtStoreID IS NOT NULL
+			AND p.SPIDCaptureTime < ws.SPIDCaptureTime
+			ORDER BY p.SPIDCaptureTime DESC
+		) prev
+	WHERE ws.IsFromPermTable = 0
+	AND (ws.IsStmtLastCapture = 1 OR IsCurrentLastRowOfBatch = 1)
+	AND ws.PKQueryPlanStmtStoreID IS NULL;
+
 	--Now, update the IsCurrentLastRowOfBatch values for the perm rows that we pulled into #WS
 	UPDATE targ 
 	SET IsCurrentLastRowOfBatch = 0
@@ -507,6 +562,7 @@ BEGIN
 		[StatementSequenceNumber],
 		[PKSQLStmtStoreID],
 		[rqst__query_hash],
+		[sess__database_id],
 		[IsStmtFirstCapture],
 		[IsStmtLastCapture],
 		[IsBatchFirstCapture],
@@ -524,6 +580,7 @@ BEGIN
 		ws.StatementSequenceNumber,
 		ws.PKSQLStmtStoreID,
 		ws.rqst__query_hash,
+		ws.sess__database_id,
 		ws.IsStmtFirstCapture,
 		ws.IsStmtLastCapture,
 		ws.IsBatchFirstCapture,
