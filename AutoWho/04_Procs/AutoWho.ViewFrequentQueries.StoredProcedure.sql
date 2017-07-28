@@ -1518,6 +1518,88 @@ BEGIN TRY
 			ss.StatementFirstCapture
 	) ss2;
 
+	INSERT INTO #ObjStmtSubHeaders (
+		PKSQLStmtStoreID,
+		sess__database_id,
+		PKQueryPlanStmtStoreID,
+
+		UniqueOccurrences,
+		NumCaptureRows,
+		FirstSeen,
+		LastSeen,
+		DisplayOrder,
+
+		cpu_time
+	)
+	SELECT 
+		ss.PKSQLStmtStoreID,
+		ss.sess__database_id,
+		ss.PKQueryPlanStmtStoreID,
+
+		ss.UniqueOccurrences,
+		ss.NumCaptureRows,
+		ss.FirstSeen,
+		ss.LastSeen,
+		[DisplayOrder] = ROW_NUMBER() OVER (PARTITION BY ss.PKSQLStmtStoreID, ss.sess__database_id ORDER BY ss.UniqueOccurrences DESC),
+		ss.cpu_time
+	FROM (
+		SELECT 
+			osi.PKSQLStmtStoreID,
+			osi.sess__database_id,
+			osi.PKQueryPlanStmtStoreID,
+			[UniqueOccurrences] = SUM(1),
+			[NumCaptureRows] = SUM(osi.NumCaptureRows),
+			FirstSeen = MIN(osi.StatementFirstCapture),
+			LastSeen = MAX(osi.StatementLastCapture),
+			[cpu_time] = SUM(sar.rqst__cpu_time - ISNULL(sarprev.rqst__cpu_time,0))
+		FROM #ObjStmtInstances osi
+			INNER JOIN AutoWho.SessionsAndRequests sar
+				ON osi.session_id = sar.session_id
+				AND osi.request_id = sar.request_id
+				AND osi.TimeIdentifier = sar.TimeIdentifier
+				AND osi.StatementLastCapture = sar.SPIDCaptureTime
+			LEFT OUTER JOIN AutoWho.SessionsAndRequests sarprev
+				ON osi.session_id = sarprev.session_id
+				AND osi.request_id = sarprev.request_id
+				AND osi.TimeIdentifier = sarprev.TimeIdentifier
+				AND osi.PreviousCaptureTime = sarprev.SPIDCaptureTime
+		GROUP BY osi.PKSQLStmtStoreID,
+			osi.sess__database_id,
+			osi.PKQueryPlanStmtStoreID
+	) ss;
+
+	INSERT INTO #ObjStmtHeaders (
+		PKSQLStmtStoreID,
+		sess__database_id,
+		UniqueOccurrences,
+		NumCaptureRows,
+		FirstSeen,
+		LastSeen,
+		DisplayOrder,
+		cpu_time
+	)
+	SELECT 
+		ss.PKSQLStmtStoreID,
+		ss.sess__database_id,
+		ss.UniqueOccurrences,
+		ss.NumCaptureRows,
+		ss.FirstSeen,
+		ss.LastSeen,
+		[DisplayOrder] = ROW_NUMBER() OVER (ORDER BY ss.UniqueOccurrences DESC),
+		ss.cpu_time
+	FROM (
+		SELECT 
+			osh.PKSQLStmtStoreID,
+			osh.sess__database_id,
+			[UniqueOccurrences] = SUM(1),				--TODO: re-examine UniqueOccurrences for both QH and this. I feel like I'm calculating it non-sensically. (I've been on auto-pilot with this)
+			[NumCaptureRows] = SUM(osh.NumCaptureRows),
+			[FirstSeen] = MIN(osh.FirstSeen),
+			[LastSeen] = MIN(osh.LastSeen),
+			[cpu_time] = SUM(osh.cpu_time)
+		FROM #ObjStmtSubHeaders osh
+		GROUP BY osh.PKSQLStmtStoreID,
+			osh.sess__database_id
+	) ss;
 
 END TRY
 BEGIN CATCH
