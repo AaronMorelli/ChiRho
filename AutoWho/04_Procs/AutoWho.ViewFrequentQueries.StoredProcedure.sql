@@ -333,6 +333,56 @@ BEGIN TRY
 	);
 
 
+	CREATE TABLE #ObjStmtHeaders (
+		PKSQLStmtStoreID		[bigint] NOT NULL,
+		sess__database_id		SMALLINT NULL,		--If @context=N'N', then we leave this NULL so that it is not a differentiator
+													--If @context=N'Y', then we pull it and group by it, so that it IS a differentiator
+
+		UniqueOccurrences		INT NOT NULL,
+		NumCaptureRows			INT NOT NULL,
+		FirstSeen				DATETIME NOT NULL,
+		LastSeen				DATETIME NOT NULL,
+		DisplayOrder			INT NULL,
+
+		cpu_time				BIGINT NULL
+	);
+
+	CREATE TABLE #ObjStmtSubHeaders (
+		PKSQLStmtStoreID		[bigint] NOT NULL,
+		sess__database_id		SMALLINT NULL,		--If @context=N'N', then we leave this NULL so that it is not a differentiator
+													--If @context=N'Y', then we pull it and group by it, so that it IS a differentiator
+
+		PKQueryPlanStmtStoreID	[bigint] NOT NULL,
+
+		UniqueOccurrences		INT NOT NULL,
+		NumCaptureRows			INT NOT NULL,
+		FirstSeen				DATETIME NOT NULL,
+		LastSeen				DATETIME NOT NULL,
+		DisplayOrder			INT NULL,			--this is across statements within a single PKSQLStmtStoreID/DBID group
+
+		cpu_time				BIGINT NULL
+	);
+
+	CREATE TABLE #ObjStmtInstances (
+		--These are the identifying columns. The granularity of this table is a statement
+		session_id				SMALLINT NOT NULL,
+		request_id				SMALLINT NOT NULL,
+		TimeIdentifier			DATETIME NOT NULL,
+		StatementFirstCapture	DATETIME NOT NULL,
+
+
+		StatementLastCapture	DATETIME NOT NULL,
+		PreviousCaptureTime		DATETIME NULL,		--we store this just for the first cap of a new statement. It allows us to get the final cap of the prev
+													--stmt (if one exists) so we can do a delta of the stats
+
+		sess__database_id		SMALLINT NULL,		--If @context=N'N', then we leave this NULL so that it is not a differentiator
+													--If @context=N'Y', then we pull it and group by it, so that it IS a differentiator
+
+		PKSQLStmtStoreID		[bigint] NOT NULL,
+		PKQueryPlanStmtStoreID	[bigint] NOT NULL,
+
+		NumCaptureRows			INT NOT NULL
+	);
 
 
 	-- There is also the possibility that conversion to XML will fail, so we don't want to wait until the final join.
@@ -1073,14 +1123,270 @@ BEGIN TRY
 			AND qhs.sess__database_id = qhh.sess__database_id
 	;
 
+	--Resolve the statement IDs to the actual statement text
+	SET @lv__errorloc = N'Obtain Stmt Store raw';
+	INSERT INTO #SQLStmtStore (
+		PKSQLStmtStoreID,
+		[sql_handle],
+		statement_start_offset,
+		statement_end_offset,
+		[dbid],
+		[objectid],
+		datalen_batch,
+		stmt_text
+		--stmt_xml
+		--dbname						NVARCHAR(128),
+		--objname						NVARCHAR(128)
+	)
+	SELECT sss.PKSQLStmtStoreID, 
+		sss.sql_handle,
+		sss.statement_start_offset,
+		sss.statement_end_offset,
+		sss.dbid,
+		sss.objectid,
+		sss.datalen_batch,
+		sss.stmt_text
+	FROM CoreXR.SQLStmtStore sss
+	WHERE sss.PKSQLStmtStoreID IN (
+		SELECT DISTINCT qhs.PKSQLStmtStoreID
+		FROM #QHSubHeaders qhs
+		)
+	;
+
+	SET @lv__errorloc = N'Declare Stmt Store Cursor';
+	DECLARE resolveSQLStmtStore CURSOR LOCAL FAST_FORWARD FOR
 	SELECT 
-		*
+		PKSQLStmtStoreID,
+		[sql_handle],
+		[dbid],
+		[objectid],
+		stmt_text
+	FROM #SQLStmtStore sss
+	;
+
+	SET @lv__errorloc = N'Open Stmt Store Cursor';
+	OPEN resolveSQLStmtStore;
+	FETCH resolveSQLStmtStore INTO @PKSQLStmtStoreID,
+		@sql_handle,
+		@dbid,
+		@objectid,
+		@stmt_text
+	;
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		SET @lv__errorloc = N'In Stmt Store loop';
+		--Note that one major assumption of this procedure is that the DBID hasn't changed since the time the spid was 
+		-- collected. For performance reasons, we don't resolve DBID in AutoWho.Collector; thus, if a DB is detached/re-attached,
+		-- or deleted and the DBID is re-used by a completely different database, confusion can ensue.
+		IF @dbid > 0
+		BEGIN
+			SET @dbname = DB_NAME(@dbid);
+		END
+		ELSE
+		BEGIN
+			SET @dbname = N'';
+		END
+
+		--Above note about DBID is relevant for this as well. 
+		IF @objectid > 0
+		BEGIN
+			SET @objectname = OBJECT_NAME(@objectid,@dbid);
+		END
+		ELSE
+		BEGIN
+			SET @objectname = N'';
+		END
+
+		IF @objectid > 0
+		BEGIN
+			--if we do have a dbid/objectid pair, get the schema for the object
+			IF @dbid > 0
+			BEGIN
+				SET @schname = OBJECT_SCHEMA_NAME(@objectid, @dbid);
+			END
+			ELSE
+			BEGIN
+				--if we don't have a valid dbid, we still do a "best effort" attempt to get schema
+				SET @schname = OBJECT_SCHEMA_NAME(@objectid);
+			END
+			
+			IF @schname IS NULL
+			BEGIN
+				SET @schname = N'';
+			END
+		END
+		ELSE
+		BEGIN
+			SET @schname = N'';
+		END
+
+		IF @sql_handle = 0x0
+		BEGIN
+			SET @stmt_xml = CONVERT(XML, N'<?Stmt --' + NCHAR(10)+NCHAR(13) + N'sql_handle is 0x0. The current SQL statement cannot be displayed.' + NCHAR(10) + NCHAR(13) + 
+			N'PKSQLStmtStoreID: ' + CONVERT(NVARCHAR(20),ISNULL(@PKSQLStmtStoreID,-1)) + 
+			NCHAR(10) + NCHAR(13) + N'-- ?>');
+		END
+		ELSE
+		BEGIN
+			IF @stmt_text IS NULL
+			BEGIN
+				SET @stmt_xml = CONVERT(XML, N'<?Stmt --' + NCHAR(10)+NCHAR(13) + N'The statement text is NULL. No T-SQL command to display.' + NCHAR(10) + NCHAR(13) + 
+					N'PKSQLStmtStoreID: ' + CONVERT(NVARCHAR(20),ISNULL(@PKSQLStmtStoreID,-1)) + 
+					NCHAR(10) + NCHAR(13) + N'-- ?>');
+			END
+			ELSE
+			BEGIN
+				BEGIN TRY
+					SET @stmt_xml = CONVERT(XML, N'<?Stmt --' + NCHAR(10)+NCHAR(13) + @stmt_text + + NCHAR(10) + NCHAR(13) + 
+					N'PKSQLStmtStoreID: ' + CONVERT(NVARCHAR(20),ISNULL(@PKSQLStmtStoreID,-1)) + 
+					NCHAR(10) + NCHAR(13) + N'-- ?>');
+				END TRY
+				BEGIN CATCH
+					SET @stmt_xml = CONVERT(XML, N'<?Stmt --' + NCHAR(10)+NCHAR(13) + N'Error CONVERTing text to XML: ' + ERROR_MESSAGE() + NCHAR(10) + NCHAR(13) + 
+					N'PKSQLStmtStoreID: ' + CONVERT(NVARCHAR(20),ISNULL(@PKSQLStmtStoreID,-1)) + 
+
+					NCHAR(10) + NCHAR(13) + N'-- ?>');
+				END CATCH
+			END
+		END
+
+		UPDATE #SQLStmtStore
+		SET dbname = @dbname,
+			objname = @objectname,
+			schname = @schname,
+			stmt_xml = @stmt_xml
+		WHERE PKSQLStmtStoreID = @PKSQLStmtStoreID;
+
+		FETCH resolveSQLStmtStore INTO @PKSQLStmtStoreID,
+			@sql_handle,
+			@dbid,
+			@objectid,
+			@stmt_text
+		;
+	END	--WHILE loop for SQL Stmt Store cursor
+		
+	CLOSE resolveSQLStmtStore;
+	DEALLOCATE resolveSQLStmtStore;
+
+	--Resolve query plan identifiers to their actual XML
+	IF @plan = N'y'
+	BEGIN
+		SET @lv__errorloc = N'Obtain query plan store raw';
+		INSERT INTO #QueryPlanStmtStore (
+			PKQueryPlanStmtStoreID,
+			[plan_handle],
+			--statement_start_offset,
+			--statement_end_offset,
+			--[dbid],
+			--[objectid],
+			[query_plan_text]
+			--[query_plan_xml]
+		)
+		SELECT 
+			qpss.PKQueryPlanStmtStoreID,
+			qpss.plan_handle,
+			qpss.query_plan
+		FROM CoreXR.QueryPlanStmtStore qpss
+		WHERE qpss.PKQueryPlanStmtStoreID IN (
+			SELECT DISTINCT qhs.PKQueryPlanStmtStoreID
+			FROM #QHSubHeaders qhs
+			WHERE qhs.PKQueryPlanStmtStoreID > 0
+		)
+		;
+
+		SET @lv__errorloc = N'Declare query plan cursor';
+		DECLARE resolveQueryPlanStmtStore CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT qpss.PKQueryPlanStmtStoreID,
+			qpss.plan_handle,
+			qpss.query_plan_text
+		FROM #QueryPlanStmtStore qpss;
+
+		SET @lv__errorloc = N'Open query plan cursor';
+		OPEN resolveQueryPlanStmtStore;
+		FETCH resolveQueryPlanStmtStore INTO @PKQueryPlanStmtStoreID,
+			@plan_handle,
+			@query_plan_text;
+
+		WHILE @@FETCH_STATUS = 0
+		BEGIN
+			SET @lv__errorloc = N'In query plan loop';
+			IF @plan_handle = 0x0
+			BEGIN
+				SET @query_plan_xml = CONVERT(XML, N'<?StmtPlan --' + NCHAR(10)+NCHAR(13) + N'plan_handle is 0x0. The Statement Query Plan cannot be displayed.' + NCHAR(10) + NCHAR(13) + 
+				N'PKQueryPlanStmtStoreID: ' + CONVERT(NVARCHAR(20), ISNULL(@PKQueryPlanStmtStoreID,-1)) +
+				NCHAR(10) + NCHAR(13) + N'-- ?>');
+			END
+			ELSE
+			BEGIN
+				IF @query_plan_text IS NULL
+				BEGIN
+					SET @query_plan_xml = CONVERT(XML, N'<?StmtPlan --' + NCHAR(10)+NCHAR(13) + N'The Statement Query Plan is NULL.' + NCHAR(10) + NCHAR(13) + 
+					N'PKQueryPlanStmtStoreID: ' + CONVERT(NVARCHAR(20), ISNULL(@PKQueryPlanStmtStoreID,-1)) +
+					NCHAR(10) + NCHAR(13) + N'-- ?>');
+				END
+				ELSE
+				BEGIN
+					BEGIN TRY
+						SET @query_plan_xml = CONVERT(XML, @query_plan_text);
+					END TRY
+					BEGIN CATCH
+						--Most common reason for this is the 128-node limit
+						SET @query_plan_xml = CONVERT(XML, N'<?StmtPlan --' + NCHAR(10)+NCHAR(13) + N'Error CONVERTing Statement Query Plan to XML: ' + ERROR_MESSAGE() + NCHAR(10) + NCHAR(13) + 
+						N'PKQueryPlanStmtStoreID: ' + CONVERT(NVARCHAR(20), ISNULL(@PKQueryPlanStmtStoreID,-1)) +
+
+						CASE WHEN ERROR_NUMBER() = 6335 AND @PKSQLStmtStoreID IS NOT NULL THEN 
+							N'-- You can extract this query plan to a file with the below script
+							--DROP TABLE dbo.largeQPbcpout
+							SELECT query_plan
+							INTO dbo.largeQPbcpout
+							FROM CoreXR.QueryPlanStmtStore q
+							WHERE q.PKQueryPlanStmtStoreID = ' + CONVERT(NVARCHAR(20),@PKQueryPlanStmtStoreID) + N'
+							--then from a command line:
+							bcp dbo.largeQPbcpout out c:\largeqpxmlout.sqlplan -c -S. -T
+							'
+						ELSE N'' END + 
+
+						NCHAR(10) + NCHAR(13) + N'-- ?>');
+					END CATCH
+				END
+			END
+
+			UPDATE #QueryPlanStmtStore
+			SET query_plan_xml = @query_plan_xml
+			WHERE PKQueryPlanStmtStoreID = @PKQueryPlanStmtStoreID;
+
+			FETCH resolveQueryPlanStmtStore INTO @PKQueryPlanStmtStoreID,
+				@plan_handle,
+				@query_plan_text;
+		END
+
+		CLOSE resolveQueryPlanStmtStore;
+		DEALLOCATE resolveQueryPlanStmtStore;
+	END
+
+	SET @lv__DynSQL = N'
+	SELECT ' + 
+		CASE WHEN @context = N'N' THEN N'' ELSE N'
+		[CntxtDB] = CASE WHEN ss.SubHeaderDisplayOrder = 0 THEN DB_NAME(ss.sess__database_id) ELSE N'''' END,' END + N'
+		[StmtID] = CASE WHEN ss.SubHeaderDisplayOrder = 0 THEN N'''' ELSE CONVERT(VARCHAR(20),ss.PKSQLStmtStoreID) END,
+		ss.StmtText,
+		[PlanID] = CASE WHEN ss.SubHeaderDisplayOrder = 0 THEN N'''' ELSE CONVERT(VARCHAR(20),ss.PKQueryPlanStmtStoreID) END,
+		ss.QPlan,
+		[Uniq] = ss.UniqueOccurrences,
+		[#Caps] = ss.NumCaptureRows,
+		ss.FirstSeen,
+		ss.LastSeen,
+		ss.cpu_time
 	FROM (
 		SELECT 
 			HeaderDisplayOrder = qhh.DisplayOrder,
 			SubHeaderDisplayOrder = 0,
 			qhh.sess__database_id,
-			qhh.query_hash,
+			[PKSQLStmtStoreID] = -1,
+			[StmtText] = N''Query Hash: '' + CONVERT(VARCHAR(20),qhh.query_hash),
+			[PKQueryPlanStmtStoreID] = -1,
+			[QPlan] = N'''',
 			qhh.UniqueOccurrences,
 			qhh.NumCaptureRows,
 			qhh.FirstSeen,
@@ -1094,7 +1400,10 @@ BEGIN TRY
 			HeaderDisplayOrder = qhh.DisplayOrder,
 			SubHeaderDisplayOrder = qhs.DisplayOrder,
 			qhs.sess__database_id,
-			qhs.query_hash,
+			qhs.PKSQLStmtStoreID,
+			[StmtText] = sss.stmt_xml,
+			qhs.PKQueryPlanStmtStoreID,
+			[QPlan] = qpss.query_plan_xml,
 			qhs.UniqueOccurrences,
 			qhs.NumCaptureRows,
 			qhs.FirstSeen,
@@ -1104,13 +1413,110 @@ BEGIN TRY
 			INNER JOIN #QHSubHeaders qhs
 				ON qhh.query_hash = qhs.query_hash
 				AND qhh.sess__database_id = qhs.sess__database_id
+			LEFT OUTER JOIN #SQLStmtStore sss
+				ON qhs.PKSQLStmtStoreID = sss.PKSQLStmtStoreID
+			LEFT OUTER JOIN #QueryPlanStmtStore qpss
+				ON qhs.PKQueryPlanStmtStoreID = qpss.PKQueryPlanStmtStoreID
 	) ss
 	ORDER BY ss.HeaderDisplayOrder, ss.SubHeaderDisplayOrder;
+	';
 
+	EXEC sp_executesql @stmt=@lv__DynSQL;
 
 	/*******************************************************************************************************************************
 											End of Query Hash section
 	********************************************************************************************************************************/
+
+
+	/********************************************************************************************************************************
+						 OOOO    BBBB   JJJJJ       SSSS   TTTTT   MM   MM  TTTTT   SSSS 
+						O    O   B   B    J        S         T     M M M M	  T    S     
+						O    O   BBBB     J         SSSS     T     M  M  M	  T     SSSS 
+						O    O   B   B    J             S    T     M     M	  T         S
+						 OOOO    BBBB   JJ          SSSS     T     M     M	  T     SSSS 
+	********************************************************************************************************************************/
+	/*
+		The Stmt section focuses on object SQL (CoreXR.SQLStmtStore.object_id is not null). The identifier here is PKSQLStmtStoreID, and
+		for object SQL, should uniquely identify a statement inside of an object. (Same text in 2 different objects = 2 different IDs).
+		We want to show queries that have run many times, and aggregate their stats. Like the Query Hash data, we want to potentially
+		show sub-rows. However, unlike QH data, each subrow will be the same PKSQLStmtStoreID, but only different query plan IDs.
+		If there is only 1 query plan for a given statement, then there will only be 1 sub-row. If query plans are not desired,
+		then we don't show any sub-rows, just aggregated stats.
+	*/
+	--First, obtain a list of instances
+	INSERT INTO #ObjStmtInstances (
+		--These are the identifying columns. The granularity of this table is a statement
+		session_id,
+		request_id,
+		TimeIdentifier,
+		StatementFirstCapture,
+
+		StatementLastCapture,
+		PreviousCaptureTime,
+		sess__database_id,
+		PKSQLStmtStoreID,
+		PKQueryPlanStmtStoreID,
+		NumCaptureRows
+	)
+	SELECT 
+		session_id,
+		request_id,
+		TimeIdentifier,
+		StatementFirstCapture,
+
+		StatementLastCapture,
+		PreviousCaptureTime,
+		sess__database_id,
+		PKSQLStmtStoreID,
+		PKQueryPlanStmtStoreID,
+		NumCaptureRows
+	FROM (
+		SELECT 
+			--Identifiers of the statement
+			ss.session_id,
+			ss.request_id,
+			ss.TimeIdentifier,
+			ss.StatementFirstCapture,
+
+			[StatementLastCapture] = MAX(ss.StatementLastCapture),		--only 1 row should be non-null so we obtain that
+			[PreviousCaptureTime] = MAX(ss.PreviousCaptureTime),		--ditto
+
+			[sess__database_id] = MAX(sess__database_id),		--this orders a real DBID over the -1 that we have if it is NULL in SAR. This should be safe b/c
+										--while Context DBID could change within a batch, it shouldn't change within a statement.
+			[PKSQLStmtStoreID] = MAX(PKSQLStmtStoreID),
+			[PKQueryPlanStmtStoreID] = MAX(PKQueryPlanStmtStoreID),
+			[NumCaptureRows] = SUM(1)
+		FROM (
+			SELECT 
+				sct.session_id,
+				sct.request_id,
+				sct.TimeIdentifier,
+				sct.StatementFirstCapture,
+				--We only capture 1 non-NULL value on these 2 fields so that we can apply MAX later to obtain it when we decrease granularity
+				[StatementLastCapture] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
+											THEN sct.SPIDCaptureTime ELSE NULL END,
+				[PreviousCaptureTime] = CASE WHEN sct.IsStmtFirstCapture = 1 THEN sct.PreviousCaptureTime ELSE NULL END,
+
+				[sess__database_id] = CASE WHEN @context=N'Y' THEN sct.sess__database_id ELSE -1 END,
+
+				[PKQueryPlanStmtStoreID] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
+												THEN sct.PKQueryPlanStmtStoreID
+												ELSE -1 END,
+
+				sct.PKSQLStmtStoreID			--TODO: for now, this should be the same for all caps for the same statement. However, once we implement
+												--TMR waits, that assumption may not be true anymore. May need to revisit.
+			FROM AutoWho.StatementCaptureTimes sct
+				LEFT OUTER JOIN CoreXR.SQLStmtStore sss
+					ON sct.PKSQLStmtStoreID = sss.PKSQLStmtStoreID
+					AND sss.objectid <> @lv__nullint
+			WHERE sct.StatementFirstCapture BETWEEN @start AND @end		--notice that we don't use SPIDCaptureTime here, because we don't want to grab partial
+																		--sets of rows for any statements.
+		) ss
+		GROUP BY ss.session_id,
+			ss.request_id,
+			ss.TimeIdentifier,
+			ss.StatementFirstCapture
+	) ss2;
 
 
 END TRY
