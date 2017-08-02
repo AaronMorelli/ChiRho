@@ -85,6 +85,8 @@ CREATE TABLE [AutoWho].[SessionsAndRequests] (
 	[rqst__granted_query_memory] [int] NULL,
 	[rqst__executing_managed_code] [bit] NULL,
 	[rqst__group_id] [int] NULL,
+	[rqst__query_hash] [binary](8) NULL,
+	[rqst__query_plan_hash] [binary](8) NULL,
 	[rqst__FKDimCommand] [smallint] NULL,
 	[rqst__FKDimWaitType] [smallint] NULL,
 	[tempdb__sess_user_objects_alloc_page_count] [bigint] NULL,

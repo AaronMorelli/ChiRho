@@ -72,6 +72,12 @@ BEGIN
 END
 IF EXISTS (SELECT * FROM sys.procedures p 
 			WHERE p.schema_id = schema_id('dbo') 
+			AND p.name = N'sp_XR_FrequentQueries')
+BEGIN
+	DROP PROCEDURE dbo.sp_XR_FrequentQueries;
+END
+IF EXISTS (SELECT * FROM sys.procedures p 
+			WHERE p.schema_id = schema_id('dbo') 
 			AND p.name = N'sp_XR_FileUsage')
 BEGIN
 	DROP PROCEDURE dbo.sp_XR_FileUsage;

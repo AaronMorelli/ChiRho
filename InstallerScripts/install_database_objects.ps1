@@ -548,6 +548,39 @@ catch [system.exception] {
 
 Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
+
+$masterproc_FQ = $masterprocs_parent + "sp_XR_FrequentQueries__TEMPLATE.sql"
+$masterproc_FQ_Replace = $masterprocs_parent + "sp_XR_FrequentQueries__" + $Database + ".sql"
+
+$curtime = Get-Date -format s
+$outmsg = $curtime + "------> Creating sp_XR_FrequentQueries"
+Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+
+if (Test-Path $masterproc_FQ_Replace) {
+	Remove-Item $masterproc_FQ_Replace
+}
+
+(Get-Content $masterproc_FQ) | Foreach-Object { $_ -replace '@@XRDATABASENAME@@', $Database } | Set-Content $masterproc_FQ_Replace
+
+try {
+	invoke-sqlcmd -inputfile $masterproc_FQ_Replace -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+	CD $curScriptLocation
+
+	Write-Host "Finished creating sp_XR_FrequentQueries" -foregroundcolor cyan -backgroundcolor black
+}
+catch [system.exception] {
+	Write-Host "Error occurred while creating sp_XR_FrequentQueries: " -foregroundcolor red -backgroundcolor black
+	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+    $curtime = Get-Date -format s
+	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+    throw "Installation failed"
+	break
+}
+
+Write-Host "" -foregroundcolor cyan -backgroundcolor black
+
+
 #$masterproc_QC = $masterprocs_parent + "sp_XR_QueryCamera__TEMPLATE.sql"
 #$masterproc_QC_Replace = $masterprocs_parent + "sp_XR_QueryCamera__" + $Database + ".sql"
 

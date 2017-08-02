@@ -62,8 +62,9 @@ BEGIN
 	SET XACT_ABORT ON;
 
 	DECLARE @lv__AppLockResource NVARCHAR(100),
-			@lv__ProcRC INT,
-			@err__msg NVARCHAR(4000);
+			@lv__ProcRC			INT,
+			@lv__ExecMode		TINYINT,		--1 singletime; 2 start/end
+			@err__msg			NVARCHAR(4000);
 
 	IF @init NOT IN (255, 1, 2)
 	BEGIN
@@ -99,6 +100,7 @@ BEGIN
 		END
 
 		--user wants to process a single time. Set @start and @end to that same time
+		SET @lv__ExecMode = 1;
 		SET @start = @singletime;
 		SET @end = @singletime;
 	END
@@ -126,6 +128,8 @@ BEGIN
 			RAISERROR('Parameter @end must be at least 15 seconds more recent than parameter @start.', 16, 1);
 			RETURN -1;
 		END
+
+		SET @lv__ExecMode = 2;
 	END 
 
 
@@ -261,9 +265,9 @@ BEGIN TRY
 	FROM #ToPostProcess t;
 
 	--If this is the background trace we're processing, update the batch and statement stats
-	IF @init = 255
+	IF @init = 255 AND @lv__ExecMode = 2
 	BEGIN
-		EXEC [AutoWho].[CalcBatchStmtStats] @FirstCaptureTime = @lv__FirstCaptureTime, @LastCaptureTime = @lv__LastCaptureTime;
+		EXEC [AutoWho].[CalcBatchStmtCaptureTimes] @FirstCaptureTime = @lv__FirstCaptureTime, @LastCaptureTime = @lv__LastCaptureTime;
 	END
 
 
