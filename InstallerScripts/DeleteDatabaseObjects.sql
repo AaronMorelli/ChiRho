@@ -420,10 +420,10 @@ BEGIN TRY
 		PRINT 'DROP SCHEMA [HEM];'
 		DROP SCHEMA [HEM];
 	END
-	IF EXISTS (SELECT * FROM sys.schemas s WHERE s.name = N'ChiRho')
+	IF EXISTS (SELECT * FROM sys.schemas s WHERE s.name = N'XR')
 	BEGIN
 		PRINT 'DROP SCHEMA [XR];'
-		DROP SCHEMA [ChiRho];
+		DROP SCHEMA [XR];
 	END
 	IF EXISTS (SELECT * FROM sys.schemas s WHERE s.name = N'CoreXR')
 	BEGIN

@@ -106,6 +106,7 @@ BEGIN
 		[RebuildScore] [int] NOT NULL
 	);
 
+		/* This works in SQL 2012 and later, but not in 2008 R2 or prev
 	INSERT INTO #AutoWhoIndexToEval (
 		[SchemaName],
 		[TableName],
@@ -152,6 +153,81 @@ BEGIN
 	AND ps.index_level = 0
 	AND i.index_id <> 0
 	;
+	*/
+	
+	--BEGIN SQL 2008 R2 and before logic BEGIN
+	INSERT INTO #AutoWhoIndexToEval (
+		[SchemaName],
+		[TableName],
+		[IndexName],
+		[index_id]
+	)
+	SELECT s.name as SchemaName, 
+		o.name as TableName, 
+		i.name as IndexName, 
+		i.index_id
+	FROM sys.objects o 
+		INNER JOIN sys.schemas s
+			ON o.schema_id = s.schema_id
+		INNER JOIN sys.indexes i
+			ON o.object_id = i.object_id
+	WHERE o.type = 'U'
+	AND o.schema_id IN (schema_id('CoreXR'), schema_id('AutoWho'))
+	AND i.index_id <> 0;
+	
+	DECLARE @ObjID INT;
+	DECLARE ObtainPhysStats CURSOR FOR
+	SELECT t.SchemaName,
+		t.TableName,
+		t.IndexName,
+		t.index_id
+	FROM #AutoWhoIndexToEval t
+	ORDER BY 1,2,3;
+	
+	OPEN ObtainPhysStats;
+	FETCH ObtainPhysStats INTO @SchemaName,
+		@TableName,
+		@IndexName,
+		@index_id;
+	
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		SET @ObjID = OBJECT_ID(QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName));
+	
+		UPDATE targ 
+		SET alloc_unit_type_desc = ss.alloc_unit_type_desc,
+			avg_fragment_size_in_pages = ss.avg_fragment_size_in_pages,
+			avg_fragmentation_in_percent = ss.avg_fragmentation_in_percent,
+			avg_page_space_used_in_percent = ss.avg_page_space_used_in_percent,
+			forwarded_record_count = ss.forwarded_record_count,
+			ghost_record_count = ss.ghost_record_count,
+			page_count = ss.page_count,
+			record_count = ss.record_count,
+			version_ghost_record_count = ss.version_ghost_record_count,
+			min_record_size_in_bytes = ss.min_record_size_in_bytes,
+			max_record_size_in_bytes = ss.max_record_size_in_bytes,
+			avg_record_size_in_bytes = ss.avg_record_size_in_bytes
+		FROM #AutoWhoIndexToEval targ 
+			INNER JOIN (
+				SELECT *
+				FROM sys.dm_db_index_physical_stats(db_id(), @ObjID, @index_id, null, 'DETAILED') ps
+				WHERE ps.index_level = 0
+			) ss
+				ON targ.SchemaName = @SchemaName
+				AND targ.TableName = @TableName
+				AND targ.IndexName = @IndexName
+				AND targ.index_id = @index_id
+		;
+	
+		FETCH ObtainPhysStats INTO @SchemaName,
+			@TableName,
+			@IndexName,
+			@index_id;
+	END
+	
+	CLOSE ObtainPhysStats;
+	DEALLOCATE ObtainPhysStats;
+	--END SQL 2008 R2 and before logic END
 
 	/* debug
 	SELECT * 

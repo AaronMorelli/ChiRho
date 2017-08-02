@@ -45,10 +45,23 @@ $outmsg = $curtime + "------> Parameter Validation complete. Proceeding with ins
 Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
 $curtime = Get-Date -format s
-$outmsg = $curtime + "------> Loading SqlPs module"
+$outmsg = $curtime + "------> Loading SQL Powershell module or snapin"
 Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
-Import-Module SqlPs
+if (Get-Module -Name SQLPS -ListAvailable) {
+		Import-Module SqlPs
+		
+	$curtime = Get-Date -format s
+	$outmsg = $curtime + "------> SQL Powershell module loaded successfully"
+	Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+}
+else {
+	Add-PSSnapin -Name SqlServerCmdletSnapin100, SqlServerProviderSnapin100
+	
+	$curtime = Get-Date -format s
+	$outmsg = $curtime + "------> SQL Powershell snapins loaded successfully"
+	Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+}
 
 Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
@@ -92,7 +105,7 @@ $deleteservobj = $curScriptLocation + "InstallerScripts\DeleteServerObjects.sql"
 # Check for the existence of the DB. We pass in $DBExists, and it will RAISERROR if the actual state of the DB's existence
 # doesn't match what $DBExists says
 try {
-	$MyVariableArray = "DBName = $Database", "DBExists = $DBExists"
+	$MyVariableArray = "DBName=$Database", "DBExists=$DBExists"
 	
 	invoke-sqlcmd -inputfile $pedbexistcheck -serverinstance $Server -database master -Variable $MyVariableArray -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
 	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
@@ -119,7 +132,7 @@ if ( $DBExists -eq "N" ) {
     Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
     try {
-	   $MyVariableArray = "DBName = $Database"
+	   $MyVariableArray = "DBName=$Database"
 	
 	   invoke-sqlcmd -inputfile $createpedb -serverinstance $Server -database master -Variable $MyVariableArray -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
 	   #In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
@@ -170,7 +183,7 @@ Write-Host "" -foregroundcolor cyan -backgroundcolor black
 # clean up any server objects (SQL Agent jobs, master procs)
 try {
     # we still pass DB name b/c even though these are all instance-level objects, the DB name is used to construct the name for the jobs
-	$MyVariableArray = "DBName = $Database"
+	$MyVariableArray = "DBName=$Database"
 	
 	invoke-sqlcmd -inputfile $deleteservobj -serverinstance $Server -database master -Variable $MyVariableArray -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
 	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
@@ -443,7 +456,7 @@ Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
 # AutoWho config
 try {
-	$MyVariableArray = "HoursToKeep = $HoursToKeep"
+	$MyVariableArray = "HoursToKeep=$HoursToKeep"
 	
 	invoke-sqlcmd -inputfile $autowho_config -serverinstance $Server -database $Database -Variable $MyVariableArray -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
 	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
@@ -719,7 +732,7 @@ Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
 # ChiRho Master job
 try {
-	$MyVariableArray = "DBName = $Database"
+	$MyVariableArray = "DBName=$Database"
 	
 	invoke-sqlcmd -inputfile $job_core -serverinstance $Server -database msdb -Variable $MyVariableArray -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
 	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
@@ -744,7 +757,7 @@ Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
 # AutoWho job
 try {
-	$MyVariableArray = "DBName = $Database"
+	$MyVariableArray = "DBName=$Database"
 	
 	invoke-sqlcmd -inputfile $job_autowho -serverinstance $Server -database msdb -Variable $MyVariableArray -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
 	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
