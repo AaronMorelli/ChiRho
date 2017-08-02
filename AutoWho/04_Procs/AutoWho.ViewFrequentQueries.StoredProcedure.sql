@@ -2,7 +2,7 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-ALTER PROCEDURE [AutoWho].[ViewFrequentQueries] 
+CREATE PROCEDURE [AutoWho].[ViewFrequentQueries] 
 /*   
 	Copyright 2016 Aaron Morelli
 
@@ -708,7 +708,979 @@ BEGIN TRY
 
 	CLOSE resolveInputBufferStore;
 	DEALLOCATE resolveInputBufferStore;
+	/*******************************************************************************************************************************
+											End of Input Buffers section
+	********************************************************************************************************************************/
 
+
+	/********************************************************************************************************************************
+						  QQQQ     H   H      PPPP    PPPP    EEEEE   PPPP  
+						 Q    Q    H   H      P   P	  P   P   E		  P   P	
+						 Q    Q    HHHHH      PPPP	  PPPP    EEEEE	  PPPP	
+						 Q    Q    H   H      P		  P  R    E		  P		
+					      QQQQ     H   H      P		  P   R   EEEEE	  P		
+						      Q
+	********************************************************************************************************************************/
+	/*
+		The "QH" section focuses on ad-hoc SQL (NULL AutoWho.SQLStmtStore.object_id field). The identifier here is a query_hash, the
+		signature of the text of a sql statement. We want to show queries that have run many times, and aggregate their stats.
+		However, unlike the Input Buffer set where we only have 1 row per query, we want to show a representative sample of the
+		data associated with a single query_hash value. This takes the form "top X StmtStoreID rows" under each query hash,
+		where "top" means top # of executions. (We may give more ordering options at a later time). 
+		If query plans are desired, then the key for each "representative row" changes from PKSQLStmtStoreID to PKSQLStmtStoreID/PKQueryPlanStmtStoreID.
+		Thus, the same SQLStmtStoreID value could occur multiple times in the "representative rows" section.
+	*/
+
+	--First, obtain a list of instances
+	SET @lv__errorloc = N'Populate #QHInstances';
+	INSERT INTO #QHInstances (
+		session_id,
+		request_id,
+		TimeIdentifier,
+		StatementFirstCapture,
+
+		StatementLastCapture,
+		PreviousCaptureTime,
+		query_hash,
+		sess__database_id,
+		PKSQLStmtStoreID,
+		PKQueryPlanStmtStoreID,
+		NumCaptureRows
+	)
+	SELECT 
+		session_id,
+		request_id,
+		TimeIdentifier,
+		StatementFirstCapture,
+
+		StatementLastCapture,
+		PreviousCaptureTime,
+		query_hash,
+		sess__database_id,
+		PKSQLStmtStoreID,
+		PKQueryPlanStmtStoreID,
+		NumCaptureRows
+	FROM (
+		SELECT 
+			--Each row signifies the execution of an individual statement
+			ss.session_id,
+			ss.request_id,
+			ss.TimeIdentifier,
+			ss.StatementFirstCapture,
+
+			[StatementLastCapture] = MAX(ss.StatementLastCapture),		--only 1 row should be non-null so we obtain that
+			[PreviousCaptureTime] = MAX(ss.PreviousCaptureTime),		--ditto
+			[query_hash] = MAX(ss.query_hash),
+			[sess__database_id] = MAX(sess__database_id),		--this orders a real DBID over the -1 that we have if it is NULL in SAR. This should be safe b/c
+										--while Context DBID could change within a batch, it shouldn't change within a statement.
+			[PKSQLStmtStoreID] = MAX(PKSQLStmtStoreID),
+			[PKQueryPlanStmtStoreID] = MAX(PKQueryPlanStmtStoreID),
+			[NumCaptureRows] = SUM(1)
+		FROM (
+			SELECT 
+				sct.session_id,
+				sct.request_id,
+				sct.TimeIdentifier,
+				sct.StatementFirstCapture,
+				--We only capture 1 non-NULL value on these 2 fields so that we can apply MAX later to obtain it when we decrease granularity
+				[StatementLastCapture] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
+											THEN sct.SPIDCaptureTime ELSE NULL END,
+				[PreviousCaptureTime] = CASE WHEN sct.IsStmtFirstCapture = 1 THEN sct.PreviousCaptureTime ELSE NULL END,
+
+				[query_hash] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 THEN sct.rqst__query_hash ELSE NULL END,
+				[sess__database_id] = CASE WHEN @context=N'Y' THEN ISNULL(sct.sess__database_id,-1) ELSE -1 END,
+
+				[PKQueryPlanStmtStoreID] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
+												THEN ISNULL(sct.PKQueryPlanStmtStoreID,-1)
+												ELSE -1 END,
+
+				sct.PKSQLStmtStoreID			--TODO: for now, this should be the same for all caps for the same statement. However, once we implement
+												--TMR waits, that assumption may not be true anymore. May need to revisit.
+			FROM AutoWho.StatementCaptureTimes sct
+				LEFT OUTER JOIN CoreXR.SQLStmtStore sss
+					ON sct.PKSQLStmtStoreID = sss.PKSQLStmtStoreID
+					AND sss.objectid = @lv__nullint
+			WHERE sct.StatementFirstCapture BETWEEN @start AND @end		--notice that we don't use SPIDCaptureTime here, because we don't want to grab partial
+																		--sets of rows for any statements.
+		) ss
+		GROUP BY ss.session_id,
+			ss.request_id,
+			ss.TimeIdentifier,
+			ss.StatementFirstCapture
+	) ss2
+	WHERE ss2.query_hash IS NOT NULL;	--This can happen if the query hash is null for every SPIDCaptureTime of the ad-hoc SQL. WAITFOR is an example of this.
+
+	SET @lv__errorloc = N'Populate #QHHeaders';
+	INSERT INTO #QHHeaders (
+		query_hash,
+		sess__database_id,
+		UniqueOccurrences,		--the total # of unique executed statements for this query_hash/ContextDBID combination
+		NumCaptureRows,
+		FirstSeen,
+		LastSeen,
+		DisplayOrder
+	)
+	SELECT 
+		query_hash,
+		sess__database_id,
+		UniqueOccurrences,
+		NumCaptureRows,
+		FirstSeen,
+		LastSeen,
+		DisplayOrder = ROW_NUMBER() OVER (ORDER BY UniqueOccurrences DESC)
+	FROM (
+		SELECT 
+			qhi.query_hash,
+			qhi.sess__database_id,
+			UniqueOccurrences = SUM(1),
+			NumCaptureRows = SUM(NumCaptureRows),
+			FirstSeen = MIN(qhi.StatementFirstCapture),
+			LastSeen = MAX(qhi.StatementLastCapture)
+		FROM #QHInstances qhi
+		GROUP BY qhi.query_hash,
+			qhi.sess__database_id
+	) ss;
+
+	SET @lv__errorloc = N'Populate #QHSubHeaders';
+	INSERT INTO #QHSubHeaders (
+		query_hash,
+		sess__database_id,
+
+		PKSQLStmtStoreID,
+		PKQueryPlanStmtStoreID,
+
+		UniqueOccurrences,
+		NumCaptureRows,
+		FirstSeen,
+		LastSeen,
+		DisplayOrder
+	)
+	SELECT 
+		ss.query_hash,
+		ss.sess__database_id,
+		ss.PKSQLStmtStoreID,
+		ss.PKQueryPlanStmtStoreID,
+		ss.NumUniqueStatements,
+		ss.NumCaptureRows,
+		ss.FirstSeen,
+		ss.LastSeen,
+		[DisplayOrder] = ROW_NUMBER() OVER (PARTITION BY ss.query_hash, ss.sess__database_id
+											ORDER BY ss.NumUniqueStatements DESC
+											)
+	FROM (
+		--The granularity of #QHInstances is a statement.
+		--The effective granularity of this subquery is 
+		--	query_hash/DBID (if @context='Y')/PKSQLStmtStoreID/PKQueryPlanStmtStoreID (if @plan='Y')
+		SELECT 
+			qhi.query_hash,
+			qhi.sess__database_id,
+
+			qhi.PKSQLStmtStoreID,
+			qhi.PKQueryPlanStmtStoreID,
+				
+			[NumUniqueStatements] = SUM(1),
+			[NumCaptureRows] = SUM(qhi.NumCaptureRows),
+			[FirstSeen] = MIN(qhi.StatementFirstCapture),
+			[LastSeen] = MAX(qhi.StatementLastCapture)
+		FROM #QHInstances qhi
+		GROUP BY qhi.query_hash,
+			qhi.sess__database_id,
+			qhi.PKSQLStmtStoreID,
+			qhi.PKQueryPlanStmtStoreID
+	) ss;
+
+	--Now we can calc stats and update QH Sub-headers
+	SET @lv__errorloc = N'Calc stats for #QHSubHeaders';
+	UPDATE qhs
+	SET cpu_time = qhi.cpu_time
+	FROM #QHSubHeaders qhs
+		INNER JOIN (
+			--We're glossing over a step here. More explicit logic would be to first calculate the cpu time of each statement
+			-- (group by the identifying fields of #QHInstances) in a sub-query, and then aggregate over the metric (e.g. cpu time) for each statement.
+			--However, we can safely just jump to grouping by our sub-header rows.
+			SELECT
+				qhi.query_hash, 
+				qhi.sess__database_id,
+				qhi.PKSQLStmtStoreID,
+				qhi.PKQueryPlanStmtStoreID,
+				cpu_time = SUM(sar.rqst__cpu_time - ISNULL(sarprev.rqst__cpu_time,0))   --Note that we essentially apportion ALL of the resource usage between the last cap of the prev stmt
+																						-- and the first capture of this statement to this statement. That could be very incorrect: the prev stmt
+																						-- could have ended 5 ms before the first capture of this statement, meaning that practically all of the
+																						-- delta we're calculating really should be apportioned to the prev stmt. But we can't know that, given the
+																						-- polling architecture of AutoWho. There's no perfect solution, but at least we'll be consistent w/our methodology.
+
+				/* Metrics still to do (I may not do all of them)
+
+					SAR
+						[calc__duration_ms]
+						blocking info e.g. [calc__blocking_session_id] and [calc__is_blocker]
+						rqst__status_code
+						rqst__open_transaction_count
+						rqst__reads
+						rqst__writes
+						rqst__logical_reads
+						rqst__transaction_isolation_level
+						rqst__row_count
+						rqst__granted_query_memory
+						tempdb__sess_user_objects_alloc_page_count
+						tempdb__sess_user_objects_dealloc_page_count
+						tempdb__sess_internal_objects_alloc_page_count
+						tempdb__sess_internal_objects_dealloc_page_count
+						tempdb__task_user_objects_alloc_page_count
+						tempdb__task_user_objects_dealloc_page_count
+						tempdb__task_internal_objects_alloc_page_count
+						tempdb__task_internal_objects_dealloc_page_count
+						tempdb__CalculatedNumberOfTasks
+						mgrant__request_time	and   mgrant__grant_time		i.e. the avg delay here
+						mgrant__requested_memory_kb
+						mgrant__granted_memory_kb
+						mgrant__used_memory_kb
+						mgrant__max_used_memory_kb
+						mgrant__dop
+
+						Other stuff to consider:
+								calc__tmr_wait
+								Something like calc__node_info
+								Something like calc__status_info
+
+					TAW
+						tstate
+						context_switches_count
+						FKDimWaitType
+						wait_duration_ms
+
+						Other stuff to consider:
+							wait_special_category
+							wait_special_number
+							wait_special_tag
+							resource_description
+							resource_dbid
+							resource_associatedobjid
+							cxp_wait_direction
+							resolution_successful
+							resolved_name
+
+
+					Tran Details
+						calculated # of transactions
+						oldest tran begin time (dtat_transaction_begin_time and/or dtdt_database_transaction_begin_time)
+						number of DBs that the trans are in (dtdt_database_id)
+						dtdt_database_transaction_log_record_count
+						dtdt_database_transaction_log_bytes_used
+						dtdt_database_transaction_log_bytes_reserved
+						dtdt_database_transaction_log_bytes_used_system
+						dtdt_database_transaction_log_bytes_reserved_system
+						dtasdt_tran_exists
+						dtasdt_elapsed_time_seconds
+						dtasdt_max_version_chain_traversed
+						dtasdt_average_version_chain_traversed
+
+						Other stuff to consider:
+							dtst_is_user_transaction
+							dtat_dtc_state
+							dtat_transaction_state
+							dtat_transaction_type
+							dtst_is_local
+							dtdt_database_transaction_type
+							dtdt_database_transaction_state
+
+
+					Lock Details
+						Avg number of locks? (RecordCount)
+				*/
+			FROM #QHInstances qhi
+				INNER JOIN AutoWho.SessionsAndRequests sar
+					ON qhi.session_id = sar.session_id
+					AND qhi.request_id = sar.request_id
+					AND qhi.TimeIdentifier = sar.TimeIdentifier
+					AND qhi.StatementLastCapture = sar.SPIDCaptureTime	--the last capture will have the highest stats for things like cpu_time and reads
+				LEFT OUTER JOIN AutoWho.SessionsAndRequests sarprev
+					ON qhi.session_id = sarprev.session_id
+					AND qhi.request_id = sarprev.request_id
+					AND qhi.TimeIdentifier = sarprev.TimeIdentifier
+					AND qhi.PreviousCaptureTime = sarprev.SPIDCaptureTime	--the last cap of the previous stmt (if one exists) will allow us to do a delta calculation
+																			
+			GROUP BY qhi.query_hash, 
+				qhi.sess__database_id,
+				qhi.PKSQLStmtStoreID,
+				qhi.PKQueryPlanStmtStoreID
+		) qhi
+			ON qhs.query_hash = qhi.query_hash
+			AND qhs.sess__database_id = qhi.sess__database_id
+			AND qhs.PKSQLStmtStoreID = qhi.PKSQLStmtStoreID
+			AND qhs.PKQueryPlanStmtStoreID = qhi.PKQueryPlanStmtStoreID
+	;
+
+	--Now aggregate up to #QH Headers
+	SET @lv__errorloc = N'Calc stats for #QHHeaders';
+	UPDATE qhh 
+	SET cpu_time = qhs.cpu_time
+		--TODO: more metrics, see above list
+	FROM #QHHeaders qhh
+		INNER JOIN (
+			SELECT 
+				qhs.query_hash,
+				qhs.sess__database_id,
+				cpu_time = SUM(cpu_time)
+			FROM #QHSubHeaders qhs
+			GROUP BY qhs.query_hash,
+					qhs.sess__database_id
+		) qhs
+			ON qhs.query_hash = qhh.query_hash
+			AND qhs.sess__database_id = qhh.sess__database_id;
+	/*******************************************************************************************************************************
+											End of Query Hash data gathering section
+	********************************************************************************************************************************/
+
+	/********************************************************************************************************************************
+						 OOOO    BBBB   JJJJJ       SSSS   TTTTT   MM   MM  TTTTT   SSSS 
+						O    O   B   B    J        S         T     M M M M	  T    S     
+						O    O   BBBB     J         SSSS     T     M  M  M	  T     SSSS 
+						O    O   B   B    J             S    T     M     M	  T         S
+						 OOOO    BBBB   JJ          SSSS     T     M     M	  T     SSSS 
+	********************************************************************************************************************************/
+	/*
+		The Stmt section focuses on object SQL (CoreXR.SQLStmtStore.object_id is not null). The identifier here is PKSQLStmtStoreID, and
+		for object SQL, should uniquely identify a statement inside of an object. (Same text in 2 different objects = 2 different IDs).
+		We want to show queries that have run many times, and aggregate their stats. Like the Query Hash data, we want to potentially
+		show sub-rows. However, unlike QH data, each subrow will be the same PKSQLStmtStoreID, but only different query plan IDs.
+		If there is only 1 query plan for a given statement, then there will only be 1 sub-row. If query plans are not desired,
+		then we don't show any sub-rows, just aggregated stats.
+	*/
+	--First, obtain a list of instances
+	SET @lv__errorloc = N'Populate #ObjStmtInstances';
+	INSERT INTO #ObjStmtInstances (
+		--These are the identifying columns. The granularity of this table is the execution of an individual statement
+		session_id,
+		request_id,
+		TimeIdentifier,
+		StatementFirstCapture,
+
+		StatementLastCapture,
+		PreviousCaptureTime,
+		sess__database_id,
+		PKSQLStmtStoreID,
+		PKQueryPlanStmtStoreID,
+		NumCaptureRows
+	)
+	SELECT 
+		session_id,
+		request_id,
+		TimeIdentifier,
+		StatementFirstCapture,
+
+		StatementLastCapture,
+		PreviousCaptureTime,
+		sess__database_id,
+		PKSQLStmtStoreID,
+		PKQueryPlanStmtStoreID,
+		NumCaptureRows
+	FROM (
+		SELECT 
+			--Each row signifies the execution of an individual statement
+			ss.session_id,
+			ss.request_id,
+			ss.TimeIdentifier,
+			ss.StatementFirstCapture,
+
+			[StatementLastCapture] = MAX(ss.StatementLastCapture),		--only 1 row should be non-null so we obtain that
+			[PreviousCaptureTime] = MAX(ss.PreviousCaptureTime),		--ditto
+
+			[sess__database_id] = MAX(sess__database_id),		--this orders a real DBID over the -1 that we have if it is NULL in SAR. This should be safe b/c
+										--while Context DBID could change within a batch, it shouldn't change within a statement.
+			[PKSQLStmtStoreID] = MAX(PKSQLStmtStoreID),
+			[PKQueryPlanStmtStoreID] = MAX(PKQueryPlanStmtStoreID),
+			[NumCaptureRows] = SUM(1)
+		FROM (
+			SELECT 
+				sct.session_id,
+				sct.request_id,
+				sct.TimeIdentifier,
+				sct.StatementFirstCapture,
+				--We only capture 1 non-NULL value on these 2 fields so that we can apply MAX later to obtain it when we decrease granularity
+				[StatementLastCapture] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
+											THEN sct.SPIDCaptureTime ELSE NULL END,
+				[PreviousCaptureTime] = CASE WHEN sct.IsStmtFirstCapture = 1 THEN sct.PreviousCaptureTime ELSE NULL END,
+
+				[sess__database_id] = CASE WHEN @context=N'Y' THEN ISNULL(sct.sess__database_id,-1) ELSE -1 END,
+
+				[PKQueryPlanStmtStoreID] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
+												THEN ISNULL(sct.PKQueryPlanStmtStoreID,-1)
+												ELSE -1 END,
+
+				sct.PKSQLStmtStoreID			--TODO: for now, this should be the same for all caps for the same statement. However, once we implement
+												--TMR waits, that assumption may not be true anymore. May need to revisit.
+			FROM AutoWho.StatementCaptureTimes sct
+				LEFT OUTER JOIN CoreXR.SQLStmtStore sss
+					ON sct.PKSQLStmtStoreID = sss.PKSQLStmtStoreID
+					AND sss.objectid <> @lv__nullint
+			WHERE sct.StatementFirstCapture BETWEEN @start AND @end		--notice that we don't use SPIDCaptureTime here, because we don't want to grab partial
+																		--sets of rows for any statements.
+		) ss
+		GROUP BY ss.session_id,
+			ss.request_id,
+			ss.TimeIdentifier,
+			ss.StatementFirstCapture
+	) ss2;
+
+	SET @lv__errorloc = N'Populate #ObjStmtSubHeaders';
+	INSERT INTO #ObjStmtSubHeaders (
+		PKSQLStmtStoreID,
+		sess__database_id,
+		PKQueryPlanStmtStoreID,
+
+		UniqueOccurrences,
+		NumCaptureRows,
+		FirstSeen,
+		LastSeen,
+		DisplayOrder,
+
+		cpu_time
+	)
+	SELECT 
+		ss.PKSQLStmtStoreID,
+		ss.sess__database_id,
+		ss.PKQueryPlanStmtStoreID,
+
+		ss.UniqueOccurrences,
+		ss.NumCaptureRows,
+		ss.FirstSeen,
+		ss.LastSeen,
+		[DisplayOrder] = ROW_NUMBER() OVER (PARTITION BY ss.PKSQLStmtStoreID, ss.sess__database_id ORDER BY ss.UniqueOccurrences DESC),
+		ss.cpu_time
+	FROM (
+		SELECT 
+			osi.PKSQLStmtStoreID,
+			osi.sess__database_id,
+			osi.PKQueryPlanStmtStoreID,
+			[UniqueOccurrences] = SUM(1),	--the # of unique statement executions for a given StmtID/ContextDBID/PlanID 
+			[NumCaptureRows] = SUM(osi.NumCaptureRows),
+			FirstSeen = MIN(osi.StatementFirstCapture),
+			LastSeen = MAX(osi.StatementLastCapture),
+			[cpu_time] = SUM(sar.rqst__cpu_time - ISNULL(sarprev.rqst__cpu_time,0))
+							/* Metrics still to do (I may not do all of them)
+
+					SAR
+						[calc__duration_ms]
+						blocking info e.g. [calc__blocking_session_id] and [calc__is_blocker]
+						rqst__status_code
+						rqst__open_transaction_count
+						rqst__reads
+						rqst__writes
+						rqst__logical_reads
+						rqst__transaction_isolation_level
+						rqst__row_count
+						rqst__granted_query_memory
+						tempdb__sess_user_objects_alloc_page_count
+						tempdb__sess_user_objects_dealloc_page_count
+						tempdb__sess_internal_objects_alloc_page_count
+						tempdb__sess_internal_objects_dealloc_page_count
+						tempdb__task_user_objects_alloc_page_count
+						tempdb__task_user_objects_dealloc_page_count
+						tempdb__task_internal_objects_alloc_page_count
+						tempdb__task_internal_objects_dealloc_page_count
+						tempdb__CalculatedNumberOfTasks
+						mgrant__request_time	and   mgrant__grant_time		i.e. the avg delay here
+						mgrant__requested_memory_kb
+						mgrant__granted_memory_kb
+						mgrant__used_memory_kb
+						mgrant__max_used_memory_kb
+						mgrant__dop
+
+						Other stuff to consider:
+								calc__tmr_wait
+								Something like calc__node_info
+								Something like calc__status_info
+
+					TAW
+						tstate
+						context_switches_count
+						FKDimWaitType
+						wait_duration_ms
+
+						Other stuff to consider:
+							wait_special_category
+							wait_special_number
+							wait_special_tag
+							resource_description
+							resource_dbid
+							resource_associatedobjid
+							cxp_wait_direction
+							resolution_successful
+							resolved_name
+
+
+					Tran Details
+						calculated # of transactions
+						oldest tran begin time (dtat_transaction_begin_time and/or dtdt_database_transaction_begin_time)
+						number of DBs that the trans are in (dtdt_database_id)
+						dtdt_database_transaction_log_record_count
+						dtdt_database_transaction_log_bytes_used
+						dtdt_database_transaction_log_bytes_reserved
+						dtdt_database_transaction_log_bytes_used_system
+						dtdt_database_transaction_log_bytes_reserved_system
+						dtasdt_tran_exists
+						dtasdt_elapsed_time_seconds
+						dtasdt_max_version_chain_traversed
+						dtasdt_average_version_chain_traversed
+
+						Other stuff to consider:
+							dtst_is_user_transaction
+							dtat_dtc_state
+							dtat_transaction_state
+							dtat_transaction_type
+							dtst_is_local
+							dtdt_database_transaction_type
+							dtdt_database_transaction_state
+
+
+					Lock Details
+						Avg number of locks? (RecordCount)
+				*/
+		FROM #ObjStmtInstances osi
+			INNER JOIN AutoWho.SessionsAndRequests sar
+				ON osi.session_id = sar.session_id
+				AND osi.request_id = sar.request_id
+				AND osi.TimeIdentifier = sar.TimeIdentifier
+				AND osi.StatementLastCapture = sar.SPIDCaptureTime
+			LEFT OUTER JOIN AutoWho.SessionsAndRequests sarprev
+				ON osi.session_id = sarprev.session_id
+				AND osi.request_id = sarprev.request_id
+				AND osi.TimeIdentifier = sarprev.TimeIdentifier
+				AND osi.PreviousCaptureTime = sarprev.SPIDCaptureTime
+		GROUP BY osi.PKSQLStmtStoreID,
+			osi.sess__database_id,
+			osi.PKQueryPlanStmtStoreID
+	) ss;
+
+	SET @lv__errorloc = N'Populate #ObjStmtHeaders';
+	INSERT INTO #ObjStmtHeaders (
+		PKSQLStmtStoreID,
+		sess__database_id,
+		UniqueOccurrences,
+		NumCaptureRows,
+		FirstSeen,
+		LastSeen,
+		DisplayOrder,
+		cpu_time
+	)
+	SELECT 
+		ss.PKSQLStmtStoreID,
+		ss.sess__database_id,
+		ss.UniqueOccurrences,
+		ss.NumCaptureRows,
+		ss.FirstSeen,
+		ss.LastSeen,
+		[DisplayOrder] = ROW_NUMBER() OVER (ORDER BY ss.UniqueOccurrences DESC),
+		ss.cpu_time
+	FROM (
+		SELECT 
+			osh.PKSQLStmtStoreID,
+			osh.sess__database_id,
+			[UniqueOccurrences] = SUM(1),				--the # of unique Query Plan IDs for a given StmtID/ContextDBID
+			[NumCaptureRows] = SUM(osh.NumCaptureRows),
+			[FirstSeen] = MIN(osh.FirstSeen),
+			[LastSeen] = MIN(osh.LastSeen),
+			[cpu_time] = SUM(osh.cpu_time)
+		FROM #ObjStmtSubHeaders osh
+		GROUP BY osh.PKSQLStmtStoreID,
+			osh.sess__database_id
+	) ss;
+
+	/*******************************************************************************************************************************
+											End of Obj Stmt section
+	********************************************************************************************************************************/
+
+	/********************************************************************************************************************************
+						RRRR    EEEEE    SSSS     OOOO    L    V       V   EEEEE
+						R   R   E		S     	 O    O   L     V     V	   E	
+						RRR     EEEEE	 SSSS 	 O    O   L      V   V	   EEEEE
+						R  R    E		     S	 O    O   L       VVV	   E	
+						R   R   EEEEE	 SSSS 	  OOOO    LLLLL    V	   EEEEE
+	********************************************************************************************************************************/
+	--Resolve the statement IDs to the actual statement text
+	SET @lv__errorloc = N'Obtain Stmt Store raw';
+	INSERT INTO #SQLStmtStore (
+		PKSQLStmtStoreID,
+		[sql_handle],
+		statement_start_offset,
+		statement_end_offset,
+		[dbid],
+		[objectid],
+		datalen_batch,
+		stmt_text
+		--stmt_xml
+		--dbname						NVARCHAR(128),
+		--objname						NVARCHAR(128)
+	)
+	SELECT sss.PKSQLStmtStoreID, 
+		sss.sql_handle,
+		sss.statement_start_offset,
+		sss.statement_end_offset,
+		sss.dbid,
+		sss.objectid,
+		sss.datalen_batch,
+		sss.stmt_text
+	FROM CoreXR.SQLStmtStore sss
+	WHERE sss.PKSQLStmtStoreID IN (
+		SELECT qhs.PKSQLStmtStoreID
+		FROM #QHSubHeaders qhs
+		WHERE qhs.PKSQLStmtStoreID > 0
+
+		UNION 
+
+		SELECT osh.PKSQLStmtStoreID
+		FROM #ObjStmtSubHeaders osh
+		WHERE osh.PKSQLStmtStoreID > 0
+		)
+	;
+
+	SET @lv__errorloc = N'Declare Stmt Store Cursor';
+	DECLARE resolveSQLStmtStore CURSOR LOCAL FAST_FORWARD FOR
+	SELECT 
+		PKSQLStmtStoreID,
+		[sql_handle],
+		[dbid],
+		[objectid],
+		stmt_text
+	FROM #SQLStmtStore sss
+	;
+
+	SET @lv__errorloc = N'Open Stmt Store Cursor';
+	OPEN resolveSQLStmtStore;
+	FETCH resolveSQLStmtStore INTO @PKSQLStmtStoreID,
+		@sql_handle,
+		@dbid,
+		@objectid,
+		@stmt_text
+	;
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		SET @lv__errorloc = N'In Stmt Store loop';
+		--Note that one major assumption of this procedure is that the DBID hasn't changed since the time the spid was 
+		-- collected. For performance reasons, we don't resolve DBID in AutoWho.Collector; thus, if a DB is detached/re-attached,
+		-- or deleted and the DBID is re-used by a completely different database, confusion can ensue.
+		IF @dbid > 0
+		BEGIN
+			SET @dbname = DB_NAME(@dbid);
+		END
+		ELSE
+		BEGIN
+			SET @dbname = N'';
+		END
+
+		--Above note about DBID is relevant for this as well. 
+		IF @objectid > 0
+		BEGIN
+			SET @objectname = OBJECT_NAME(@objectid,@dbid);
+		END
+		ELSE
+		BEGIN
+			SET @objectname = N'';
+		END
+
+		IF @objectid > 0
+		BEGIN
+			--if we do have a dbid/objectid pair, get the schema for the object
+			IF @dbid > 0
+			BEGIN
+				SET @schname = OBJECT_SCHEMA_NAME(@objectid, @dbid);
+			END
+			ELSE
+			BEGIN
+				--if we don't have a valid dbid, we still do a "best effort" attempt to get schema
+				SET @schname = OBJECT_SCHEMA_NAME(@objectid);
+			END
+			
+			IF @schname IS NULL
+			BEGIN
+				SET @schname = N'';
+			END
+		END
+		ELSE
+		BEGIN
+			SET @schname = N'';
+		END
+
+		IF @sql_handle = 0x0
+		BEGIN
+			SET @stmt_xml = CONVERT(XML, N'<?Stmt --' + NCHAR(10)+NCHAR(13) + N'sql_handle is 0x0. The current SQL statement cannot be displayed.' + NCHAR(10) + NCHAR(13) + 
+			N'PKSQLStmtStoreID: ' + CONVERT(NVARCHAR(20),ISNULL(@PKSQLStmtStoreID,-1)) + 
+			NCHAR(10) + NCHAR(13) + N'-- ?>');
+		END
+		ELSE
+		BEGIN
+			IF @stmt_text IS NULL
+			BEGIN
+				SET @stmt_xml = CONVERT(XML, N'<?Stmt --' + NCHAR(10)+NCHAR(13) + N'The statement text is NULL. No T-SQL command to display.' + NCHAR(10) + NCHAR(13) + 
+					N'PKSQLStmtStoreID: ' + CONVERT(NVARCHAR(20),ISNULL(@PKSQLStmtStoreID,-1)) + 
+					NCHAR(10) + NCHAR(13) + N'-- ?>');
+			END
+			ELSE
+			BEGIN
+				BEGIN TRY
+					SET @stmt_xml = CONVERT(XML, N'<?Stmt --' + NCHAR(10)+NCHAR(13) + @stmt_text + + NCHAR(10) + NCHAR(13) + 
+					N'PKSQLStmtStoreID: ' + CONVERT(NVARCHAR(20),ISNULL(@PKSQLStmtStoreID,-1)) + 
+					NCHAR(10) + NCHAR(13) + N'-- ?>');
+				END TRY
+				BEGIN CATCH
+					SET @stmt_xml = CONVERT(XML, N'<?Stmt --' + NCHAR(10)+NCHAR(13) + N'Error CONVERTing text to XML: ' + ERROR_MESSAGE() + NCHAR(10) + NCHAR(13) + 
+					N'PKSQLStmtStoreID: ' + CONVERT(NVARCHAR(20),ISNULL(@PKSQLStmtStoreID,-1)) + 
+
+					NCHAR(10) + NCHAR(13) + N'-- ?>');
+				END CATCH
+			END
+		END
+
+		UPDATE #SQLStmtStore
+		SET dbname = @dbname,
+			objname = @objectname,
+			schname = @schname,
+			stmt_xml = @stmt_xml
+		WHERE PKSQLStmtStoreID = @PKSQLStmtStoreID;
+
+		FETCH resolveSQLStmtStore INTO @PKSQLStmtStoreID,
+			@sql_handle,
+			@dbid,
+			@objectid,
+			@stmt_text
+		;
+	END	--WHILE loop for SQL Stmt Store cursor
+		
+	CLOSE resolveSQLStmtStore;
+	DEALLOCATE resolveSQLStmtStore;
+
+	--Resolve query plan identifiers to their actual XML
+	IF @plan = N'y'
+	BEGIN
+		SET @lv__errorloc = N'Obtain query plan store raw';
+		INSERT INTO #QueryPlanStmtStore (
+			PKQueryPlanStmtStoreID,
+			[plan_handle],
+			--statement_start_offset,
+			--statement_end_offset,
+			--[dbid],
+			--[objectid],
+			[query_plan_text]
+			--[query_plan_xml]
+		)
+		SELECT 
+			qpss.PKQueryPlanStmtStoreID,
+			qpss.plan_handle,
+			qpss.query_plan
+		FROM CoreXR.QueryPlanStmtStore qpss
+		WHERE qpss.PKQueryPlanStmtStoreID IN (
+			SELECT qhs.PKQueryPlanStmtStoreID
+			FROM #QHSubHeaders qhs
+			WHERE qhs.PKQueryPlanStmtStoreID > 0
+
+			UNION 
+
+			SELECT osh.PKQueryPlanStmtStoreID
+			FROM #ObjStmtSubHeaders osh
+			WHERE osh.PKQueryPlanStmtStoreID > 0
+		);
+
+		SET @lv__errorloc = N'Declare query plan cursor';
+		DECLARE resolveQueryPlanStmtStore CURSOR LOCAL FAST_FORWARD FOR 
+		SELECT qpss.PKQueryPlanStmtStoreID,
+			qpss.plan_handle,
+			qpss.query_plan_text
+		FROM #QueryPlanStmtStore qpss;
+
+		SET @lv__errorloc = N'Open query plan cursor';
+		OPEN resolveQueryPlanStmtStore;
+		FETCH resolveQueryPlanStmtStore INTO @PKQueryPlanStmtStoreID,
+			@plan_handle,
+			@query_plan_text;
+
+		WHILE @@FETCH_STATUS = 0
+		BEGIN
+			SET @lv__errorloc = N'In query plan loop';
+			IF @plan_handle = 0x0
+			BEGIN
+				SET @query_plan_xml = CONVERT(XML, N'<?StmtPlan --' + NCHAR(10)+NCHAR(13) + N'plan_handle is 0x0. The Statement Query Plan cannot be displayed.' + NCHAR(10) + NCHAR(13) + 
+				N'PKQueryPlanStmtStoreID: ' + CONVERT(NVARCHAR(20), ISNULL(@PKQueryPlanStmtStoreID,-1)) +
+				NCHAR(10) + NCHAR(13) + N'-- ?>');
+			END
+			ELSE
+			BEGIN
+				IF @query_plan_text IS NULL
+				BEGIN
+					SET @query_plan_xml = CONVERT(XML, N'<?StmtPlan --' + NCHAR(10)+NCHAR(13) + N'The Statement Query Plan is NULL.' + NCHAR(10) + NCHAR(13) + 
+					N'PKQueryPlanStmtStoreID: ' + CONVERT(NVARCHAR(20), ISNULL(@PKQueryPlanStmtStoreID,-1)) +
+					NCHAR(10) + NCHAR(13) + N'-- ?>');
+				END
+				ELSE
+				BEGIN
+					BEGIN TRY
+						SET @query_plan_xml = CONVERT(XML, @query_plan_text);
+					END TRY
+					BEGIN CATCH
+						--Most common reason for this is the 128-node limit
+						SET @query_plan_xml = CONVERT(XML, N'<?StmtPlan --' + NCHAR(10)+NCHAR(13) + N'Error CONVERTing Statement Query Plan to XML: ' + ERROR_MESSAGE() + NCHAR(10) + NCHAR(13) + 
+						N'PKQueryPlanStmtStoreID: ' + CONVERT(NVARCHAR(20), ISNULL(@PKQueryPlanStmtStoreID,-1)) +
+
+						CASE WHEN ERROR_NUMBER() = 6335 AND @PKSQLStmtStoreID IS NOT NULL THEN 
+							N'-- You can extract this query plan to a file with the below script
+							--DROP TABLE dbo.largeQPbcpout
+							SELECT query_plan
+							INTO dbo.largeQPbcpout
+							FROM CoreXR.QueryPlanStmtStore q
+							WHERE q.PKQueryPlanStmtStoreID = ' + CONVERT(NVARCHAR(20),@PKQueryPlanStmtStoreID) + N'
+							--then from a command line:
+							bcp dbo.largeQPbcpout out c:\largeqpxmlout.sqlplan -c -S. -T
+							'
+						ELSE N'' END + 
+
+						NCHAR(10) + NCHAR(13) + N'-- ?>');
+					END CATCH
+				END
+			END
+
+			UPDATE #QueryPlanStmtStore
+			SET query_plan_xml = @query_plan_xml
+			WHERE PKQueryPlanStmtStoreID = @PKQueryPlanStmtStoreID;
+
+			FETCH resolveQueryPlanStmtStore INTO @PKQueryPlanStmtStoreID,
+				@plan_handle,
+				@query_plan_text;
+		END
+
+		CLOSE resolveQueryPlanStmtStore;
+		DEALLOCATE resolveQueryPlanStmtStore;
+	END
+	/*******************************************************************************************************************************
+											End of Resolve Stmt and Plan IDs
+	********************************************************************************************************************************/
+
+
+	/********************************************************************************************************************************
+						PPPP    RRRR    EEEEE    SSSS    EEEEE    N   N   TTTTT
+						P   P   R   R   E		S     	 E		  NN  N     T  
+						PPPP    RRR     EEEEE	 SSSS 	 EEEEE	  N N N     T  
+						P	    R  R    E		     S	 E		  N  NN     T  
+						P	    R   R   EEEEE	 SSSS 	 EEEEE	  N   N     T  
+	********************************************************************************************************************************/
+	--Query Hash dynamic SQL
+	SET @lv__errorloc = N'Construct QH dyn SQL';
+	SET @lv__DynSQL = N'
+	SELECT ' + 
+		CASE WHEN @context = N'N' THEN N'' ELSE N'
+		[CntxtDB] = CASE WHEN ss.SubHeaderDisplayOrder = 0 THEN DB_NAME(ss.sess__database_id) ELSE N'''' END,' END + N'
+		[StmtID] = CASE WHEN ss.SubHeaderDisplayOrder = 0 THEN N'''' ELSE CONVERT(VARCHAR(20),ss.PKSQLStmtStoreID) END,
+		ss.StmtText,
+		[PlanID] = CASE WHEN ss.SubHeaderDisplayOrder = 0 THEN N'''' ELSE CONVERT(VARCHAR(20),ss.PKQueryPlanStmtStoreID) END,
+		ss.QPlan,
+		[Uniq] = ss.UniqueOccurrences,
+		[#Caps] = ss.NumCaptureRows,
+		ss.FirstSeen,
+		ss.LastSeen,
+		ss.cpu_time
+	FROM (
+		SELECT 
+			HeaderDisplayOrder = qhh.DisplayOrder,
+			SubHeaderDisplayOrder = 0,
+			qhh.sess__database_id,
+			[PKSQLStmtStoreID] = -1,
+			[StmtText] = N''Query Hash: 0x'' + CONVERT(VARCHAR(40),qhh.query_hash,2),
+			[PKQueryPlanStmtStoreID] = -1,
+			[QPlan] = N'''',
+			qhh.UniqueOccurrences,
+			qhh.NumCaptureRows,
+			qhh.FirstSeen,
+			qhh.LastSeen,
+			qhh.cpu_time
+		FROM #QHHeaders qhh
+
+		UNION ALL 
+
+		SELECT 
+			HeaderDisplayOrder = qhh.DisplayOrder,
+			SubHeaderDisplayOrder = qhs.DisplayOrder,
+			qhs.sess__database_id,
+			qhs.PKSQLStmtStoreID,
+			[StmtText] = sss.stmt_xml,
+			qhs.PKQueryPlanStmtStoreID,
+			[QPlan] = qpss.query_plan_xml,
+			qhs.UniqueOccurrences,
+			qhs.NumCaptureRows,
+			qhs.FirstSeen,
+			qhs.LastSeen,
+			qhs.cpu_time
+		FROM #QHHeaders qhh
+			INNER JOIN #QHSubHeaders qhs
+				ON qhh.query_hash = qhs.query_hash
+				AND qhh.sess__database_id = qhs.sess__database_id
+			LEFT OUTER JOIN #SQLStmtStore sss
+				ON qhs.PKSQLStmtStoreID = sss.PKSQLStmtStoreID
+			LEFT OUTER JOIN #QueryPlanStmtStore qpss
+				ON qhs.PKQueryPlanStmtStoreID = qpss.PKQueryPlanStmtStoreID
+	) ss
+	ORDER BY ss.HeaderDisplayOrder, ss.SubHeaderDisplayOrder;
+	';
+	SET @lv__errorloc = N'Execute QH dyn sql';
+	EXEC sp_executesql @stmt=@lv__DynSQL;
+
+
+	--Object Stmt dynamic sql
+	SET @lv__errorloc = N'Construct ObjStmt dyn sql';
+	SET @lv__DynSQL = N'
+	SELECT ' + 
+		CASE WHEN @context = N'N' THEN N'' ELSE N'
+		[CntxtDB] = CASE WHEN ss.SubHeaderDisplayOrder = 0 THEN DB_NAME(ss.sess__database_id) ELSE N'''' END,' END + N'
+		[StmtID] = CASE WHEN ss.SubHeaderDisplayOrder <> 0 THEN N'''' ELSE CONVERT(VARCHAR(20),ss.PKSQLStmtStoreID) END,
+		ss.StmtOrPlan,
+		[Uniq] = ss.UniqueOccurrences,
+		[#Caps] = ss.NumCaptureRows,
+		ss.FirstSeen,
+		ss.LastSeen,
+		ss.cpu_time
+	FROM (
+		SELECT 
+			HeaderDisplayOrder = osh.DisplayOrder,
+			SubHeaderDisplayOrder = 0,
+			osh.sess__database_id,
+			osh.PKSQLStmtStoreID,
+			[StmtOrPlan] = sss.stmt_xml,
+			osh.UniqueOccurrences,
+			osh.NumCaptureRows,
+			osh.FirstSeen,
+			osh.LastSeen,
+			osh.cpu_time
+		FROM #ObjStmtHeaders osh
+			LEFT OUTER JOIN #SQLStmtStore sss
+				ON osh.PKSQLStmtStoreID = sss.PKSQLStmtStoreID
+
+		UNION ALL 
+
+		SELECT HeaderDisplayOrder = osh.DisplayOrder,
+			SubHeaderDisplayOrder = ossh.DisplayOrder,
+			osh.sess__database_id,
+			osh.PKSQLStmtStoreID,
+			[StmtOrPlan] = CASE WHEN ossh.PKQueryPlanStmtStoreID = -1 THEN CONVERT(XML,''No query plan obtained'')
+				WHEN qpss.query_plan_xml IS NULL THEN CONVERT(XML,''Null plan obtained'') 
+				ELSE qpss.query_plan_xml END,
+			ossh.UniqueOccurrences,
+			ossh.NumCaptureRows,
+			ossh.FirstSeen,
+			ossh.LastSeen,
+			ossh.cpu_time
+		FROM #ObjStmtHeaders osh
+			INNER JOIN #ObjStmtSubHeaders ossh
+				ON osh.PKSQLStmtStoreID = ossh.PKSQLStmtStoreID
+				AND osh.sess__database_id = ossh.sess__database_id
+			LEFT OUTER JOIN #QueryPlanStmtStore qpss
+				ON ossh.PKQueryPlanStmtStoreID = qpss.PKQueryPlanStmtStoreID
+	) ss
+	ORDER BY ss.HeaderDisplayOrder, ss.SubHeaderDisplayOrder;
+	';
+	SET @lv__errorloc = N'Execute ObjStmt dyn sql';
+	EXEC sp_executesql @stmt=@lv__DynSQL;
+	
+
+	--Input Buffer dynamic SQL
 	SET @lv__errorloc = N'Construct IB dyn sql';
 	SET @lv__DynSQL_base = N'
 		SELECT 
@@ -868,738 +1840,10 @@ BEGIN TRY
 		) ib_base
 	ORDER BY DisplayOrder;
 	';
-
-	EXEC sp_executesql @stmt=@lv__DynSQL;
-	--RETURN 0;
-
-	/*******************************************************************************************************************************
-											End of Input Buffers section
-	********************************************************************************************************************************/
-
-
-	/********************************************************************************************************************************
-						  QQQQ     H   H      PPPP    PPPP    EEEEE   PPPP  
-						 Q    Q    H   H      P   P	  P   P   E		  P   P	
-						 Q    Q    HHHHH      PPPP	  PPPP    EEEEE	  PPPP	
-						 Q    Q    H   H      P		  P  R    E		  P		
-					      QQQQ     H   H      P		  P   R   EEEEE	  P		
-						      Q
-	********************************************************************************************************************************/
-	/*
-		The "QH" section focuses on ad-hoc SQL (NULL AutoWho.SQLStmtStore.object_id field). The identifier here is a query_hash, the
-		signature of the text of a sql statement. We want to show queries that have run many times, and aggregate their stats.
-		However, unlike the Input Buffer set where we only have 1 row per query, we want to show a representative sample of the
-		data associated with a single query_hash value. This takes the form "top X StmtStoreID rows" under each query hash,
-		where "top" means top # of executions. (We may give more ordering options at a later time). 
-		If query plans are desired, then the key for each "representative row" changes from PKSQLStmtStoreID to PKSQLStmtStoreID/PKQueryPlanStmtStoreID.
-		Thus, the same SQLStmtStoreID value could occur multiple times in the "representative rows" section.
-	*/
-
-	--First, obtain a list of instances
-	INSERT INTO #QHInstances (
-		session_id,
-		request_id,
-		TimeIdentifier,
-		StatementFirstCapture,
-
-		StatementLastCapture,
-		PreviousCaptureTime,
-		query_hash,
-		sess__database_id,
-		PKSQLStmtStoreID,
-		PKQueryPlanStmtStoreID,
-		NumCaptureRows
-	)
-	SELECT 
-		session_id,
-		request_id,
-		TimeIdentifier,
-		StatementFirstCapture,
-
-		StatementLastCapture,
-		PreviousCaptureTime,
-		query_hash,
-		sess__database_id,
-		PKSQLStmtStoreID,
-		PKQueryPlanStmtStoreID,
-		NumCaptureRows
-	FROM (
-		SELECT 
-			--Identifiers of the statement
-			ss.session_id,
-			ss.request_id,
-			ss.TimeIdentifier,
-			ss.StatementFirstCapture,
-
-			[StatementLastCapture] = MAX(ss.StatementLastCapture),		--only 1 row should be non-null so we obtain that
-			[PreviousCaptureTime] = MAX(ss.PreviousCaptureTime),		--ditto
-			[query_hash] = MAX(ss.query_hash),
-			[sess__database_id] = MAX(sess__database_id),		--this orders a real DBID over the -1 that we have if it is NULL in SAR. This should be safe b/c
-										--while Context DBID could change within a batch, it shouldn't change within a statement.
-			[PKSQLStmtStoreID] = MAX(PKSQLStmtStoreID),
-			[PKQueryPlanStmtStoreID] = MAX(PKQueryPlanStmtStoreID),
-			[NumCaptureRows] = SUM(1)
-		FROM (
-			SELECT 
-				sct.session_id,
-				sct.request_id,
-				sct.TimeIdentifier,
-				sct.StatementFirstCapture,
-				--We only capture 1 non-NULL value on these 2 fields so that we can apply MAX later to obtain it when we decrease granularity
-				[StatementLastCapture] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
-											THEN sct.SPIDCaptureTime ELSE NULL END,
-				[PreviousCaptureTime] = CASE WHEN sct.IsStmtFirstCapture = 1 THEN sct.PreviousCaptureTime ELSE NULL END,
-
-				[query_hash] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 THEN sct.rqst__query_hash ELSE NULL END,
-				[sess__database_id] = CASE WHEN @context=N'Y' THEN sct.sess__database_id ELSE -1 END,
-
-				[PKQueryPlanStmtStoreID] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
-												THEN sct.PKQueryPlanStmtStoreID
-												ELSE -1 END,
-
-				sct.PKSQLStmtStoreID			--TODO: for now, this should be the same for all caps for the same statement. However, once we implement
-												--TMR waits, that assumption may not be true anymore. May need to revisit.
-			FROM AutoWho.StatementCaptureTimes sct
-				LEFT OUTER JOIN CoreXR.SQLStmtStore sss
-					ON sct.PKSQLStmtStoreID = sss.PKSQLStmtStoreID
-					AND sss.objectid = @lv__nullint
-			WHERE sct.StatementFirstCapture BETWEEN @start AND @end		--notice that we don't use SPIDCaptureTime here, because we don't want to grab partial
-																		--sets of rows for any statements.
-		) ss
-		GROUP BY ss.session_id,
-			ss.request_id,
-			ss.TimeIdentifier,
-			ss.StatementFirstCapture
-	) ss2
-	WHERE ss2.query_hash IS NOT NULL;
-
-	INSERT INTO #QHHeaders (
-		query_hash,
-		sess__database_id,
-		UniqueOccurrences,
-		NumCaptureRows,
-		FirstSeen,
-		LastSeen,
-		DisplayOrder
-	)
-	SELECT 
-		query_hash,
-		sess__database_id,
-		UniqueOccurrences,
-		NumCaptureRows,
-		FirstSeen,
-		LastSeen,
-		DisplayOrder = ROW_NUMBER() OVER (ORDER BY UniqueOccurrences DESC)
-	FROM (
-		SELECT 
-			qhi.query_hash,
-			qhi.sess__database_id,
-			UniqueOccurrences = SUM(1),
-			NumCaptureRows = SUM(NumCaptureRows),
-			FirstSeen = MIN(qhi.StatementFirstCapture),
-			LastSeen = MAX(qhi.StatementLastCapture)
-		FROM #QHInstances qhi
-		GROUP BY qhi.query_hash,
-			qhi.sess__database_id
-	) ss;
-
-
-	INSERT INTO #QHSubHeaders (
-		query_hash,
-		sess__database_id,
-
-		PKSQLStmtStoreID,
-		PKQueryPlanStmtStoreID,
-
-		UniqueOccurrences,
-		NumCaptureRows,
-		FirstSeen,
-		LastSeen,
-		DisplayOrder
-	)
-	SELECT 
-		ss.query_hash,
-		ss.sess__database_id,
-		ss.PKSQLStmtStoreID,
-		ss.PKQueryPlanStmtStoreID,
-		ss.UniqueOccurrences,
-		ss.NumCaptureRows,
-		ss.FirstSeen,
-		ss.LastSeen,
-		[DisplayOrder] = ROW_NUMBER() OVER (PARTITION BY ss.query_hash, ss.sess__database_id, 
-													ss.PKSQLStmtStoreID, ss.PKQueryPlanStmtStoreID
-											ORDER BY ss.UniqueOccurrences DESC
-											)
-	FROM (
-		SELECT 
-			qhh.query_hash,
-			qhh.sess__database_id,
-			qhs.PKSQLStmtStoreID,
-			qhs.PKQueryPlanStmtStoreID,
-			[UniqueOccurrences] = SUM(NumUniqueStatements),
-			[NumCaptureRows] = SUM(qhs.NumCaptureRows),
-			[FirstSeen] = MIN(qhs.FirstSeen),
-			[LastSeen] = MAX(qhs.LastSeen)
-		FROM #QHHeaders qhh
-			INNER JOIN (
-				--The granularity of #QHInstances is a statement.
-				--The effective granularity of this subquery is 
-				--	query_hash/DBID (if @context='Y')/PKSQLStmtStoreID/PKQueryPlanStmtStoreID (if @plan='Y')
-				SELECT 
-					qhi.query_hash,
-					qhi.sess__database_id,
-
-					qhi.PKSQLStmtStoreID,
-					qhi.PKQueryPlanStmtStoreID,
-				
-					[NumUniqueStatements] = SUM(1),
-					[NumCaptureRows] = SUM(qhi.NumCaptureRows),
-					[FirstSeen] = MIN(qhi.StatementFirstCapture),
-					[LastSeen] = MAX(qhi.StatementLastCapture)
-				FROM #QHInstances qhi
-				GROUP BY qhi.query_hash,
-					qhi.sess__database_id,
-					qhi.PKSQLStmtStoreID,
-					qhi.PKQueryPlanStmtStoreID
-			) qhs
-				ON qhh.query_hash = qhs.query_hash
-				AND qhh.sess__database_id = qhs.sess__database_id
-		GROUP BY qhh.query_hash,
-			qhh.sess__database_id,
-			qhs.PKSQLStmtStoreID,
-			qhs.PKQueryPlanStmtStoreID
-	) ss;
-
-	--Now we can calc stats and update #QHInstances
-	UPDATE qhs
-	SET cpu_time = qhi.cpu_time
-	FROM #QHSubHeaders qhs
-		INNER JOIN (
-			SELECT
-				qhi.query_hash, 
-				qhi.sess__database_id,
-				qhi.PKSQLStmtStoreID,
-				qhi.PKQueryPlanStmtStoreID,
-				cpu_time = SUM(sar.rqst__cpu_time - ISNULL(sarprev.rqst__cpu_time,0))
-			FROM #QHInstances qhi
-				INNER JOIN AutoWho.SessionsAndRequests sar
-					ON qhi.session_id = sar.session_id
-					AND qhi.request_id = sar.request_id
-					AND qhi.TimeIdentifier = sar.TimeIdentifier
-					AND qhi.StatementLastCapture = sar.SPIDCaptureTime	--the last capture will have the highest stats for things like cpu_time and reads
-				LEFT OUTER JOIN AutoWho.SessionsAndRequests sarprev
-					ON qhi.session_id = sarprev.session_id
-					AND qhi.request_id = sarprev.request_id
-					AND qhi.TimeIdentifier = sarprev.TimeIdentifier
-					AND qhi.PreviousCaptureTime = sarprev.SPIDCaptureTime	--the last cap of the previous stmt (if one exists) will allow us to do a delta calculation
-																			--Note that we essentially apportion ALL of the resource usage between the last cap of the prev stmt
-																			-- and the first capture of this statement to this statement. There's no perfect solution, but at least
-																			--we'll be consistent w/our methodology.
-			GROUP BY qhi.query_hash, 
-				qhi.sess__database_id,
-				qhi.PKSQLStmtStoreID,
-				qhi.PKQueryPlanStmtStoreID
-		) qhi
-			ON qhs.query_hash = qhi.query_hash
-			AND qhs.sess__database_id = qhi.sess__database_id
-			AND qhs.PKSQLStmtStoreID = qhi.PKSQLStmtStoreID
-			AND qhs.PKQueryPlanStmtStoreID = qhi.PKQueryPlanStmtStoreID
-	;
-
-	--Now aggregate up to #QH Headers
-	UPDATE qhh 
-	SET cpu_time = qhs.cpu_time
-	FROM #QHHeaders qhh
-		INNER JOIN (
-			SELECT 
-				qhs.query_hash,
-				qhs.sess__database_id,
-				cpu_time = SUM(cpu_time)
-			FROM #QHSubHeaders qhs
-			GROUP BY qhs.query_hash,
-					qhs.sess__database_id
-		) qhs
-			ON qhs.query_hash = qhh.query_hash
-			AND qhs.sess__database_id = qhh.sess__database_id
-	;
-
-	--Resolve the statement IDs to the actual statement text
-	SET @lv__errorloc = N'Obtain Stmt Store raw';
-	INSERT INTO #SQLStmtStore (
-		PKSQLStmtStoreID,
-		[sql_handle],
-		statement_start_offset,
-		statement_end_offset,
-		[dbid],
-		[objectid],
-		datalen_batch,
-		stmt_text
-		--stmt_xml
-		--dbname						NVARCHAR(128),
-		--objname						NVARCHAR(128)
-	)
-	SELECT sss.PKSQLStmtStoreID, 
-		sss.sql_handle,
-		sss.statement_start_offset,
-		sss.statement_end_offset,
-		sss.dbid,
-		sss.objectid,
-		sss.datalen_batch,
-		sss.stmt_text
-	FROM CoreXR.SQLStmtStore sss
-	WHERE sss.PKSQLStmtStoreID IN (
-		SELECT DISTINCT qhs.PKSQLStmtStoreID
-		FROM #QHSubHeaders qhs
-		)
-	;
-
-	SET @lv__errorloc = N'Declare Stmt Store Cursor';
-	DECLARE resolveSQLStmtStore CURSOR LOCAL FAST_FORWARD FOR
-	SELECT 
-		PKSQLStmtStoreID,
-		[sql_handle],
-		[dbid],
-		[objectid],
-		stmt_text
-	FROM #SQLStmtStore sss
-	;
-
-	SET @lv__errorloc = N'Open Stmt Store Cursor';
-	OPEN resolveSQLStmtStore;
-	FETCH resolveSQLStmtStore INTO @PKSQLStmtStoreID,
-		@sql_handle,
-		@dbid,
-		@objectid,
-		@stmt_text
-	;
-
-	WHILE @@FETCH_STATUS = 0
-	BEGIN
-		SET @lv__errorloc = N'In Stmt Store loop';
-		--Note that one major assumption of this procedure is that the DBID hasn't changed since the time the spid was 
-		-- collected. For performance reasons, we don't resolve DBID in AutoWho.Collector; thus, if a DB is detached/re-attached,
-		-- or deleted and the DBID is re-used by a completely different database, confusion can ensue.
-		IF @dbid > 0
-		BEGIN
-			SET @dbname = DB_NAME(@dbid);
-		END
-		ELSE
-		BEGIN
-			SET @dbname = N'';
-		END
-
-		--Above note about DBID is relevant for this as well. 
-		IF @objectid > 0
-		BEGIN
-			SET @objectname = OBJECT_NAME(@objectid,@dbid);
-		END
-		ELSE
-		BEGIN
-			SET @objectname = N'';
-		END
-
-		IF @objectid > 0
-		BEGIN
-			--if we do have a dbid/objectid pair, get the schema for the object
-			IF @dbid > 0
-			BEGIN
-				SET @schname = OBJECT_SCHEMA_NAME(@objectid, @dbid);
-			END
-			ELSE
-			BEGIN
-				--if we don't have a valid dbid, we still do a "best effort" attempt to get schema
-				SET @schname = OBJECT_SCHEMA_NAME(@objectid);
-			END
-			
-			IF @schname IS NULL
-			BEGIN
-				SET @schname = N'';
-			END
-		END
-		ELSE
-		BEGIN
-			SET @schname = N'';
-		END
-
-		IF @sql_handle = 0x0
-		BEGIN
-			SET @stmt_xml = CONVERT(XML, N'<?Stmt --' + NCHAR(10)+NCHAR(13) + N'sql_handle is 0x0. The current SQL statement cannot be displayed.' + NCHAR(10) + NCHAR(13) + 
-			N'PKSQLStmtStoreID: ' + CONVERT(NVARCHAR(20),ISNULL(@PKSQLStmtStoreID,-1)) + 
-			NCHAR(10) + NCHAR(13) + N'-- ?>');
-		END
-		ELSE
-		BEGIN
-			IF @stmt_text IS NULL
-			BEGIN
-				SET @stmt_xml = CONVERT(XML, N'<?Stmt --' + NCHAR(10)+NCHAR(13) + N'The statement text is NULL. No T-SQL command to display.' + NCHAR(10) + NCHAR(13) + 
-					N'PKSQLStmtStoreID: ' + CONVERT(NVARCHAR(20),ISNULL(@PKSQLStmtStoreID,-1)) + 
-					NCHAR(10) + NCHAR(13) + N'-- ?>');
-			END
-			ELSE
-			BEGIN
-				BEGIN TRY
-					SET @stmt_xml = CONVERT(XML, N'<?Stmt --' + NCHAR(10)+NCHAR(13) + @stmt_text + + NCHAR(10) + NCHAR(13) + 
-					N'PKSQLStmtStoreID: ' + CONVERT(NVARCHAR(20),ISNULL(@PKSQLStmtStoreID,-1)) + 
-					NCHAR(10) + NCHAR(13) + N'-- ?>');
-				END TRY
-				BEGIN CATCH
-					SET @stmt_xml = CONVERT(XML, N'<?Stmt --' + NCHAR(10)+NCHAR(13) + N'Error CONVERTing text to XML: ' + ERROR_MESSAGE() + NCHAR(10) + NCHAR(13) + 
-					N'PKSQLStmtStoreID: ' + CONVERT(NVARCHAR(20),ISNULL(@PKSQLStmtStoreID,-1)) + 
-
-					NCHAR(10) + NCHAR(13) + N'-- ?>');
-				END CATCH
-			END
-		END
-
-		UPDATE #SQLStmtStore
-		SET dbname = @dbname,
-			objname = @objectname,
-			schname = @schname,
-			stmt_xml = @stmt_xml
-		WHERE PKSQLStmtStoreID = @PKSQLStmtStoreID;
-
-		FETCH resolveSQLStmtStore INTO @PKSQLStmtStoreID,
-			@sql_handle,
-			@dbid,
-			@objectid,
-			@stmt_text
-		;
-	END	--WHILE loop for SQL Stmt Store cursor
-		
-	CLOSE resolveSQLStmtStore;
-	DEALLOCATE resolveSQLStmtStore;
-
-	--Resolve query plan identifiers to their actual XML
-	IF @plan = N'y'
-	BEGIN
-		SET @lv__errorloc = N'Obtain query plan store raw';
-		INSERT INTO #QueryPlanStmtStore (
-			PKQueryPlanStmtStoreID,
-			[plan_handle],
-			--statement_start_offset,
-			--statement_end_offset,
-			--[dbid],
-			--[objectid],
-			[query_plan_text]
-			--[query_plan_xml]
-		)
-		SELECT 
-			qpss.PKQueryPlanStmtStoreID,
-			qpss.plan_handle,
-			qpss.query_plan
-		FROM CoreXR.QueryPlanStmtStore qpss
-		WHERE qpss.PKQueryPlanStmtStoreID IN (
-			SELECT DISTINCT qhs.PKQueryPlanStmtStoreID
-			FROM #QHSubHeaders qhs
-			WHERE qhs.PKQueryPlanStmtStoreID > 0
-		)
-		;
-
-		SET @lv__errorloc = N'Declare query plan cursor';
-		DECLARE resolveQueryPlanStmtStore CURSOR LOCAL FAST_FORWARD FOR 
-		SELECT qpss.PKQueryPlanStmtStoreID,
-			qpss.plan_handle,
-			qpss.query_plan_text
-		FROM #QueryPlanStmtStore qpss;
-
-		SET @lv__errorloc = N'Open query plan cursor';
-		OPEN resolveQueryPlanStmtStore;
-		FETCH resolveQueryPlanStmtStore INTO @PKQueryPlanStmtStoreID,
-			@plan_handle,
-			@query_plan_text;
-
-		WHILE @@FETCH_STATUS = 0
-		BEGIN
-			SET @lv__errorloc = N'In query plan loop';
-			IF @plan_handle = 0x0
-			BEGIN
-				SET @query_plan_xml = CONVERT(XML, N'<?StmtPlan --' + NCHAR(10)+NCHAR(13) + N'plan_handle is 0x0. The Statement Query Plan cannot be displayed.' + NCHAR(10) + NCHAR(13) + 
-				N'PKQueryPlanStmtStoreID: ' + CONVERT(NVARCHAR(20), ISNULL(@PKQueryPlanStmtStoreID,-1)) +
-				NCHAR(10) + NCHAR(13) + N'-- ?>');
-			END
-			ELSE
-			BEGIN
-				IF @query_plan_text IS NULL
-				BEGIN
-					SET @query_plan_xml = CONVERT(XML, N'<?StmtPlan --' + NCHAR(10)+NCHAR(13) + N'The Statement Query Plan is NULL.' + NCHAR(10) + NCHAR(13) + 
-					N'PKQueryPlanStmtStoreID: ' + CONVERT(NVARCHAR(20), ISNULL(@PKQueryPlanStmtStoreID,-1)) +
-					NCHAR(10) + NCHAR(13) + N'-- ?>');
-				END
-				ELSE
-				BEGIN
-					BEGIN TRY
-						SET @query_plan_xml = CONVERT(XML, @query_plan_text);
-					END TRY
-					BEGIN CATCH
-						--Most common reason for this is the 128-node limit
-						SET @query_plan_xml = CONVERT(XML, N'<?StmtPlan --' + NCHAR(10)+NCHAR(13) + N'Error CONVERTing Statement Query Plan to XML: ' + ERROR_MESSAGE() + NCHAR(10) + NCHAR(13) + 
-						N'PKQueryPlanStmtStoreID: ' + CONVERT(NVARCHAR(20), ISNULL(@PKQueryPlanStmtStoreID,-1)) +
-
-						CASE WHEN ERROR_NUMBER() = 6335 AND @PKSQLStmtStoreID IS NOT NULL THEN 
-							N'-- You can extract this query plan to a file with the below script
-							--DROP TABLE dbo.largeQPbcpout
-							SELECT query_plan
-							INTO dbo.largeQPbcpout
-							FROM CoreXR.QueryPlanStmtStore q
-							WHERE q.PKQueryPlanStmtStoreID = ' + CONVERT(NVARCHAR(20),@PKQueryPlanStmtStoreID) + N'
-							--then from a command line:
-							bcp dbo.largeQPbcpout out c:\largeqpxmlout.sqlplan -c -S. -T
-							'
-						ELSE N'' END + 
-
-						NCHAR(10) + NCHAR(13) + N'-- ?>');
-					END CATCH
-				END
-			END
-
-			UPDATE #QueryPlanStmtStore
-			SET query_plan_xml = @query_plan_xml
-			WHERE PKQueryPlanStmtStoreID = @PKQueryPlanStmtStoreID;
-
-			FETCH resolveQueryPlanStmtStore INTO @PKQueryPlanStmtStoreID,
-				@plan_handle,
-				@query_plan_text;
-		END
-
-		CLOSE resolveQueryPlanStmtStore;
-		DEALLOCATE resolveQueryPlanStmtStore;
-	END
-
-	SET @lv__DynSQL = N'
-	SELECT ' + 
-		CASE WHEN @context = N'N' THEN N'' ELSE N'
-		[CntxtDB] = CASE WHEN ss.SubHeaderDisplayOrder = 0 THEN DB_NAME(ss.sess__database_id) ELSE N'''' END,' END + N'
-		[StmtID] = CASE WHEN ss.SubHeaderDisplayOrder = 0 THEN N'''' ELSE CONVERT(VARCHAR(20),ss.PKSQLStmtStoreID) END,
-		ss.StmtText,
-		[PlanID] = CASE WHEN ss.SubHeaderDisplayOrder = 0 THEN N'''' ELSE CONVERT(VARCHAR(20),ss.PKQueryPlanStmtStoreID) END,
-		ss.QPlan,
-		[Uniq] = ss.UniqueOccurrences,
-		[#Caps] = ss.NumCaptureRows,
-		ss.FirstSeen,
-		ss.LastSeen,
-		ss.cpu_time
-	FROM (
-		SELECT 
-			HeaderDisplayOrder = qhh.DisplayOrder,
-			SubHeaderDisplayOrder = 0,
-			qhh.sess__database_id,
-			[PKSQLStmtStoreID] = -1,
-			[StmtText] = N''Query Hash: '' + CONVERT(VARCHAR(20),qhh.query_hash),
-			[PKQueryPlanStmtStoreID] = -1,
-			[QPlan] = N'''',
-			qhh.UniqueOccurrences,
-			qhh.NumCaptureRows,
-			qhh.FirstSeen,
-			qhh.LastSeen,
-			qhh.cpu_time
-		FROM #QHHeaders qhh
-
-		UNION ALL 
-
-		SELECT 
-			HeaderDisplayOrder = qhh.DisplayOrder,
-			SubHeaderDisplayOrder = qhs.DisplayOrder,
-			qhs.sess__database_id,
-			qhs.PKSQLStmtStoreID,
-			[StmtText] = sss.stmt_xml,
-			qhs.PKQueryPlanStmtStoreID,
-			[QPlan] = qpss.query_plan_xml,
-			qhs.UniqueOccurrences,
-			qhs.NumCaptureRows,
-			qhs.FirstSeen,
-			qhs.LastSeen,
-			qhs.cpu_time
-		FROM #QHHeaders qhh
-			INNER JOIN #QHSubHeaders qhs
-				ON qhh.query_hash = qhs.query_hash
-				AND qhh.sess__database_id = qhs.sess__database_id
-			LEFT OUTER JOIN #SQLStmtStore sss
-				ON qhs.PKSQLStmtStoreID = sss.PKSQLStmtStoreID
-			LEFT OUTER JOIN #QueryPlanStmtStore qpss
-				ON qhs.PKQueryPlanStmtStoreID = qpss.PKQueryPlanStmtStoreID
-	) ss
-	ORDER BY ss.HeaderDisplayOrder, ss.SubHeaderDisplayOrder;
-	';
-
+	SET @lv__errorloc = N'Execute IB dyn SQL';
 	EXEC sp_executesql @stmt=@lv__DynSQL;
 
-	/*******************************************************************************************************************************
-											End of Query Hash section
-	********************************************************************************************************************************/
 
-
-	/********************************************************************************************************************************
-						 OOOO    BBBB   JJJJJ       SSSS   TTTTT   MM   MM  TTTTT   SSSS 
-						O    O   B   B    J        S         T     M M M M	  T    S     
-						O    O   BBBB     J         SSSS     T     M  M  M	  T     SSSS 
-						O    O   B   B    J             S    T     M     M	  T         S
-						 OOOO    BBBB   JJ          SSSS     T     M     M	  T     SSSS 
-	********************************************************************************************************************************/
-	/*
-		The Stmt section focuses on object SQL (CoreXR.SQLStmtStore.object_id is not null). The identifier here is PKSQLStmtStoreID, and
-		for object SQL, should uniquely identify a statement inside of an object. (Same text in 2 different objects = 2 different IDs).
-		We want to show queries that have run many times, and aggregate their stats. Like the Query Hash data, we want to potentially
-		show sub-rows. However, unlike QH data, each subrow will be the same PKSQLStmtStoreID, but only different query plan IDs.
-		If there is only 1 query plan for a given statement, then there will only be 1 sub-row. If query plans are not desired,
-		then we don't show any sub-rows, just aggregated stats.
-	*/
-	--First, obtain a list of instances
-	INSERT INTO #ObjStmtInstances (
-		--These are the identifying columns. The granularity of this table is a statement
-		session_id,
-		request_id,
-		TimeIdentifier,
-		StatementFirstCapture,
-
-		StatementLastCapture,
-		PreviousCaptureTime,
-		sess__database_id,
-		PKSQLStmtStoreID,
-		PKQueryPlanStmtStoreID,
-		NumCaptureRows
-	)
-	SELECT 
-		session_id,
-		request_id,
-		TimeIdentifier,
-		StatementFirstCapture,
-
-		StatementLastCapture,
-		PreviousCaptureTime,
-		sess__database_id,
-		PKSQLStmtStoreID,
-		PKQueryPlanStmtStoreID,
-		NumCaptureRows
-	FROM (
-		SELECT 
-			--Identifiers of the statement
-			ss.session_id,
-			ss.request_id,
-			ss.TimeIdentifier,
-			ss.StatementFirstCapture,
-
-			[StatementLastCapture] = MAX(ss.StatementLastCapture),		--only 1 row should be non-null so we obtain that
-			[PreviousCaptureTime] = MAX(ss.PreviousCaptureTime),		--ditto
-
-			[sess__database_id] = MAX(sess__database_id),		--this orders a real DBID over the -1 that we have if it is NULL in SAR. This should be safe b/c
-										--while Context DBID could change within a batch, it shouldn't change within a statement.
-			[PKSQLStmtStoreID] = MAX(PKSQLStmtStoreID),
-			[PKQueryPlanStmtStoreID] = MAX(PKQueryPlanStmtStoreID),
-			[NumCaptureRows] = SUM(1)
-		FROM (
-			SELECT 
-				sct.session_id,
-				sct.request_id,
-				sct.TimeIdentifier,
-				sct.StatementFirstCapture,
-				--We only capture 1 non-NULL value on these 2 fields so that we can apply MAX later to obtain it when we decrease granularity
-				[StatementLastCapture] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
-											THEN sct.SPIDCaptureTime ELSE NULL END,
-				[PreviousCaptureTime] = CASE WHEN sct.IsStmtFirstCapture = 1 THEN sct.PreviousCaptureTime ELSE NULL END,
-
-				[sess__database_id] = CASE WHEN @context=N'Y' THEN sct.sess__database_id ELSE -1 END,
-
-				[PKQueryPlanStmtStoreID] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
-												THEN sct.PKQueryPlanStmtStoreID
-												ELSE -1 END,
-
-				sct.PKSQLStmtStoreID			--TODO: for now, this should be the same for all caps for the same statement. However, once we implement
-												--TMR waits, that assumption may not be true anymore. May need to revisit.
-			FROM AutoWho.StatementCaptureTimes sct
-				LEFT OUTER JOIN CoreXR.SQLStmtStore sss
-					ON sct.PKSQLStmtStoreID = sss.PKSQLStmtStoreID
-					AND sss.objectid <> @lv__nullint
-			WHERE sct.StatementFirstCapture BETWEEN @start AND @end		--notice that we don't use SPIDCaptureTime here, because we don't want to grab partial
-																		--sets of rows for any statements.
-		) ss
-		GROUP BY ss.session_id,
-			ss.request_id,
-			ss.TimeIdentifier,
-			ss.StatementFirstCapture
-	) ss2;
-
-	INSERT INTO #ObjStmtSubHeaders (
-		PKSQLStmtStoreID,
-		sess__database_id,
-		PKQueryPlanStmtStoreID,
-
-		UniqueOccurrences,
-		NumCaptureRows,
-		FirstSeen,
-		LastSeen,
-		DisplayOrder,
-
-		cpu_time
-	)
-	SELECT 
-		ss.PKSQLStmtStoreID,
-		ss.sess__database_id,
-		ss.PKQueryPlanStmtStoreID,
-
-		ss.UniqueOccurrences,
-		ss.NumCaptureRows,
-		ss.FirstSeen,
-		ss.LastSeen,
-		[DisplayOrder] = ROW_NUMBER() OVER (PARTITION BY ss.PKSQLStmtStoreID, ss.sess__database_id ORDER BY ss.UniqueOccurrences DESC),
-		ss.cpu_time
-	FROM (
-		SELECT 
-			osi.PKSQLStmtStoreID,
-			osi.sess__database_id,
-			osi.PKQueryPlanStmtStoreID,
-			[UniqueOccurrences] = SUM(1),
-			[NumCaptureRows] = SUM(osi.NumCaptureRows),
-			FirstSeen = MIN(osi.StatementFirstCapture),
-			LastSeen = MAX(osi.StatementLastCapture),
-			[cpu_time] = SUM(sar.rqst__cpu_time - ISNULL(sarprev.rqst__cpu_time,0))
-		FROM #ObjStmtInstances osi
-			INNER JOIN AutoWho.SessionsAndRequests sar
-				ON osi.session_id = sar.session_id
-				AND osi.request_id = sar.request_id
-				AND osi.TimeIdentifier = sar.TimeIdentifier
-				AND osi.StatementLastCapture = sar.SPIDCaptureTime
-			LEFT OUTER JOIN AutoWho.SessionsAndRequests sarprev
-				ON osi.session_id = sarprev.session_id
-				AND osi.request_id = sarprev.request_id
-				AND osi.TimeIdentifier = sarprev.TimeIdentifier
-				AND osi.PreviousCaptureTime = sarprev.SPIDCaptureTime
-		GROUP BY osi.PKSQLStmtStoreID,
-			osi.sess__database_id,
-			osi.PKQueryPlanStmtStoreID
-	) ss;
-
-	INSERT INTO #ObjStmtHeaders (
-		PKSQLStmtStoreID,
-		sess__database_id,
-		UniqueOccurrences,
-		NumCaptureRows,
-		FirstSeen,
-		LastSeen,
-		DisplayOrder,
-		cpu_time
-	)
-	SELECT 
-		ss.PKSQLStmtStoreID,
-		ss.sess__database_id,
-		ss.UniqueOccurrences,
-		ss.NumCaptureRows,
-		ss.FirstSeen,
-		ss.LastSeen,
-		[DisplayOrder] = ROW_NUMBER() OVER (ORDER BY ss.UniqueOccurrences DESC),
-		ss.cpu_time
-	FROM (
-		SELECT 
-			osh.PKSQLStmtStoreID,
-			osh.sess__database_id,
-			[UniqueOccurrences] = SUM(1),				--TODO: re-examine UniqueOccurrences for both QH and this. I feel like I'm calculating it non-sensically. (I've been on auto-pilot with this)
-			[NumCaptureRows] = SUM(osh.NumCaptureRows),
-			[FirstSeen] = MIN(osh.FirstSeen),
-			[LastSeen] = MIN(osh.LastSeen),
-			[cpu_time] = SUM(osh.cpu_time)
-		FROM #ObjStmtSubHeaders osh
-		GROUP BY osh.PKSQLStmtStoreID,
-			osh.sess__database_id
-	) ss;
 
 END TRY
 BEGIN CATCH
