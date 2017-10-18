@@ -81,6 +81,7 @@ CREATE TABLE [AutoWho].[Options_History](
 	[Enable8666] [nchar](1) NOT NULL,
 	[ResolvePageLatches] [nchar](1) NOT NULL,
 	[ResolveLockWaits] [nchar](1) NOT NULL,
+	[PurgeUnextractedData] [nchar](1) NOT NULL,
 	[LastModifiedUser] [nvarchar](128) NOT NULL,
  CONSTRAINT [PKAutoWhoOptions_History] PRIMARY KEY CLUSTERED 
 (

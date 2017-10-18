@@ -4987,7 +4987,8 @@ There are a number of points worth noting re: the below scoping queries:
 		CaptureSummaryPopulated, 
 		AutoWhoDuration_ms, 
 		SpidsCaptured, 
-		DurationBreakdown
+		DurationBreakdown,
+		ExtractedForDW
 	)
 	SELECT 
 		@CollectionInitiatorID,
@@ -4998,7 +4999,8 @@ There are a number of points worth noting re: the below scoping queries:
 		0, 
 		DATEDIFF(ms, @lv__procstartdt, GETDATE()), 
 		@NumSPIDs, 
-		@lv__stmtdurations;
+		@lv__stmtdurations,
+		0;
 END TRY
 BEGIN CATCH
 	IF @@TRANCOUNT > 0 ROLLBACK;

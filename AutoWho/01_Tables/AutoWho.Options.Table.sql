@@ -78,6 +78,7 @@ CREATE TABLE [AutoWho].[Options](
 	[Enable8666] [nchar](1) NOT NULL CONSTRAINT [DF_Options_Enable8666]  DEFAULT (N'N'),
 	[ResolvePageLatches] [nchar](1) NOT NULL CONSTRAINT [DF_Options_ResolvePageLatches]  DEFAULT (N'Y'),
 	[ResolveLockWaits] [nchar](1) NOT NULL CONSTRAINT [DF_Options_ResolveLockWaits]  DEFAULT (N'Y'),
+	[PurgeUnextractedData] [nchar](1) NOT NULL CONSTRAINT [DF_Options_PurgeUnextractedData]  DEFAULT (N'Y'),
  CONSTRAINT [PKAutoWhoOptions] PRIMARY KEY CLUSTERED 
 (
 	[RowID] ASC
@@ -257,6 +258,11 @@ ALTER TABLE [AutoWho].[Options]  WITH CHECK ADD  CONSTRAINT [CK_OptionsTranDetai
 GO
 ALTER TABLE [AutoWho].[Options] CHECK CONSTRAINT [CK_OptionsTranDetailsThreshold]
 GO
+ALTER TABLE [AutoWho].[Options]  WITH CHECK ADD  CONSTRAINT [CK_OptionsPurgeUnextractedData] CHECK  (([PurgeUnextractedData]=N'N' OR [PurgeUnextractedData]=N'Y'))
+GO
+ALTER TABLE [AutoWho].[Options] CHECK CONSTRAINT [CK_OptionsPurgeUnextractedData]
+GO
+--
 EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Enforces just 1 row in the table' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'RowID'
 GO
 EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Master on/off switch for the AutoWho tracing portion of DMViewer. Takes "Y" or "N"' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'AutoWhoEnabled'
@@ -342,4 +348,6 @@ GO
 EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Whether the AutoWho procedure will attempt to resolve page and pageio latch strings into which object/index they map to via DBCC PAGE. Takes "Y" or "N"' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'ResolvePageLatches'
 GO
 EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Whether the AutoWho procedure will attempt to resolve page and pageio latch strings into which object/index they map to via DBCC PAGE. Takes "Y" or "N"' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'ResolveLockWaits'
+GO
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Whether purge is allowed to delete data for capture times rows (in AutoWho.CaptureTimes) that has not been extracted for the DW yet. Takes "Y" or "N"' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'PurgeUnextractedData'
 GO

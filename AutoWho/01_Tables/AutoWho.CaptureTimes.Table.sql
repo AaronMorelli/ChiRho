@@ -28,7 +28,7 @@
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Holds 1 row for each successful run of the AutoWho.Collector
+	PURPOSE: Holds 1 row for each run of the AutoWho.Collector
 	procedure, identifying the time and basic stats of the run.
 */
 SET ANSI_NULLS ON
@@ -47,6 +47,7 @@ CREATE TABLE [AutoWho].[CaptureTimes] (
 	[AutoWhoDuration_ms] [int] NOT NULL,
 	[SpidsCaptured] [int] NULL,
 	[DurationBreakdown] [varchar](1000) NULL,
+	[ExtractedForDW] [tinyint] NOT NULL,
  CONSTRAINT [PKAutoWhoCaptureTimes] PRIMARY KEY CLUSTERED 
 (
 	[CollectionInitiatorID] ASC,
