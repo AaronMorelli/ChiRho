@@ -264,6 +264,8 @@ BEGIN TRY
 		@lv__LastCaptureTime = MAX(t.SPIDCaptureTime)
 	FROM #ToPostProcess t;
 
+	SET @errorloc = 'Call CalcBatchStmtCaptureTimes';
+
 	--If this is the background trace we're processing, update the batch and statement stats
 	IF @init = 255 AND @lv__ExecMode = 2
 	BEGIN
@@ -744,8 +746,8 @@ BEGIN TRY
 
 	SET @errorloc = N'Apply NodeStatus';
 	UPDATE targ 
-	SET calc__node_info = n.NodeData,
-		calc__status_info = n.StatusData
+	SET calc__node_info = SUBSTRING(n.NodeData,1,40),
+		calc__status_info = SUBSTRING(n.StatusData,1,40)
 	FROM #TaskResolve2 n
 		INNER hash JOIN AutoWho.SessionsAndRequests targ
 			ON n.SPIDCaptureTime = targ.SPIDCaptureTime

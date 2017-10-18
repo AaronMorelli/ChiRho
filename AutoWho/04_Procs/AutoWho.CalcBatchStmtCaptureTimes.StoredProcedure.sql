@@ -62,11 +62,15 @@ BEGIN
 
 	DECLARE @LastCaptureTimeMinus1	DATETIME,
 			@LastCaptureTimeMinus2	DATETIME,
-			@lv__nullsmallint		SMALLINT;
+			@lv__nullsmallint		SMALLINT,
+			@errorloc				NVARCHAR(50),
+			@errormsg				NVARCHAR(4000);
 
 	SET @lv__nullsmallint = -929;
 
+BEGIN TRY
 
+	SET @errorloc = 'Create TT';
 	--This is a list of rows from SAR between @FirstCaptureTime and @LastCaptureTime
 	CREATE TABLE #WorkingSet (
 		[session_id]			[smallint] NOT NULL,
@@ -145,8 +149,8 @@ BEGIN
 		ORDER BY ct.SPIDCaptureTime DESC
 	) ss;
 
-
-	--TODO: need to add logic to handle when PKSQLStmtStoreID is NULL, and for the TMR wait value.
+	SET @errorloc = ' Initial pop #WorkingSet';
+	--TODO: need to add logic to handle PKSQLStmtStoreID when we have a TMR wait value
 	INSERT INTO #WorkingSet (
 		session_id,
 		request_id,
@@ -178,7 +182,7 @@ BEGIN
 		[StatementFirstCapture] = NULL,
 		[PreviousCaptureTime] = NULL,
 		[StatementSequenceNumber] = 0,
-		sar.FKSQLStmtStoreID,
+		ISNULL(sar.FKSQLStmtStoreID,-1),	-- Sometimes this can be NULL, so -1 is our special value for Not Available. 
 		sar.FKQueryPlanStmtStoreID,
 		sar.rqst__query_hash,
 		ISNULL(sar.sess__database_id,-1),
@@ -200,6 +204,7 @@ BEGIN
 		--Note: we don't expect @FirstCaptureTime to ever be AFTER @LastCaptureMinus1 or 2.
 		--If that assumption could be false, we need to rethink our logic to see if there are bugs.
 
+	SET @errorloc = 'Populate #WorkingSetBatches';
 	--Grab some basic batch stats
 	INSERT INTO #WorkingSetBatches (
 		session_id,
@@ -248,7 +253,7 @@ BEGIN
 	-- that I can then use in IF blocks below to control which statements are actually executed 
 	-- (i.e. don't execute a statement unless there are actually batches that fit that bill).
 
-
+	SET @errorloc = 'Close perm batches not in WS';
 	--Now, close batches in the perm table that aren't present at all in our working set. 
 	UPDATE p
 	SET IsCurrentLastRowOfBatch = 0,
@@ -264,6 +269,7 @@ BEGIN
 		AND wsb.TimeIdentifier = p.TimeIdentifier
 	);
 
+	SET @errorloc = 'Close single-row batches';
 	/* For a typical OLTP system, there should be a number of batches in our working set that are short-lived enough
 		that they don't exist in either the perm table or in the closing set. Thus, they are completely self-contained
 		in #WorkingSet. These "self-contained" batches can be either single-statement or multi-statement.
@@ -275,6 +281,7 @@ BEGIN
 	SET 
 		StatementFirstCapture = ws.SPIDCaptureTime,	--the grouping value is its own capture time, of course.
 		--we leave this NULL, obviously: PreviousCaptureTime
+		--We don't need to set this b/c this field is initialized to 0 above: IsCurrentLastRowOfBatch = 0
 		StatementSequenceNumber = 1,
 		IsStmtFirstCapture = 1,
 		IsStmtLastCapture = 1,
@@ -291,6 +298,7 @@ BEGIN
 	AND wsb.IsInLast3Captures = 0;
 
 
+	SET @errorloc = 'Obtain last row from perm';
 	--Now, insert the last row from the remaining "active" batches into our working set
 	INSERT INTO #WorkingSet (
 		session_id,
@@ -304,6 +312,7 @@ BEGIN
 		PKSQLStmtStoreID,
 		PKQueryPlanStmtStoreID,
 		rqst__query_hash,
+		sess__database_id,
 		IsStmtFirstCapture,
 		IsStmtLastCapture,
 		IsBatchFirstCapture,
@@ -325,6 +334,7 @@ BEGIN
 		p.PKSQLStmtStoreID,
 		p.PKQueryPlanStmtStoreID,
 		p.rqst__query_hash,
+		p.sess__database_id,
 		p.IsStmtFirstCapture,
 		p.IsStmtLastCapture,
 		p.IsBatchFirstCapture,
@@ -344,6 +354,7 @@ BEGIN
 	WHERE p.IsCurrentLastRowOfBatch = 1;
 
 
+	SET @errorloc = 'Find stmt change rows';
 	--Ok, now we look for "statement change" rows, i.e. when a row's PKSQLStmtStoreID is different than the prev cap time's PKSQLStmtStoreID
 	--We also apply the info we have in #WSB re: batch first and last capture times to our working set
 	UPDATE ws
@@ -402,6 +413,7 @@ BEGIN
 	WHERE ws.ProcessingState = 0;		--This includes IsFromPermTable=1 rows.
 
 
+	SET @errorloc = 'Set IsStmtLastCapture';
 	/*
 			2. For each IsStmtFirstCapture = 1 (aka "this stmt start"), find the next IsStmtFirstCapture = 1 (aka "next stmt start"),
 			then find the last capture before "next start", which should be the last capture/statement end ("last cap") for this statement.
@@ -452,7 +464,6 @@ BEGIN
 					--Get the next statement start. Remember that it may not exist!
 					SELECT TOP 1
 						nxt.session_id,
-						nxt.PKSQLStmtStoreID,
 						nxt.SPIDCaptureTime
 					FROM #WorkingSet nxt
 					WHERE nxt.session_id = ws.session_id
@@ -490,6 +501,7 @@ BEGIN
 			AND ws.SPIDCaptureTime BETWEEN ss.StatementFirstCapture AND ss.StatementLastCapture;
 
 
+	SET @errorloc = 'Handle query hashes';
 	--DMV data is quirky, and it is technically possible to get NULL rqst__query_hash values for some captures for a statement but not for all.
 	--It is also possible to have the rqst__query_hash value change (e.g. from 0x0 to something else). Therefore, our presentation logic needs to
 	--pull query hash data from the last cap for the statement (IsStmtLastCapture=1 OR IsCurrentLastRowOfBatch=1). If the last row is unluckily NULL
@@ -516,6 +528,7 @@ BEGIN
 	AND (ws.rqst__query_hash IS NULL OR ws.rqst__query_hash = 0x0)
 	;
 
+	SET @errorloc = 'Handle Plan Store IDs';
 	--We do the same thing for query plans
 	UPDATE ws
 	SET PKQueryPlanStmtStoreID = prev.PKQueryPlanStmtStoreID
@@ -536,6 +549,7 @@ BEGIN
 	AND (ws.IsStmtLastCapture = 1 OR IsCurrentLastRowOfBatch = 1)
 	AND ws.PKQueryPlanStmtStoreID IS NULL;
 
+	SET @errorloc = 'Set IsCurrentLastRowOfBatch in perm';
 	--Now, update the IsCurrentLastRowOfBatch values for the perm rows that we pulled into #WS
 	UPDATE targ 
 	SET IsCurrentLastRowOfBatch = 0
@@ -548,6 +562,7 @@ BEGIN
 	WHERE targ.IsCurrentLastRowOfBatch = 1
 	AND ws.IsFromPermTable = 1;
 
+	SET @errorloc = 'Persist working set';
 	--Ok, we're ready to insert the working set into our perm table!
 	INSERT INTO [AutoWho].[StatementCaptureTimes] (
 		--Identifier columns
@@ -589,10 +604,6 @@ BEGIN
 	FROM #WorkingSet ws
 	WHERE ws.IsFromPermTable = 0;
 
-
-
-
-
 	/* For now, I'm not going to implement the StatementSequenceNumber logic. I currently don't see a need for that data.
 		I may revisit this after writing presentation logic that relies on AutoWho.StatementCaptureTimes
 	
@@ -616,6 +627,23 @@ BEGIN
 			AND ws.SPIDCaptureTime = ss.SPIDCaptureTime
 	WHERE ws.ProcessingState = 3;
 	*/
+
+	RETURN 0;
+END TRY
+BEGIN CATCH
+	IF @@TRANCOUNT > 0 ROLLBACK;
+
+	SET @errormsg = N'Unexpected exception occurred at location ("' + ISNULL(@errorloc,N'<null>') + '"). Error #: ' + CONVERT(NVARCHAR(20),ERROR_NUMBER()) + 
+		N' Sev: ' + CONVERT(NVARCHAR(20), ERROR_SEVERITY()) + N' State: ' + CONVERT(NVARCHAR(20), ERROR_STATE()) + 
+		N' Message: ' + ERROR_MESSAGE();
+		;
+	
+	INSERT INTO AutoWho.[Log]
+	(LogDT, ErrorCode, LocationTag, LogMessage)
+	SELECT SYSDATETIME(), -41, N'ResolveExcept', @errormsg;
+
+	RETURN -1;
+END CATCH
 
 	RETURN 0;
 END
