@@ -3496,7 +3496,7 @@ There are a number of points worth noting re: the below scoping queries:
 			RecordCount 
 		)
 		SELECT 
-			CollectionInitiatorID,
+			@CollectionInitiatorID,
 			SPIDCaptureTime,
 			request_session_id,
 			request_request_id,

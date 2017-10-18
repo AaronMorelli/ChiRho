@@ -118,19 +118,19 @@ CREATE TABLE [AutoWho].[SessionsAndRequests] (
 	[calc__tmr_wait] [tinyint] NULL,
 	[calc__threshold_ignore] [bit] NULL,
 	[calc__node_info] [nvarchar](40) NOT NULL,
-	[calc__status_info] [nvarchar](20) NOT NULL,
+	[calc__status_info] [nvarchar](40) NOT NULL,
 	[FKSQLStmtStoreID] [bigint] NULL,
 	[FKSQLBatchStoreID] [bigint] NULL,
 	[FKInputBufferStoreID] [bigint] NULL,
 	[FKQueryPlanBatchStoreID] [bigint] NULL,
-	[FKQueryPlanStmtStoreID] [bigint] NULL,
- CONSTRAINT [PKSessionsAndRequests] PRIMARY KEY CLUSTERED 
+	[FKQueryPlanStmtStoreID] [bigint] NULL
+) ON [PRIMARY]
+GO
+CREATE CLUSTERED INDEX [CL_CapTime_Sess_Rqst] ON [AutoWho].[SessionsAndRequests]
 (
 	[CollectionInitiatorID] ASC,
-	[SPIDCaptureTime] ASC, 
+	[SPIDCaptureTime] ASC,
 	[session_id] ASC,
 	[request_id] ASC
-
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
-) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 GO

@@ -50,7 +50,7 @@ PRINT ISNULL(@lmsg, '<null>')
 	@AutoWhoJobName NVARCHAR(255)		= NULL,
 	@ServerEyeJobName NVARCHAR(255)		= NULL,
 	@PurgeDOW NVARCHAR(21)				= 'Sun',	-- to do every day of the week: 'SunMonTueWedThuFriSat'
-	@PurgeHour TINYINT					= 2,		-- 2am
+	@PurgeHour TINYINT					= 3,		-- 3am
 	@ErrorMessage VARCHAR(MAX)			= NULL OUTPUT
 )
 AS
