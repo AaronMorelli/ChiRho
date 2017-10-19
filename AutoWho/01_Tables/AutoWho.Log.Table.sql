@@ -37,9 +37,14 @@ SET QUOTED_IDENTIFIER ON
 GO
 CREATE TABLE [AutoWho].[Log](
 	[LogDT] [datetime2](7) NOT NULL,
+	[LogDTUTC] [datetime2](7) NOT NULL,
 	[TraceID] [int] NULL,
-	[ErrorCode] [int] NOT NULL,
-	[LocationTag] [nvarchar](50) NOT NULL,
+	[ProcID] [int] NULL,
+	[ProcName] [nvarchar](256) NULL,
+	[NestLevel] [tinyint] NULL,
+	[RowCount] [bigint] NULL,
+	[AutoWhoCode] [int] NOT NULL,
+	[LocationTag] [nvarchar](100) NOT NULL,
 	[LogMessage] [nvarchar](max) NOT NULL
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO

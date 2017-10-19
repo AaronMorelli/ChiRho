@@ -44,13 +44,13 @@ EXEC AutoWho.ApplyRetentionPolicies
 */
 AS
 BEGIN
-
 	SET NOCOUNT ON;
 
 	DECLARE @lv__ErrorMessage NVARCHAR(4000),
 			@lv__ErrorState INT,
 			@lv__ErrorSeverity INT,
-			@lv__ErrorLoc NVARCHAR(40);
+			@lv__ErrorLoc NVARCHAR(100),
+			@lv__RowCount BIGINT;
 
 	BEGIN TRY
 		SET @lv__ErrorLoc = N'Variable declare';
@@ -85,7 +85,6 @@ BEGIN
 
 			--misc general purpose
 			@lv__ProcRC										INT,
-			@lv__tmpBigInt									BIGINT,
 			@lv__tmpStr										NVARCHAR(4000),
 			@lv__tmpMinID									BIGINT, 
 			@lv__tmpMaxID									BIGINT,
@@ -204,12 +203,11 @@ BEGIN
 		BEGIN
 			--We raise a warning to the log b/c our hard-delete timeframe was affected by rows that probably
 			--should have been extracted by now but haven't yet.
-			INSERT INTO AutoWho.[Log]
-				(LogDT, ErrorCode, LocationTag, LogMessage)
-			SELECT GETDATE(), 1, N'Hard-delete warning', 
-				'Original hard-delete boundary of "' + ISNULL(CONVERT(VARCHAR(20),@lv__HardDeleteCaptureTime),'<null>') + 
-					'" has been changed to "' + ISNULL(CONVERT(VARCHAR(20),DATEADD(second, -10, @lv__NextDWExtractionCaptureTime)),'<null>') + '" 
+			SET @lv__ErrorMessage = 'Original hard-delete boundary of "' + ISNULL(CONVERT(VARCHAR(20),@lv__HardDeleteCaptureTime),'<null>') + 
+					'" has been changed to "' + ISNULL(CONVERT(VARCHAR(20),DATEADD(SECOND, -10, @lv__NextDWExtractionCaptureTime)),'<null>') + '" 
 					because of captures not yet extracted to the DW.';
+
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=1, @TraceID=NULL, @Location=N'Hard-delete warning', @Message=@lv__ErrorMessage;
 
 			SET @lv__HardDeleteCaptureTime = DATEADD(second, -10, @lv__NextDWExtractionCaptureTime);
 		END
@@ -501,13 +499,12 @@ BEGIN
 				END)
 		OPTION(RECOMPILE, MAXDOP 4);
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+		SET @lv__RowCount = ROWCOUNT_BIG();
 
-		IF @lv__tmpBigInt <= 0
+		IF @lv__RowCount <= 0
 		BEGIN
-			INSERT INTO AutoWho.[Log]
-				(LogDT, ErrorCode, LocationTag, LogMessage)
-			SELECT GETDATE(), 0, N'Retention Purge', 'No rows found to be purged. Exiting...';
+			SET @lv__ErrorMessage = 'No rows found to be purged. Exiting...';
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=1, @TraceID=NULL, @Location=N'After #RecordsToPurge INSERT', @Message=@lv__ErrorMessage;
 
 			DELETE FROM AutoWho.[Log] WHERE LogDT <= @lv__HardDeleteCaptureTime;
 			RETURN 0;
@@ -534,11 +531,11 @@ BEGIN
 		) ss;
 
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows identified that have no reason to be retained, ranging from ' + 
-			ISNULL(CONVERT(NVARCHAR(20), @lv__MinPurge_SPIDCaptureTime),N'<null>') + ' to ' + 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__MaxPurge_SPIDCaptureTime),N'<null>') + '.';
+					SET @lv__ErrorMessage = ISNULL(CONVERT(NVARCHAR(20),@lv__RowCount),N'<null>') + ' rows identified that have no reason to be retained, ranging from ' + 
+						ISNULL(CONVERT(NVARCHAR(20), @lv__MinPurge_SPIDCaptureTime),N'<null>') + ' to ' + 
+						ISNULL(CONVERT(NVARCHAR(20),@lv__MaxPurge_SPIDCaptureTime),N'<null>') + '.';
+					EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location=N'Purge data announcement', @Message=@lv__ErrorMessage;
+
 
 		SET @lv__ErrorLoc = N'Lock delete';
 		DELETE targ 
@@ -553,24 +550,18 @@ BEGIN
 		AND targ.SPIDCaptureTime <= @lv__MaxPurge_SPIDCaptureTime
 		OPTION(RECOMPILE);
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.LockDetails.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from AutoWho.LockDetails.';
 
 		--If rows somehow slip by our above criteria, we delete anything older than our hard-delete boundary
 		DELETE targ 
 		FROM AutoWho.LockDetails targ 
 		WHERE targ.SPIDCaptureTime <= @lv__HardDeleteCaptureTime; 
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows hard-deleted from AutoWho.LockDetails.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows hard-deleted from AutoWho.LockDetails.';
 
 		SET @lv__ErrorLoc = N'tran delete';
 		DELETE targ 
@@ -584,23 +575,17 @@ BEGIN
 		AND targ.SPIDCaptureTime <= @lv__MaxPurge_SPIDCaptureTime
 		OPTION(RECOMPILE);
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.TransactionDetails.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from AutoWho.TransactionDetails.';
 
 		DELETE targ 
 		FROM AutoWho.TransactionDetails targ
 		WHERE targ.SPIDCaptureTime < @lv__HardDeleteCaptureTime;
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows hard-deleted from AutoWho.TransactionDetails.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows hard-deleted from AutoWho.TransactionDetails.';
 
 		SET @lv__ErrorLoc = N'TAW delete';
 		DELETE targ 
@@ -614,23 +599,17 @@ BEGIN
 		AND targ.SPIDCaptureTime <= @lv__MaxPurge_SPIDCaptureTime
 		OPTION(RECOMPILE);
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.TasksAndWaits.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from AutoWho.TasksAndWaits.';
 
 		DELETE targ 
 		FROM AutoWho.TasksAndWaits targ 
 		WHERE targ.SPIDCaptureTime < @lv__HardDeleteCaptureTime;
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows hard-deleted from AutoWho.TasksAndWaits.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows hard-deleted from AutoWho.TasksAndWaits.';
 
 		SET @lv__ErrorLoc = N'SAR delete';
 		DELETE targ 
@@ -642,26 +621,19 @@ BEGIN
 				AND targ.request_id = r.request_id
 				AND targ.TimeIdentifier = r.TimeIdentifier
 		WHERE targ.SPIDCaptureTime >= @lv__MinPurge_SPIDCaptureTime
-		AND targ.SPIDCaptureTime <= @lv__MaxPurge_SPIDCaptureTime
-		;
+		AND targ.SPIDCaptureTime <= @lv__MaxPurge_SPIDCaptureTime;
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.SessionsAndRequests.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from AutoWho.SessionsAndRequests.';
 
 		DELETE targ 
 		FROM AutoWho.SessionsAndRequests targ
 		WHERE targ.SPIDCaptureTime < @lv__HardDeleteCaptureTime;
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows hard-deleted from AutoWho.SessionsAndRequests.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows hard-deleted from AutoWho.SessionsAndRequests.';
 
 		--With the BlockingGraphs table, we only delete records for capture times
 		-- where there are NO remaining spids in SAR for that capture time
@@ -679,12 +651,9 @@ BEGIN
 		)
 		OPTION(RECOMPILE);
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.BlockingGraphs.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from AutoWho.BlockingGraphs.';
 
 		/* For the "Store" tables, which aren't tied to any single SPIDCaptureTime, there are 3 main criteria:
 
@@ -715,6 +684,7 @@ BEGIN
 		--One scan through the SAR table to construct a distinct-keys list is much
 		-- more efficient than the previous code, which joined SAR in every DELETE
 		--Note that we totally ignore CollectionInitiatorID here.
+		SET @lv__ErrorLoc = N'Distinct Keys';
 		INSERT INTO #AutoWhoDistinctStoreKeys (
 			[FKSQLStmtStoreID],
 			[FKSQLBatchStoreID],
@@ -778,12 +748,8 @@ BEGIN
 			WHERE targ.PKInputBufferStoreID BETWEEN @lv__tmpMinID AND @lv__tmpMaxID
 			OPTION(FORCE ORDER, RECOMPILE);
 
-			SET @lv__tmpBigInt = ROWCOUNT_BIG();
-
-			INSERT INTO AutoWho.[Log]
-				(LogDT, ErrorCode, LocationTag, LogMessage)
-			SELECT GETDATE(), 0, N'Retention Purge',
-				ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from CoreXR.InputBufferStore.';
+						SET @lv__RowCount = ROWCOUNT_BIG();
+						EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from CoreXR.InputBufferStore.';
 		END
 
 		SET @lv__ErrorLoc = N'QPBS delete';
@@ -833,12 +799,8 @@ BEGIN
 			WHERE targ.PKQueryPlanBatchStoreID BETWEEN @lv__tmpMinID AND @lv__tmpMaxID
 			OPTION(FORCE ORDER, RECOMPILE);
 
-			SET @lv__tmpBigInt = ROWCOUNT_BIG();
-
-			INSERT INTO AutoWho.[Log]
-				(LogDT, ErrorCode, LocationTag, LogMessage)
-			SELECT GETDATE(), 0, N'Retention Purge', 
-				ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from CoreXR.QueryPlanBatchStore.';
+						SET @lv__RowCount = ROWCOUNT_BIG();
+						EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from CoreXR.QueryPlanBatchStore.';
 		END
 
 		SET @lv__ErrorLoc = N'QPSS delete';
@@ -888,12 +850,8 @@ BEGIN
 			WHERE targ.PKQueryPlanStmtStoreID BETWEEN @lv__tmpMinID AND @lv__tmpMaxID
 			OPTION(FORCE ORDER, RECOMPILE);
 
-			SET @lv__tmpBigInt = ROWCOUNT_BIG();
-
-			INSERT INTO AutoWho.[Log]
-				(LogDT, ErrorCode, LocationTag, LogMessage)
-			SELECT GETDATE(), 0, N'Retention Purge', 
-				ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from CoreXR.QueryPlanStmtStore.';
+						SET @lv__RowCount = ROWCOUNT_BIG();
+						EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from CoreXR.QueryPlanStmtStore.';
 		END
 
 		SET @lv__ErrorLoc = N'SBS delete';
@@ -943,12 +901,8 @@ BEGIN
 			WHERE targ.PKSQLBatchStoreID BETWEEN @lv__tmpMinID AND @lv__tmpMaxID
 			OPTION(FORCE ORDER, RECOMPILE);
 
-			SET @lv__tmpBigInt = ROWCOUNT_BIG();
-			SET @lv__tmpStr = ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from CoreXR.SQLBatchStore.';
-
-			INSERT INTO AutoWho.[Log]
-				(LogDT, ErrorCode, LocationTag, LogMessage)
-			SELECT GETDATE(), 0, N'Retention Purge', @lv__tmpStr;
+						SET @lv__RowCount = ROWCOUNT_BIG();
+						EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from CoreXR.SQLBatchStore.';
 		END
 
 		SET @lv__ErrorLoc = N'SSS delete';
@@ -996,35 +950,25 @@ BEGIN
 			WHERE targ.PKSQLStmtStoreID BETWEEN @lv__tmpMinID AND @lv__tmpMaxID
 			OPTION(FORCE ORDER, RECOMPILE);
 
-			SET @lv__tmpBigInt = ROWCOUNT_BIG();
-
-			INSERT INTO AutoWho.[Log]
-				(LogDT, ErrorCode, LocationTag, LogMessage)
-			SELECT GETDATE(), 0, N'Retention Purge', 
-				ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from CoreXR.SQLStmtStore.';
+						SET @lv__RowCount = ROWCOUNT_BIG();
+						EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from CoreXR.SQLStmtStore.';
 		END
 
 		DELETE targ 
 		FROM AutoWho.StatementCaptureTimes targ
 		WHERE targ.SPIDCaptureTime <= @lv__HardDeleteCaptureTime;
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.StatementCaptureTimes.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from AutoWho.StatementCaptureTimes.';
 
 		DELETE targ 
 		FROM AutoWho.UserCollectionTimes targ
 		WHERE targ.SPIDCaptureTime <= @lv__HardDeleteCaptureTime;
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.UserCollectionTimes.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from AutoWho.UserCollectionTimes.';
 
 		--LightweightSessions, LightweightTasks, LightweightTrans, SARException, TAWException
 		-- since these are heaps, we use tablock to allow the pages to be deallocated
@@ -1050,12 +994,9 @@ BEGIN
 		WHERE SPIDCaptureTime <= @lv__MaxSPIDCaptureTime
 		AND SPIDCaptureTime <= @lv__HardDeleteCaptureTime;
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.CaptureTimes.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from AutoWho.CaptureTimes.';
 
 		DELETE targ 
 		FROM AutoWho.CaptureSummary targ 
@@ -1066,12 +1007,9 @@ BEGIN
 			WHERE ct.SPIDCaptureTime = targ.SPIDCaptureTime
 		);
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.CaptureSummary.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from AutoWho.CaptureSummary.';
 
 		--We just (potentially) deleted rows from AutoWho.CaptureTimes. Any ordinal caches that contain capture times
 		--that were just removed are no longer useful. Delete these, and the position markers that depend on them
@@ -1113,12 +1051,9 @@ BEGIN
 			AND t.EndTime = p.EndTime
 		);
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.CaptureOrdinalPosition.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from AutoWho.CaptureOrdinalCache.';
 
 		DELETE c
 		FROM CoreXR.CaptureOrdinalCache c
@@ -1131,23 +1066,17 @@ BEGIN
 			AND t.EndTime = c.EndTime
 		);
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.CaptureOrdinalCache.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from AutoWho.CaptureOrdinalCache.';
 
 		DELETE FROM CoreXR.[Traces]
 		WHERE Utility = N'AutoWho'
 		AND CreateTime <= @lv__HardDeleteCaptureTime;
 
-		SET @lv__tmpBigInt = ROWCOUNT_BIG();
+					SET @lv__RowCount = ROWCOUNT_BIG();
+					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from CoreXR.Traces.';
 
-		INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT GETDATE(), 0, N'Retention Purge', 
-			ISNULL(CONVERT(NVARCHAR(20),@lv__tmpBigInt),N'<null>') + ' rows deleted from CoreXR.Traces.';
 
 		DELETE FROM AutoWho.[Log] WHERE LogDT <= @lv__HardDeleteCaptureTime;
 		RETURN 0;
@@ -1158,8 +1087,12 @@ BEGIN
 		SET @lv__ErrorState = ERROR_STATE();
 		SET @lv__ErrorSeverity = ERROR_SEVERITY();
 
-		SET @lv__ErrorMessage = N'Exception occurred in procedure: ' + OBJECT_NAME(@@PROCID) + N' at location ("' + ISNULL(@lv__ErrorLoc,N'<null>') + '"). 
-		Error #: ' + ISNULL(CONVERT(NVARCHAR(20),ERROR_NUMBER()),N'<null>') + '; Message: ' + ISNULL(ERROR_MESSAGE(), N'<null>');
+		SET @lv__ErrorMessage = N'Exception occurred at location ("' + ISNULL(@lv__ErrorLoc,N'<null>') + '"). Error #: ' + ISNULL(CONVERT(NVARCHAR(20),ERROR_NUMBER()), N'<null>') +
+			N'; Severity: ' + ISNULL(CONVERT(NVARCHAR(20),@lv__ErrorSeverity), N'<null>') + 
+			N'; State: ' + ISNULL(CONVERT(NVARCHAR(20),@lv__ErrorState),N'<null>') + 
+			N'; Message: ' + ISNULL(ERROR_MESSAGE(),N'<null>');
+
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location=N'CATCH Block', @Message=@lv__ErrorMessage;
 
 		RAISERROR(@lv__ErrorMessage, @lv__ErrorSeverity, @lv__ErrorState);
 		RETURN -999;

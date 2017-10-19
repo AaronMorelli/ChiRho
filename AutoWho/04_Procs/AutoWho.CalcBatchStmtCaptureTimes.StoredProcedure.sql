@@ -64,7 +64,9 @@ BEGIN
 			@LastCaptureTimeMinus2	DATETIME,
 			@lv__nullsmallint		SMALLINT,
 			@errorloc				NVARCHAR(50),
-			@errormsg				NVARCHAR(4000);
+			@errormsg				NVARCHAR(4000),
+			@errorsev				INT,
+			@errorstate				INT;
 
 	SET @lv__nullsmallint = -929;
 
@@ -632,17 +634,16 @@ BEGIN TRY
 END TRY
 BEGIN CATCH
 	IF @@TRANCOUNT > 0 ROLLBACK;
+	SET @errorstate = ERROR_STATE();
+	SET @errorsev = ERROR_SEVERITY();
 
 	SET @errormsg = N'Unexpected exception occurred at location ("' + ISNULL(@errorloc,N'<null>') + '"). Error #: ' + CONVERT(NVARCHAR(20),ERROR_NUMBER()) + 
 		N' Sev: ' + CONVERT(NVARCHAR(20), ERROR_SEVERITY()) + N' State: ' + CONVERT(NVARCHAR(20), ERROR_STATE()) + 
 		N' Message: ' + ERROR_MESSAGE();
-		;
-	
-	INSERT INTO AutoWho.[Log]
-	(LogDT, ErrorCode, LocationTag, LogMessage)
-	SELECT SYSDATETIME(), -41, N'ResolveExcept', @errormsg;
 
-	RETURN -1;
+	EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location=N'CATCH Block', @Message=@errormsg;
+	RAISERROR(@errormsg, @errorsev, @errorstate);
+	RETURN -999;
 END CATCH
 
 	RETURN 0;

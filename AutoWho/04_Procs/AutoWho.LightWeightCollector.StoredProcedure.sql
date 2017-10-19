@@ -383,10 +383,12 @@ BEGIN
 		SET @lv__ErrorSeverity = ERROR_SEVERITY();
 		SET @lv__ErrorState = ERROR_STATE();
 
-		SET @lv__ErrorMessage = N'Exception occurred at location ("' + ISNULL(@lv__ErrorLoc,N'<null>') + '"). Error #: ' + 
+		SET @lv__ErrorMessage = N'Exception occurred at location ("' + ISNULL(@lv__ErrorLoc,N'<null>') + '"). Error #: ' + ISNULL(CONVERT(NVARCHAR(20),ERROR_NUMBER()), N'<null>') +
 			N'; Severity: ' + ISNULL(CONVERT(NVARCHAR(20),@lv__ErrorSeverity), N'<null>') + 
 			N'; State: ' + ISNULL(CONVERT(NVARCHAR(20),@lv__ErrorState),N'<null>') + 
 			N'; Message: ' + ISNULL(ERROR_MESSAGE(),N'<null>');
+
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location=N'CATCH Block', @Message=@lv__ErrorMessage;
 
 		RAISERROR(@lv__ErrorMessage, @lv__ErrorSeverity, @lv__ErrorState);
 		RETURN -999;

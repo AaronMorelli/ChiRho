@@ -316,10 +316,8 @@ BEGIN
 		BEGIN CATCH
 			SET @omsg = 'User Collection: AutoWho Collector procedure generated an exception: Error Number: ' + 
 				CONVERT(VARCHAR(20), ERROR_NUMBER()) + '; Error Message: ' + ERROR_MESSAGE();
-				
-			INSERT INTO AutoWho.[Log]
-			(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), NULL, -1, N'User Collector exception', @omsg;
+
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location='User Collector exception', @Message=@omsg;
 
 			EXEC sp_releaseapplock @Resource = @lv__AppLockResource, @LockOwner = 'Session';
 			RETURN -1;
@@ -391,9 +389,7 @@ BEGIN
 			SET @omsg = 'User Collection: AutoWho Collector procedure generated an exception: Error Number: ' + 
 				CONVERT(VARCHAR(20), ERROR_NUMBER()) + '; Error Message: ' + ERROR_MESSAGE();
 				
-			INSERT INTO AutoWho.[Log]
-			(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), NULL, -1, N'User Collector exception', @omsg;
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location='User Collector exception', @Message=@omsg;
 
 			EXEC sp_releaseapplock @Resource = @lv__AppLockResource, @LockOwner = 'Session';
 			RETURN -1;

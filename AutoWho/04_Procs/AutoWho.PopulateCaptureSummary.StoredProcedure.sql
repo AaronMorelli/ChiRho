@@ -719,11 +719,7 @@ BEGIN
 		SET @errmsg = @errmsg + ' Error #: ' + CONVERT(varchar(20),ERROR_NUMBER()) + '; State: ' + CONVERT(varchar(20),ERROR_STATE()) + 
 			'; Severity: ' + CONVERT(varchar(20),ERROR_SEVERITY()) + '; msg: ' + ERROR_MESSAGE();
 
-		INSERT INTO AutoWho.[Log] (
-			LogDT, TraceID, ErrorCode, LocationTag, LogMessage 
-		)
-		VALUES (SYSDATETIME(), NULL, ERROR_NUMBER(), N'SummCapturePopulation', @errmsg);
-
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location='CATCH block', @Message=@errmsg;
 		RETURN -1;
 	END CATCH
 

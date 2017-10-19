@@ -172,18 +172,11 @@ BEGIN
 					--any abort requests will, by default, continue their effect the rest of the day.
 					BEGIN
 						EXEC msdb.dbo.sp_start_job @job_name = @AutoWhoJobName;
-
-						INSERT INTO AutoWho.[Log]
-						(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-						SELECT SYSDATETIME(), NULL, 0, 'XRMaster', 'AutoWho Trace job started.'
-						;
+						EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = 0, @TraceID = NULL, @Location = N'XRMaster AutoWho Job Start', @Message = N'AutoWho Trace job started.';
 					END
 					ELSE
 					BEGIN
-						INSERT INTO AutoWho.[Log]
-						(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-						SELECT SYSDATETIME(), NULL, -1, 'XRMaster', N'An AbortTrace signal exists for today. This procedure has been told not to run the rest of the day.'
-						;
+						EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = -1, @TraceID = NULL, @Location = N'XRMaster AutoWho Signal', @Message = N'An AbortTrace signal exists for today. This procedure has been told not to run the rest of the day.';
 					END
 				END	 
 			END		--IF @lv__tmptime BETWEEN @AutoWho__NextStartTime AND @AutoWho__NextEndTime
@@ -197,10 +190,7 @@ BEGIN
 		BEGIN CATCH
 			--inside the loop, we swallow the error and just log it
 			SET @ErrorMessage = N'Exception occurred when updating the store LastTouched values: ' + ERROR_MESSAGE();
-
-			INSERT INTO AutoWho.[Log]
-			(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), NULL, ERROR_NUMBER(), N'ErrorLastTouch', @ErrorMessage;
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = -999, @TraceID = NULL, @Location = N'ErrorLastTouch', @Message = @ErrorMessage;
 		END CATCH
 
 		BEGIN TRY
@@ -211,11 +201,8 @@ BEGIN
 		END TRY
 		BEGIN CATCH
 			--inside the loop, we swallow the error and just log it
-			SET @ErrorMessage = N'Exception occurred when resolving waits: ' + ERROR_MESSAGE();
-
-			INSERT INTO AutoWho.[Log]
-			(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), NULL, ERROR_NUMBER(), N'ErrorResolve', @ErrorMessage;
+			SET @ErrorMessage = N'Exception occurred when post-processing AutoWho captures: ' + ERROR_MESSAGE();
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = -999, @TraceID = NULL, @Location = N'ErrorPostProcess', @Message = @ErrorMessage;
 		END CATCH
 
 
@@ -229,15 +216,13 @@ BEGIN
 					SELECT *
 					FROM AutoWho.[Log] l
 					WHERE l.LogDT > DATEADD(HOUR, -1, GETDATE())
-					AND l.LocationTag = 'XRMaster'
+					AND l.LocationTag = 'XRMaster AutoWho Purge'
 					AND l.LogMessage = 'Purge procedure completed'
 				)
 				BEGIN
 					EXEC AutoWho.ApplyRetentionPolicies;
 
-					INSERT INTO AutoWho.[Log]
-					(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-					SELECT SYSDATETIME(), NULL, 0, 'XRMaster', 'Purge procedure completed';
+					EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = 0, @TraceID = NULL, @Location = N'XRMaster AutoWho Purge', @Message = N'Purge procedure completed';
 
 					--Now that we have (potentially) deleted a bunch of rows, do some index maint
 					EXEC AutoWho.MaintainIndexes;
