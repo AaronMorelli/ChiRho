@@ -452,9 +452,7 @@ BEGIN TRY
 
 		IF @init = 255		--only log a message for the background trace
 		BEGIN
-			INSERT INTO AutoWho.Log 
-			(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), NULL, 0, 'PostPrZero', N'No records in TAW were found for post-processing for this time window.';
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location=N'PostPrZero', @Message=N'No records in TAW were found for post-processing for this time window.';
 		END
 
 		EXEC sp_releaseapplock @Resource = @lv__AppLockResource, @LockOwner = 'Session';
@@ -773,10 +771,10 @@ BEGIN TRY
 
 	IF @init = 255		--we only log durations for the background trace
 	BEGIN
-		INSERT INTO AutoWho.Log 
-		(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), NULL, 0, 'ResolveNSdur', N'NodeStatus resolve logic processed ' + CONVERT(nvarchar(20),@InData_NumRows) + 
+		SET @err__msg = N'NodeStatus resolve logic processed ' + CONVERT(nvarchar(20),@InData_NumRows) + 
 			N' rows in ' + CONVERT(nvarchar(20),DATEDIFF(millisecond, @lv__DurationStart, @lv__DurationEnd)) + N' milliseconds.';
+
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location=N'ResolveNSdur', @Message=@err__msg;
 	END
 
 	IF IS_SRVROLEMEMBER ('sysadmin') = 1 AND @opt__ResolvePageLatches = N'Y'
@@ -792,9 +790,7 @@ BEGIN TRY
 	
 			IF @init = 255
 			BEGIN
-				INSERT INTO AutoWho.[Log]
-				(LogDT, ErrorCode, LocationTag, LogMessage)
-				SELECT SYSDATETIME(), -1, N'TF3604Enable', @errormsg;
+				EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location=N'TF3604Enable', @Message=@errormsg;
 			END
 		END CATCH
 
@@ -1081,9 +1077,7 @@ BEGIN TRY
 	
 				IF @init = 255
 				BEGIN
-					INSERT INTO AutoWho.[Log]
-					(LogDT, ErrorCode, LocationTag, LogMessage)
-					SELECT SYSDATETIME(), -41, N'TF3604Disable', @errormsg;
+					EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location='TF3604Disable', @Message=@errormsg;
 				END
 			END CATCH
 
@@ -1091,10 +1085,10 @@ BEGIN TRY
 
 			IF @init = 255
 			BEGIN
-				INSERT INTO AutoWho.Log 
-				(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-				SELECT SYSDATETIME(), NULL, 0, 'ResolvePgldur', N'PageLatch resolve logic processed ' + CONVERT(nvarchar(20),@InData_NumPageLatch) + 
+				SET @errormsg = N'PageLatch resolve logic processed ' + CONVERT(nvarchar(20),@InData_NumPageLatch) + 
 					N' rows in ' + CONVERT(nvarchar(20),DATEDIFF(millisecond, @lv__DurationStart, @lv__DurationEnd)) + N' milliseconds.';
+
+				EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='ResolvePgldur', @Message=@errormsg;
 			END
 		END	--IF @lv__3604EnableSuccessful = N'Y'
 	END		--IF IS_SRVROLEMEMBER ('sysadmin') = 1 AND @opt__ResolvePageLatches = N'Y' AND ISNULL(@InData_NumPageLatch,0) > 0
@@ -1258,13 +1252,13 @@ BEGIN TRY
 
 			IF @init = 255
 			BEGIN
-				INSERT INTO AutoWho.Log 
-				(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-				SELECT SYSDATETIME(), NULL, 0, 'ResolvePat01', N'Lock resolution (Pattern 0 and 1) processed ' + 
+				SET @errormsg = N'Lock resolution (Pattern 0 and 1) processed ' + 
 							CONVERT(NVARCHAR(20),
 							(ISNULL(@InData_NumDB,0) + ISNULL(@InData_NumFile,0) + ISNULL(@InData_NumExtent,0) + ISNULL(@InData_NumApp,0) + ISNULL(@InData_NumMeta,0))
 							) + 
 					N' rows in ' + CONVERT(nvarchar(20),DATEDIFF(millisecond, @lv__DurationStart, @lv__DurationEnd)) + N' milliseconds.';
+
+				EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='ResolvePat01', @Message=@errormsg;
 			END
 
 			SET @lv__DurationStart = SYSDATETIME();
@@ -1463,13 +1457,13 @@ BEGIN TRY
 
 			IF @init = 255
 			BEGIN
-				INSERT INTO AutoWho.Log 
-				(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-				SELECT SYSDATETIME(), NULL, 0, 'ResolvePat2', N'Lock resolution (Pattern 2) processed ' + 
+				SET @errormsg = N'Lock resolution (Pattern 2) processed ' + 
 							CONVERT(NVARCHAR(20),
 							(ISNULL(@InData_NumKey,0) + ISNULL(@InData_NumRid,0) + ISNULL(@InData_NumPage,0) + ISNULL(@InData_NumHobt,0) + ISNULL(@InData_NumAlloc,0))
 							) + 
 					N' rows in ' + CONVERT(nvarchar(20),DATEDIFF(millisecond, @lv__DurationStart, @lv__DurationEnd)) + N' milliseconds.';
+
+				EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='ResolvePat2', @Message=@errormsg;
 			END 
 
 			SET @lv__DurationStart = SYSDATETIME();
@@ -1635,12 +1629,12 @@ BEGIN TRY
 
 			IF @init = 255
 			BEGIN
-				INSERT INTO AutoWho.Log 
-				(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-				SELECT SYSDATETIME(), NULL, 0, 'ResolvePat3', N'Lock resolution (Pattern 3) processed ' + 
+				SET @errormsg = N'Lock resolution (Pattern 3) processed ' + 
 							CONVERT(NVARCHAR(20),
 							ISNULL(@InData_NumObj,0) ) + 
 					N' rows in ' + CONVERT(nvarchar(20),DATEDIFF(millisecond, @lv__DurationStart, @lv__DurationEnd)) + N' milliseconds.';
+
+				EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='ResolvePat3', @Message=@errormsg;
 			END
 
 			SET @lv__DurationStart = SYSDATETIME();
@@ -1690,13 +1684,10 @@ BEGIN CATCH
 	SET @errormsg = N'Unexpected exception occurred at location ("' + ISNULL(@errorloc,N'<null>') + '"). Error #: ' + CONVERT(NVARCHAR(20),ERROR_NUMBER()) + 
 		N' Sev: ' + CONVERT(NVARCHAR(20), ERROR_SEVERITY()) + N' State: ' + CONVERT(NVARCHAR(20), ERROR_STATE()) + 
 		N' Message: ' + ERROR_MESSAGE();
-		;
 	
 	IF @init = 255
 	BEGIN
-		INSERT INTO AutoWho.[Log]
-		(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), -41, N'ResolveExcept', @errormsg;
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location='ResolveExcept', @Message=@errormsg;
 	END
 
 	--besides the log message, swallow these errors

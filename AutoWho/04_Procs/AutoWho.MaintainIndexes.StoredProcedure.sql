@@ -47,6 +47,12 @@ BEGIN
 	SET NOCOUNT ON;
 	SET DEADLOCK_PRIORITY LOW;
 
+	DECLARE @lv__ErrorMessage NVARCHAR(4000),
+			@lv__ErrorState INT,
+			@lv__ErrorSeverity INT,
+			@lv__ErrorLoc NVARCHAR(100),
+			@lv__RowCount BIGINT;
+
 	--Cursor variables
 	DECLARE @SchemaName sysname,
 		@TableName sysname,
@@ -80,6 +86,8 @@ BEGIN
 		@LogMessage NVARCHAR(4000),
 		@ErrorNumber INT;
 
+BEGIN TRY
+	SET @lv__ErrorLoc = N'Create TT';
 	CREATE TABLE #AutoWhoIndexToEval (
 		[SchemaName] [sysname] NOT NULL,
 		[TableName] [sysname] NOT NULL,
@@ -156,6 +164,7 @@ BEGIN
 	*/
 	
 	--BEGIN SQL 2008 R2 and before logic BEGIN
+	SET @lv__ErrorLoc = N'Obtain objects';
 	INSERT INTO #AutoWhoIndexToEval (
 		[SchemaName],
 		[TableName],
@@ -175,6 +184,7 @@ BEGIN
 	AND o.schema_id IN (schema_id('CoreXR'), schema_id('AutoWho'))
 	AND i.index_id <> 0;
 	
+	SET @lv__ErrorLoc = N'Iterate indexes';
 	DECLARE @ObjID INT;
 	DECLARE ObtainPhysStats CURSOR FOR
 	SELECT t.SchemaName,
@@ -235,7 +245,7 @@ BEGIN
 	WHERE TableName = 'InputBufferStore'
 	ORDER BY SchemaName, TableName, IndexName, alloc_unit_type_desc;
 	*/
-
+	SET @lv__ErrorLoc = N'INSERT #AutoWhoIndexRebuildScore';
 	INSERT INTO #AutoWhoIndexRebuildScore (
 		[SchemaName],
 		[TableName],
@@ -245,7 +255,7 @@ BEGIN
 	SELECT DISTINCT SchemaName, TableName, IndexName, 0
 	FROM #AutoWhoIndexToEval;
 
-
+	SET @lv__ErrorLoc = N'cursor iterateAutoWhoIndexes';
 	DECLARE iterateAutoWhoIndexes CURSOR LOCAL FAST_FORWARD FOR
 	SELECT 
 		t.SchemaName,
@@ -397,6 +407,7 @@ BEGIN
 			END
 		END
 
+		SET @lv__ErrorLoc = N'Update #AutoWhoIndexRebuildScore';
 		UPDATE #AutoWhoIndexRebuildScore
 		SET RebuildScore = RebuildScore + @CurrentRebuildScore		--multiple alloc units per index means we need to
 																	-- take multiple loop iterations per index into account.
@@ -433,7 +444,7 @@ BEGIN
 	*/
 
 
-
+	SET @lv__ErrorLoc = N'cursor iterateScores';
 	DECLARE iterateScores CURSOR LOCAL FAST_FORWARD FOR
 	SELECT SchemaName, TableName, IndexName
 	FROM #AutoWhoIndexRebuildScore t
@@ -454,14 +465,13 @@ BEGIN
 
 		SET @RebuildStartTime = GETDATE();
 		BEGIN TRY
+			SET @lv__ErrorLoc = N'Execute DynSQL';
 			EXEC (@DynSQL);
 
 			SET @LogMessage = N'Successfully rebuilt index ' + QUOTENAME(@IndexName) + ' on table ' + 
 				QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName);
 
-			INSERT INTO AutoWho.Log 
-			(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), NULL, 0, 'AutoWhoRbld', @LogMessage;
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='After dynamic rebuild', @Message=@LogMessage;
 		END TRY
 		BEGIN CATCH
 			IF @@TRANCOUNT > 0 ROLLBACK;
@@ -472,9 +482,7 @@ BEGIN
 				QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName) + '. State: ' + CONVERT(varchar(20),ERROR_STATE()) +
 				'; Severity: ' + CONVERT(varchar(20),ERROR_SEVERITY()) + ' Message: ' + ERROR_MESSAGE();
 
-			INSERT INTO AutoWho.Log 
-			(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), NULL, @ErrorNumber, 'AutoWhoRbld', @LogMessage;
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='CATCH dynamic rebuild', @Message=@LogMessage;
 		END CATCH
 
 		SET @RebuildEndTime = GETDATE(); 
@@ -497,6 +505,24 @@ BEGIN
 	CLOSE iterateScores;
 	DEALLOCATE iterateScores;
 
+	RETURN 0;
+END TRY
+BEGIN CATCH
+	IF @@TRANCOUNT > 0 ROLLBACK;
+
+	SET @lv__ErrorState = ERROR_STATE();
+	SET @lv__ErrorSeverity = ERROR_SEVERITY();
+
+	SET @lv__ErrorMessage = N'Exception occurred at location ("' + ISNULL(@lv__ErrorLoc,N'<null>') + '"). Error #: ' + ISNULL(CONVERT(NVARCHAR(20),ERROR_NUMBER()), N'<null>') +
+		N'; Severity: ' + ISNULL(CONVERT(NVARCHAR(20),@lv__ErrorSeverity), N'<null>') + 
+		N'; State: ' + ISNULL(CONVERT(NVARCHAR(20),@lv__ErrorState),N'<null>') + 
+		N'; Message: ' + ISNULL(ERROR_MESSAGE(),N'<null>');
+
+	EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location=N'CATCH Block', @Message=@lv__ErrorMessage;
+
+	RAISERROR(@lv__ErrorMessage, @lv__ErrorSeverity, @lv__ErrorState);
+	RETURN -999;
+END CATCH
 
 	RETURN 0;
 END

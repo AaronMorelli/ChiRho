@@ -162,10 +162,7 @@ BEGIN TRY
 	IF @lv__SQLVersion IN (N'2000',N'2005')
 	BEGIN
 		SET @ErrorMessage = N'AutoWho is only compatible with SQL 2008 and above.';
-		INSERT INTO AutoWho.[Log]
-		(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), -1, N'SQLVersion', @ErrorMessage;
-	 
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-1, @TraceID=NULL, @Location='SQLVersion', @Message=@ErrorMessage; 
 		RETURN -1;
 	END
 
@@ -249,11 +246,7 @@ BEGIN TRY
 	BEGIN
 		SET @ErrorMessage = N'Unable to obtain exclusive AutoWho Tracing lock.';
 		SET @lv__ThisRC = -3;
-
-		INSERT INTO AutoWho.[Log]
-		(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), @lv__ThisRC, N'Obtaining applock', @ErrorMessage;
-	 
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='Obtaining applock', @Message=@ErrorMessage;
 		RETURN @lv__ThisRC;
 	END
 
@@ -261,10 +254,7 @@ BEGIN TRY
 	BEGIN
 		SET @ErrorMessage = N'The VIEW SERVER STATE permission (or permissions/role membership that include VIEW SERVER STATE) is required to execute AutoWho. Exiting...';
 		SET @lv__ThisRC = -5;
-
-		INSERT INTO AutoWho.[Log]
-		(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), @lv__ThisRC, N'Perms Validation', @ErrorMessage;
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='Perms Validation', @Message=@ErrorMessage;
 
 		EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
 		RETURN @lv__ThisRC;
@@ -297,10 +287,7 @@ BEGIN TRY
 	BEGIN
 		SET @ErrorMessage = N'An AbortTrace signal exists for today. This procedure has been told not to run the rest of the day.';
 		SET @lv__ThisRC = -9;
-
-		INSERT INTO AutoWho.[Log]
-		(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), @lv__ThisRC, N'Abort flag exists', @ErrorMessage;
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='Abort flag exists', @Message=@ErrorMessage;
 
 		EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
 		RETURN @lv__ThisRC;
@@ -318,21 +305,16 @@ BEGIN TRY
 	--Obtain the next start/end times... Note that TraceTimeInfo calls the ValidateOption procedure
 	DECLARE @lv__AutoWhoStartTime DATETIME, 
 			@lv__AutoWhoEndTime DATETIME, 
-			@lv__AutoWhoEnabled NCHAR(1)
-			;
+			@lv__AutoWhoEnabled NCHAR(1);
 
 	EXEC CoreXR.TraceTimeInfo @Utility=N'AutoWho', @PointInTime = NULL, @UtilityIsEnabled = @lv__AutoWhoEnabled OUTPUT,
-		@UtilityStartTime = @lv__AutoWhoStartTime OUTPUT, @UtilityEndTime = @lv__AutoWhoEndTime OUTPUT
-			;
+		@UtilityStartTime = @lv__AutoWhoStartTime OUTPUT, @UtilityEndTime = @lv__AutoWhoEndTime OUTPUT;
 
 	IF @lv__AutoWhoEnabled = N'N'
 	BEGIN
 		SET @ErrorMessage = 'According to the option table, AutoWho is not enabled';
 		SET @lv__ThisRC = -11;
-	
-		INSERT INTO AutoWho.[Log]
-		(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), @lv__ThisRC, N'NotEnabled', @ErrorMessage;
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='NotEnabled', @Message=@ErrorMessage;
 	
 		EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
 		RETURN @lv__ThisRC;
@@ -342,10 +324,7 @@ BEGIN TRY
 	BEGIN
 		SET @ErrorMessage = 'The Current time is not within the window specified by BeginTime and EndTime options';
 		SET @lv__ThisRC = -13;
-	
-		INSERT INTO AutoWho.[Log]
-		(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), @lv__ThisRC, N'Outside Begin/End', @ErrorMessage;
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='Outside Begin/End', @Message=@ErrorMessage;
 	
 		EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
 		RETURN @lv__ThisRC;
@@ -430,10 +409,7 @@ BEGIN TRY
 				ERROR_MESSAGE();
 
 			SET @lv__ThisRC = -15;
-	
-			INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), @lv__ThisRC, N'DB Inclusions', @ErrorMessage;
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='DB Inclusions', @Message=@ErrorMessage;
 	
 			EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
 			RETURN @lv__ThisRC;
@@ -459,10 +435,7 @@ BEGIN TRY
 				ERROR_MESSAGE();
 
 			SET @lv__ThisRC = -17;
-	
-			INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), @lv__ThisRC, N'DB Exclusions', @ErrorMessage;
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='DB Exclusions', @Message=@ErrorMessage;
 	
 			EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
 			RETURN @lv__ThisRC;
@@ -491,10 +464,7 @@ BEGIN TRY
 		SET @ErrorMessage = N'One or more DB names are present in both the IncludeDBs option and ExcludeDBs option. This is not allowed.';
 
 		SET @lv__ThisRC = -19;
-	
-		INSERT INTO AutoWho.[Log]
-		(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), @lv__ThisRC, N'IncludeExclude', @ErrorMessage;
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='IncludeExclude', @Message=@ErrorMessage;
 	
 		EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
 		RETURN @lv__ThisRC;
@@ -510,10 +480,7 @@ BEGIN TRY
 	BEGIN
 		SET @ErrorMessage = N'The current time, combined with the BeginTime and EndTime options, have resulted in a trace that will run for < 60 seconds. This is not allowed, and the trace will not be started.';
 		SET @lv__ThisRC = -21;
-	
-		INSERT INTO AutoWho.[Log]
-		(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), @lv__ThisRC, N'Less 60sec', @ErrorMessage;
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='Less 60sec', @Message=@ErrorMessage;
 	
 		EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
 		RETURN @lv__ThisRC;
@@ -528,10 +495,7 @@ BEGIN TRY
 		BEGIN
 			SET @ErrorMessage = N'TraceID value is invalid. The Create Trace procedure failed silently.';
 			SET @lv__ThisRC = -23;
-	
-			INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), @lv__ThisRC, N'InvalidTraceID', @ErrorMessage;
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='InvalidTraceID', @Message=@ErrorMessage;
 	
 			EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
 			RETURN @lv__ThisRC;
@@ -540,22 +504,17 @@ BEGIN TRY
 	BEGIN CATCH
 		SET @ErrorMessage = N'Exception occurred when creating a new trace: ' + ERROR_MESSAGE();
 		SET @lv__ThisRC = -25;
-	
-		INSERT INTO AutoWho.[Log]
-		(LogDT, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), @lv__ThisRC, N'CreateTraceException', @ErrorMessage;
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='CreateTraceException', @Message=@ErrorMessage;
 
 		EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
 		RETURN @lv__ThisRC;
 	END CATCH
 
-	INSERT INTO AutoWho.[Log]
-	(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-	SELECT SYSDATETIME(),  @lv__TraceID, 0, N'Print TraceID', N'Starting AutoWho trace using TraceID ''' + CONVERT(varchar(20),@lv__TraceID) + '''.';
+	SET @ErrorMessage = N'Starting AutoWho trace using TraceID ''' + CONVERT(varchar(20),@lv__TraceID) + '''.';
+	EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=@lv__TraceID, @Location='Print TraceID', @Message=@ErrorMessage;
 
-	INSERT INTO AutoWho.[Log]
-	(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-	SELECT SYSDATETIME(), @lv__TraceID, 0, N'Runtime calc', N'The AutoWho trace is going to run for ''' + convert(varchar(20),@lv__RunTimeMinutes) + ''' seconds.';
+	SET @ErrorMessage = N'The AutoWho trace is going to run for ''' + convert(varchar(20),@lv__RunTimeMinutes) + ''' seconds.';
+	EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=@lv__TraceID, @Location='Runtime calc', @Message=@ErrorMessage;
 
 	--We get the startup time for this SQL instance b/c we will start hitting situations where our datetime values could be NULL or even 1900-01-01, and
 	-- we need to handle them. Most of the time, we'll use @lv__TempDBCreateTime as our fall-back value
@@ -592,10 +551,7 @@ BEGIN TRY
 			BEGIN CATCH
 				SET @ErrorMessage = N'Cannot enable TF 8666. Message: ' + ERROR_MESSAGE();
 				SET @lv__ThisRC = -31;
-	
-				INSERT INTO AutoWho.[Log]
-				(LogDT, ErrorCode, LocationTag, LogMessage)
-				SELECT SYSDATETIME(), @lv__ThisRC, N'TF8666Enable', @ErrorMessage;
+				EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=@lv__TraceID, @Location='TF8666Enable', @Message=@ErrorMessage;
 
 				EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
 				RETURN @lv__ThisRC;
@@ -696,18 +652,13 @@ BEGIN TRY
 		BEGIN CATCH
 			SET @ErrorMessage = 'Executor: AutoWho Collector procedure generated an exception: Error Number: ' + 
 				CONVERT(VARCHAR(20), ERROR_NUMBER()) + '; Error Message: ' + ERROR_MESSAGE();
-				
-			INSERT INTO AutoWho.[Log]
-			(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), @lv__TraceID, -33, N'Executor: AutoWho Collector exception', @ErrorMessage;
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-33, @TraceID=@lv__TraceID, @Location='Executor: AutoWho Collector exception', @Message=@ErrorMessage;
 
 			SET @lv__SuccessiveExceptions = @lv__SuccessiveExceptions + 1;
 
 			IF @lv__SuccessiveExceptions >= 10
 			BEGIN
-				INSERT INTO AutoWho.[Log]
-				(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-				SELECT SYSDATETIME(), @lv__TraceID, -35, N'Abort b/c exceptions', N'10 consecutive failures; this procedure is terminating.';
+				EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-35, @TraceID=@lv__TraceID, @Location='Abort b/c exceptions', @Message=N'10 consecutive failures; this procedure is terminating.';
 
 				SET @lv__EarlyAbort = N'E';	--signals (to the logic immediately after the WHILE loop's END) how we exited the loop
 
@@ -735,11 +686,9 @@ BEGIN TRY
 			-- be a viewer for this) that is closer to representing a specific point in time.
 			EXEC AutoWho.LightWeightCollector;
 
-			INSERT INTO AutoWho.[Log]
-			(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(),  @lv__TraceID, 0, 
-				N'LightColl', N'Lightweight Collector running due to AutoWho duration of ''' + 
+			SET @ErrorMessage = N'Lightweight Collector running due to AutoWho duration of ''' + 
 					CONVERT(VARCHAR(20),DATEDIFF(MILLISECOND, @lv__LoopStartTime, @lv__AutoWhoCallCompleteTime)) + ''' ms.';
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=@lv__TraceID, @Location='LightColl', @Message=@ErrorMessage;
 		END
 
 		IF ISNULL(@lv__RecompileAutoWho,0) = 1
@@ -777,16 +726,13 @@ BEGIN TRY
 					) > 100
 				BEGIN
 					SET @lv__RecompileAutoWho = 1;
-
-					INSERT INTO AutoWho.[Log]
-					(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-					SELECT SYSDATETIME(),  @lv__TraceID, 0, N'Recompile', 
-						N'AutoWho Collector marked for recompilation (Spids at last recompile: ' + 
+					SET @ErrorMessage = N'AutoWho Collector marked for recompilation (Spids at last recompile: ' + 
 							CONVERT(varchar(20),@lv__NumSPIDsAtLastRecompile) + 
 							'. Average # of spids captured over last 6 runs: ' + 
 						CONVERT(varchar(20),((@lv__SPIDsCaptured1Ago + @lv__SPIDsCaptured2Ago + @lv__SPIDsCaptured3Ago + 
-						@lv__SPIDsCaptured4Ago + @lv__SPIDsCaptured5Ago + @lv__NumSPIDsCaptured) / 6))
-						;
+						@lv__SPIDsCaptured4Ago + @lv__SPIDsCaptured5Ago + @lv__NumSPIDsCaptured) / 6));
+
+					EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=@lv__TraceID, @Location='Recompile', @Message=@ErrorMessage;
 				END
 			END
 
@@ -839,10 +785,8 @@ BEGIN TRY
 		BEGIN
 			IF @lv__EarlyAbort <> N'N'
 			BEGIN
-				SET @ErrorMessage = N'An AbortTrace signal value was found (for today), with type: ' + @lv__EarlyAbort;
-				INSERT INTO AutoWho.[Log]
-				(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-				SELECT SYSDATETIME(), @lv__TraceID, 1, N'Abort b/c signal', @ErrorMessage;
+				SET @ErrorMessage = N'An AbortTrace signal value was found (for today), with type: ' + ISNULL(@lv__EarlyAbort,'?');
+				EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=1, @TraceID=@lv__TraceID, @Location='Abort b/c signal', @Message=@ErrorMessage;
 			END
 		END
 
@@ -896,28 +840,19 @@ BEGIN TRY
 	BEGIN
 		SET @lv__ThisRC = -37;
 		SET @ErrorMessage = 'Exiting wrapper procedure due to exception-based abort';
-
-		INSERT INTO AutoWho.[Log]
-		(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), @lv__TraceID, @lv__ThisRC, N'Exception exit', @ErrorMessage;
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=@lv__TraceID, @Location='Exception exit', @Message=@ErrorMessage;
 	END
 	ELSE IF @lv__EarlyAbort IN (N'O', N'A')
 	BEGIN
 		SET @lv__ThisRC = -39;
 		SET @ErrorMessage = 'Exiting wrapper procedure due to manual abort, type: ' + @lv__EarlyAbort;
-
-		INSERT INTO AutoWho.[Log]
-		(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), @lv__TraceID, @lv__ThisRC, N'Manual abort exit', @ErrorMessage;
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=@lv__TraceID, @Location='Manual abort exit', @Message=@ErrorMessage;
 	END
 	ELSE 
 	BEGIN
 		SET @lv__ThisRC = 0;
 		SET @ErrorMessage = 'AutoWho trace successfully completed.';
-
-		INSERT INTO AutoWho.[Log]
-		(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-		SELECT SYSDATETIME(), @lv__TraceID, @lv__ThisRC, N'Successful complete', @ErrorMessage;
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=@lv__TraceID, @Location='Successful complete', @Message=@ErrorMessage;
 	END
 
 	EXEC CoreXR.StopTrace @Utility=N'AutoWho', @TraceID = @lv__TraceID, @AbortCode = @lv__EarlyAbort;
@@ -952,10 +887,7 @@ BEGIN TRY
 			BEGIN CATCH
 				SET @ErrorMessage = N'Cannot disable TF 8666. Message: ' + ERROR_MESSAGE();
 				SET @lv__ThisRC = -43;
-	
-				INSERT INTO AutoWho.[Log]
-				(LogDT, ErrorCode, LocationTag, LogMessage)
-				SELECT SYSDATETIME(), @lv__ThisRC, N'TF8666Disable', @ErrorMessage;
+				EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=@lv__TraceID, @Location='TF8666Disable', @Message=@ErrorMessage;
 
 				EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
 				RETURN @lv__ThisRC;
@@ -975,9 +907,7 @@ BEGIN CATCH
 		N'; Severity' + ISNULL(CONVERT(nvarchar(20),ERROR_SEVERITY()),N'<null>') + 
 		N'; Message: ' + ISNULL(ERROR_MESSAGE(), N'<null>');
 
-	INSERT INTO AutoWho.[Log]
-	(LogDT, ErrorCode, LocationTag, LogMessage)
-	SELECT SYSDATETIME(), -999, N'ExecutorUnexp', @ErrorMessage;
+	EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location='CATCH block', @Message=@ErrorMessage;
 
 	EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session'
 

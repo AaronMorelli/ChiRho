@@ -172,12 +172,12 @@ BEGIN
 
 			IF @lv__RC > 0
 			BEGIN
-				INSERT INTO AutoWho.[Log]
-				(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-				SELECT SYSDATETIME(), NULL, 0, N'SQLStmtLastTouch', N'Updated LastTouched for ' + CONVERT(NVARCHAR(20),@lv__RC) + 
+				SET @lv__errormsg = N'Updated LastTouched for ' + CONVERT(NVARCHAR(20),@lv__RC) + 
 					' SQL stmt entries in ' + 
 					CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__DurationStart, @lv__DurationEnd)) + 
 					N' milliseconds.';
+
+				EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='SQLStmtLastTouch', @Message=@lv__errormsg; 
 			END
 		END TRY
 		BEGIN CATCH
@@ -192,9 +192,7 @@ BEGIN
 				N'; state: ' + CONVERT(NVARCHAR(20),ERROR_STATE()) + N'; message: ' + ERROR_MESSAGE()
 			;
 
-			INSERT INTO AutoWho.[Log]
-			(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), NULL, 0, N'ErrStmtLastTouch', @lv__errormsg;
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location='CATCH block', @Message=@lv__errormsg;
 		END CATCH
 	END 
 
@@ -225,12 +223,12 @@ BEGIN
 
 				IF @lv__RC > 0
 				BEGIN
-					INSERT INTO AutoWho.[Log]
-					(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-					SELECT SYSDATETIME(), NULL, 0, N'SQLBatchLastTouch', N'Updated LastTouched for ' + CONVERT(NVARCHAR(20),@lv__RC) + 
+					SET @lv__errormsg = N'Updated LastTouched for ' + CONVERT(NVARCHAR(20),@lv__RC) + 
 						' SQL batch entries in ' + 
 						CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__DurationStart, @lv__DurationEnd)) + 
 						N' milliseconds.';
+
+					EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='SQLBatchLastTouch', @Message=@lv__errormsg; 
 				END
 			END --if batches exist
 		END TRY
@@ -243,12 +241,9 @@ BEGIN
 
 			SET @lv__errormsg = N'Update of SQL Batch Store LastTouched field failed with error # ' + 
 				CONVERT(NVARCHAR(20),ERROR_NUMBER()) + N'; severity: ' + CONVERT(NVARCHAR(20),ERROR_SEVERITY()) + 
-				N'; state: ' + CONVERT(NVARCHAR(20),ERROR_STATE()) + N'; message: ' + ERROR_MESSAGE()
-			;
+				N'; state: ' + CONVERT(NVARCHAR(20),ERROR_STATE()) + N'; message: ' + ERROR_MESSAGE();
 
-			INSERT INTO AutoWho.[Log]
-			(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), NULL, 0, N'ErrBatchLastTouch', @lv__errormsg;
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location='CATCH block', @Message=@lv__errormsg;
 		END CATCH
 	END 
 
