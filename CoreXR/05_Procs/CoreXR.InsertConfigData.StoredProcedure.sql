@@ -414,20 +414,17 @@ BEGIN
 			)
 		)
 	)
-	ORDER BY category_name, event_name 
-	;
+	ORDER BY category_name, event_name;
 
-	INSERT INTO CoreXR.Version ([Version], EffectiveDate)
-		SELECT '2008R2.1', GETDATE()
-	;
+	INSERT INTO CoreXR.Version ([Version], EffectiveDate, EffectiveDateUTC)
+		SELECT '2008R2.1', GETDATE(), GETUTCDATE();
 
 	INSERT INTO CoreXR.CollectionInitiators 
 	(CollectionInitiatorID, CollectionInitiator)
 	SELECT 255, N'AutoWho.Executor' UNION ALL		--making the default trace the high key reduces page splits
 	SELECT 254, N'ServerEye.Executor' UNION ALL		-- since the default/automated trace will generate collection data
 	SELECT 1,   N'sp_XR_SessionViewer' UNION ALL	-- at a *much* higher rate than the sp_XR* procs
-	SELECT 2,   N'sp_XR_QueryProgress'
-	;
+	SELECT 2,   N'sp_XR_QueryProgress';
 
 	RETURN 0;
 END

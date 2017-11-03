@@ -46,6 +46,7 @@ CREATE TABLE [AutoWho].[DimConnectionAttribute](
 	[encrypt_option] [nvarchar](40) NOT NULL,
 	[auth_scheme] [nvarchar](40) NOT NULL,
 	[TimeAdded] [datetime] NOT NULL,
+	[TimeAddedUTC] [datetime] NOT NULL,
  CONSTRAINT [PK_AutoWho_DimConnectionAttributes] PRIMARY KEY CLUSTERED 
 (
 	[DimConnectionAttributeID] ASC
@@ -68,7 +69,11 @@ CREATE UNIQUE NONCLUSTERED INDEX [AK_AutoWho_DimConnectionAttribute] ON [AutoWho
 	[auth_scheme] ASC
 )
 INCLUDE ( 	[DimConnectionAttributeID],
-	[TimeAdded]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+	[TimeAdded],
+	[TimeAddedUTC]
+) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 GO
-ALTER TABLE [AutoWho].[DimConnectionAttribute] ADD  CONSTRAINT [DF_AutoWho_DimConnectionAttributes_TimeAdded]  DEFAULT (getdate()) FOR [TimeAdded]
+ALTER TABLE [AutoWho].[DimConnectionAttribute] ADD  CONSTRAINT [DF_AutoWho_DimConnectionAttributes_TimeAdded]  DEFAULT (GETDATE()) FOR [TimeAdded]
+GO
+ALTER TABLE [AutoWho].[DimConnectionAttribute] ADD  CONSTRAINT [DF_AutoWho_DimConnectionAttributes_TimeAddedUTC]  DEFAULT (GETUTCDATE()) FOR [TimeAddedUTC]
 GO

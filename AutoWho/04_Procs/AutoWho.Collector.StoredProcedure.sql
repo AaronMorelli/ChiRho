@@ -58,7 +58,7 @@ To Execute
 <called from the AutoWho.Executor procedure>
 */
 (
-	--Note that validation of these variables is done by the callor (AutoWho.Executor or AutoWho.ViewCurrentSessions)
+	--Note that validation of these variables is done by the caller (AutoWho.Executor or AutoWho.UserCollector)
 	@CollectionInitiatorID				TINYINT,
 	@TempDBCreateTime					DATETIME,		--used as a fall-back value for some Date function and ISNULL calculations
 	@IncludeIdleWithTran				NCHAR(1),		--Y/N
@@ -90,7 +90,8 @@ To Execute
 	@DebugSpeed							NCHAR(1),		--Y/N
 	@SaveBadDims						NCHAR(1),		--Y/N
 	@NumSPIDs							INT OUTPUT,
-	@SPIDCaptureTime					DATETIME OUTPUT
+	@SPIDCaptureTime					DATETIME OUTPUT,
+	@UTCCaptureTime						DATETIME OUTPUT
 )
 AS
 BEGIN
@@ -196,10 +197,11 @@ BEGIN TRY
 		@err__ErrorState					INT,
 
 		--Variables for recording time
-		@lv__SPIDCaptureTime				DATETIME, 
-		@lv__beforedt						DATETIME, 
-		@lv__afterdt						DATETIME, 
-		@lv__procstartdt					DATETIME,
+		@lv__SPIDCaptureTime				DATETIME,	--local time
+		@lv__UTCCaptureTime					DATETIME,	--UTC time
+		@lv__beforedt						DATETIME,	--UTC time
+		@lv__afterdt						DATETIME,	--UTC time
+		@lv__procstartdt					DATETIME,	--UTC time
 		@lv__stmtdurations					NVARCHAR(1000),
 
 		--Variables for supporting the various cursor loops
@@ -325,7 +327,7 @@ BEGIN TRY
 		;
 
 	SET @errorloc = N'Variable Initialize';
-	SET @lv__procstartdt = GETDATE();
+	SET @lv__procstartdt = GETUTCDATE();
 	SET @lv__BChainRecsExist = 0;			--start out assuming that Blocking Chain records do not exist.
 	SET @lv__nullstring = N'<nul5>';		--used the # 5 just to make it that much more unlikely that our "special value" would collide with a DMV value
 	SET @lv__nullint = -929;				--ditto, used a strange/random number rather than -999, so there is even less of a chance of 
@@ -652,8 +654,8 @@ BEGIN TRY
 
 	IF @DebugSpeed = N'Y'
 	BEGIN
-		SET @lv__stmtdurations = N'TTdec:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__procstartdt, GETDATE())) + N',';
-		SET @lv__beforedt = GETDATE();
+		SET @lv__stmtdurations = N'TTdec:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__procstartdt, GETUTCDATE())) + N',';
+		SET @lv__beforedt = GETUTCDATE();
 	END
 
 /***************************************************************************************************************************
@@ -671,7 +673,10 @@ BEGIN TRY
 	SET @errorloc = N'SAR Initial Population';
 
 	SET @lv__SPIDCaptureTime = GETDATE();
+	SET @lv__UTCCaptureTime = DATEADD(MINUTE, DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()), @lv__SPIDCaptureTime);
+	--Set the output parameters
 	SET @SPIDCaptureTime = @lv__SPIDCaptureTime;
+	SET @UTCCaptureTime = @lv__UTCCaptureTime;
 
 	INSERT INTO #sessions_and_requests (
 		[sess__session_id],					--1
@@ -1365,8 +1370,8 @@ BEGIN TRY
 
 	IF @DebugSpeed = N'Y'
 	BEGIN
-		SET @lv__stmtdurations = @lv__stmtdurations +  N'SARinit:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-		SET @lv__beforedt = GETDATE();
+		SET @lv__stmtdurations = @lv__stmtdurations +  N'SARinit:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+		SET @lv__beforedt = GETUTCDATE();
 	END
 
 	SET @errorloc = N'TAW Population';
@@ -1746,8 +1751,8 @@ BEGIN TRY
 
 	IF @DebugSpeed = N'Y'
 	BEGIN
-		SET @lv__stmtdurations = @lv__stmtdurations +  N'TAWinit:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-		SET @lv__beforedt = GETDATE();
+		SET @lv__stmtdurations = @lv__stmtdurations +  N'TAWinit:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+		SET @lv__beforedt = GETUTCDATE();
 	END
 /*
 	 ****     ****   ****    ****   ****
@@ -1935,8 +1940,8 @@ There are a number of points worth noting re: the below scoping queries:
 
 	IF @DebugSpeed = N'Y'
 	BEGIN
-		SET @lv__stmtdurations = @lv__stmtdurations +  N'Scope:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-		SET @lv__beforedt = GETDATE();
+		SET @lv__stmtdurations = @lv__stmtdurations +  N'Scope:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+		SET @lv__beforedt = GETUTCDATE();
 	END
 
 	--select * from #sessions_and_requests order by sess__session_id;
@@ -1974,8 +1979,8 @@ There are a number of points worth noting re: the below scoping queries:
 
 	IF @DebugSpeed = N'Y'
 	BEGIN
-		SET @lv__stmtdurations = @lv__stmtdurations +  N'Resurrect:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-		SET @lv__beforedt = GETDATE();
+		SET @lv__stmtdurations = @lv__stmtdurations +  N'Resurrect:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+		SET @lv__beforedt = GETUTCDATE();
 	END
 
 
@@ -2334,8 +2339,8 @@ There are a number of points worth noting re: the below scoping queries:
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'MissBlk:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'MissBlk:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -2425,8 +2430,8 @@ There are a number of points worth noting re: the below scoping queries:
 
 	IF @DebugSpeed = N'Y'
 	BEGIN
-		SET @lv__stmtdurations = @lv__stmtdurations +  N'SARthres:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-		SET @lv__beforedt = GETDATE();
+		SET @lv__stmtdurations = @lv__stmtdurations +  N'SARthres:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+		SET @lv__beforedt = GETUTCDATE();
 	END
 
 	--Do a scan over #taw. We want to learn the following: 
@@ -2478,8 +2483,8 @@ There are a number of points worth noting re: the below scoping queries:
 
 	IF @DebugSpeed = N'Y'
 	BEGIN
-		SET @lv__stmtdurations = @lv__stmtdurations +  N'TAWthresh:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-		SET @lv__beforedt = GETDATE();
+		SET @lv__stmtdurations = @lv__stmtdurations +  N'TAWthresh:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+		SET @lv__beforedt = GETUTCDATE();
 	END
 
 	IF @thresh__THREADPOOLpresent > 0
@@ -2520,8 +2525,8 @@ There are a number of points worth noting re: the below scoping queries:
 		OPTION(MAXDOP 1, KEEPFIXED PLAN);
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'ThrPool:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'ThrPool:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -2561,9 +2566,9 @@ There are a number of points worth noting re: the below scoping queries:
 
 			SELECT sar.sess__session_id, sar.rqst__request_id, sar.calc__blocking_session_id, 
 				sar.rqst__sql_handle, sar.rqst__statement_start_offset, sar.rqst__statement_end_offset,
-				c.levelindc + 1 as levelindc,
+				c.levelindc + 1 AS levelindc,
 				c.block_group,
-				CONVERT(NVARCHAR(400),(rtrim(c.sort_value)+N'| '+CONVERT(NVARCHAR(20), sar.sess__session_id)))
+				CONVERT(NVARCHAR(400),(RTRIM(c.sort_value)+N'| '+CONVERT(NVARCHAR(20), sar.sess__session_id)))
 			FROM #sessions_and_requests sar 
 				INNER JOIN ConstructBlockingChain c
 					ON sar.calc__blocking_session_id = c.sess__session_id
@@ -2612,8 +2617,8 @@ There are a number of points worth noting re: the below scoping queries:
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'BChain:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'BChain:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END	--IF @BlockingChainDepth > 0 AND @thresh__maxWaitLength_BlockedSPID >= @BlockingChainThreshold
 
@@ -2730,8 +2735,8 @@ There are a number of points worth noting re: the below scoping queries:
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'IBcap:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'IBcap:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END	--test to determine whether to do input buffer code or not
 
@@ -2750,76 +2755,78 @@ There are a number of points worth noting re: the below scoping queries:
 
 		INSERT INTO AutoWho.TransactionDetails (
 			CollectionInitiatorID,			--1
+			UTCCaptureTime,
 			SPIDCaptureTime,		
 			session_id, 
-			TimeIdentifier, 
-			dtat_transaction_id,			--5
+			TimeIdentifier,					--5
+			dtat_transaction_id,
 			dtat_name,
 			dtat_transaction_begin_time, 
 			dtat_transaction_type, 
-			dtat_transaction_uow, 
-			dtat_transaction_state,			--10
+			dtat_transaction_uow,			--10
+			dtat_transaction_state,
 			dtat_dtc_state,	
 			dtst_enlist_count, 
 			dtst_is_user_transaction, 
-			dtst_is_local, 
-			dtst_is_enlisted,				--15
+			dtst_is_local,					--15
+			dtst_is_enlisted,
 			dtst_is_bound,
 			dtdt_database_id, 
 			dtdt_database_transaction_begin_time, 
-			dtdt_database_transaction_type, 
-			dtdt_database_transaction_state,			--20
+			dtdt_database_transaction_type,		--20
+			dtdt_database_transaction_state,
 			dtdt_database_transaction_log_record_count,
 			dtdt_database_transaction_log_bytes_used, 
 			dtdt_database_transaction_log_bytes_reserved, 
-			dtdt_database_transaction_log_bytes_used_system, 
-			dtdt_database_transaction_log_bytes_reserved_system, --25
+			dtdt_database_transaction_log_bytes_used_system, --25
+			dtdt_database_transaction_log_bytes_reserved_system,
 			dtasdt_tran_exists,
 			dtasdt_transaction_sequence_num,
 			dtasdt_commit_sequence_num,
-			dtasdt_is_snapshot, 
-			dtasdt_first_snapshot_sequence_num,					--30
+			dtasdt_is_snapshot,				--30
+			dtasdt_first_snapshot_sequence_num,
 			dtasdt_max_version_chain_traversed,
 			dtasdt_average_version_chain_traversed,
-			dtasdt_elapsed_time_seconds							--33
+			dtasdt_elapsed_time_seconds	--34
 			)
 		SELECT
 			CollectionInitiatorID = @CollectionInitiatorID,		--1
+			UTCCaptureTime = @lv__UTCCaptureTime,
 			SPIDCaptureTime = @lv__SPIDCaptureTime,		
 			sar.sess__session_id,
-			TimeIdentifier = sar.TimeIdentifier,
-			[dtat_transaction_id] = dtat.transaction_id,		--5
+			TimeIdentifier = sar.TimeIdentifier,				--5
+			[dtat_transaction_id] = dtat.transaction_id,
 			[dtat_name] = dtat.name,
 			[dtat_transaction_begin_time] = dtat.transaction_begin_time,
 			[dtat_transaction_type] = dtat.transaction_type,
-			[dtat_transaction_uow] = dtat.transaction_uow,
-			[dtat_transaction_state] = dtat.transaction_state,	--10
+			[dtat_transaction_uow] = dtat.transaction_uow,		--10
+			[dtat_transaction_state] = dtat.transaction_state,
 			[dtat_dtc_state] = dtat.dtc_state,
 
 			[dtst_enlist_count] = dtst.enlist_count, 
 			[dtst_is_user_transaction] = dtst.is_user_transaction, 
-			[dtst_is_local] = dtst.is_local, 
-			[dtst_is_enlisted] = dtst.is_enlisted,				--15
+			[dtst_is_local] = dtst.is_local,					--15
+			[dtst_is_enlisted] = dtst.is_enlisted,
 			[dtst_is_bound] = dtst.is_bound,
 
 			[dtdt.database_id] = dtdt.database_id, 
 			[dtdt_database_transaction_begin_time] = dtdt.database_transaction_begin_time, 
-			[dtdt_database_transaction_type] = dtdt.database_transaction_type, 
-			[dtdt_database_transaction_state] = dtdt.database_transaction_state,		--20
+			[dtdt_database_transaction_type] = dtdt.database_transaction_type,	--20
+			[dtdt_database_transaction_state] = dtdt.database_transaction_state,
 			[dtdt_database_transaction_log_record_count] = dtdt.database_transaction_log_record_count,
 			[dtdt_database_transaction_log_bytes_used] = dtdt.database_transaction_log_bytes_used, 
 			[dtdt_database_transaction_log_bytes_reserved] = dtdt.database_transaction_log_bytes_reserved, 
-			[dtdt_database_transaction_log_bytes_used_system] = dtdt.database_transaction_log_bytes_used_system, 
-			[dtdt_database_transaction_log_bytes_reserved_system] = dtdt.database_transaction_log_bytes_reserved_system, --25
+			[dtdt_database_transaction_log_bytes_used_system] = dtdt.database_transaction_log_bytes_used_system, --25
+			[dtdt_database_transaction_log_bytes_reserved_system] = dtdt.database_transaction_log_bytes_reserved_system,
 
 			[dtasdt_tran_exists] = CASE WHEN dtasdt.transaction_id IS NULL THEN 0 ELSE 1 END,
 			[dtasdt_transaction_sequence_num] = dtasdt.transaction_sequence_num,
 			[dtasdt_commit_sequence_num] = dtasdt.commit_sequence_num, 
-			[dtasdt_is_snapshot] = dtasdt.is_snapshot, 
-			[dtasdt_first_snapshot_sequence_num] = dtasdt.first_snapshot_sequence_num,			--30
+			[dtasdt_is_snapshot] = dtasdt.is_snapshot,		--30
+			[dtasdt_first_snapshot_sequence_num] = dtasdt.first_snapshot_sequence_num,
 			[dtasdt_max_version_chain_traversed] = dtasdt.max_version_chain_traversed,
 			[dtasdt_average_version_chain_traversed] = dtasdt.average_version_chain_traversed,
-			[dtasdt_elapsed_time_seconds] = dtasdt.elapsed_time_seconds							--33
+			[dtasdt_elapsed_time_seconds] = dtasdt.elapsed_time_seconds							--34
 		FROM  (
 			--need to handle the possibility of MARS
 				SELECT 
@@ -2887,8 +2894,8 @@ There are a number of points worth noting re: the below scoping queries:
 		
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'TranCap:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'TranCap:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END		--IF threshold variables indicate we should pull transaction data
 
@@ -2902,7 +2909,7 @@ There are a number of points worth noting re: the below scoping queries:
 					  **
 	*/
 
-	SET @lv__beforedt = GETDATE();
+	SET @lv__beforedt = GETUTCDATE();
 
 	--2016-04-19: Removed the AWStmtHash and AWBatchHash from the SQL store tables. This means that sql_handle & the offsets
 	-- are our lookup values for obtaining a PK value, and we already possess those. Thus, we can update #sar right now
@@ -3080,8 +3087,8 @@ There are a number of points worth noting re: the below scoping queries:
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'BatchTxt:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'BatchTxt:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END 
 
@@ -3202,8 +3209,8 @@ There are a number of points worth noting re: the below scoping queries:
 
 	IF @DebugSpeed = N'Y'
 	BEGIN
-		SET @lv__stmtdurations = @lv__stmtdurations +  N'StmtTxt:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-		SET @lv__beforedt = GETDATE();
+		SET @lv__stmtdurations = @lv__stmtdurations +  N'StmtTxt:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+		SET @lv__beforedt = GETUTCDATE();
 	END
 
 
@@ -3257,7 +3264,7 @@ There are a number of points worth noting re: the below scoping queries:
 					[query_plan],
 					[aw_batchplan_hash] = HASHBYTES('MD5',
 						(SUBSTRING(query_plan,1,3940) +
-						CONVERT(nvarchar(40),CHECKSUM(query_plan)))
+						CONVERT(NVARCHAR(40),CHECKSUM(query_plan)))
 					)
 					--HASHBYTES('MD5',qp.query_plan),		--HASHBYTES only takes 8000 chars of input
 															--so replaced this code with a HASHBYTES call
@@ -3311,8 +3318,8 @@ There are a number of points worth noting re: the below scoping queries:
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'PlanBatch:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'PlanBatch:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -3339,7 +3346,7 @@ There are a number of points worth noting re: the below scoping queries:
 			OR 
 			(s.calc__threshold_ignore = 1 AND s.rqst__FKDimWaitType <> 2 )
 			OR
-			(isnull(s.calc__threshold_ignore,0) = 0 AND s.calc__duration_ms >= @QueryPlanThreshold)
+			(ISNULL(s.calc__threshold_ignore,0) = 0 AND s.calc__duration_ms >= @QueryPlanThreshold)
 			)
 		OPTION(MAXDOP 1, KEEPFIXED PLAN);
 
@@ -3450,14 +3457,12 @@ There are a number of points worth noting re: the below scoping queries:
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'PlanStmt:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'PlanStmt:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
 	SET LOCK_TIMEOUT -1;
-
-	SET @lv__afterdt = GETDATE();
 
 	/***************************************************************************************************************************
 												End Of "SQL Text" section
@@ -3476,6 +3481,7 @@ There are a number of points worth noting re: the below scoping queries:
 
 		INSERT INTO AutoWho.LockDetails (
 			CollectionInitiatorID,
+			UTCCaptureTime,
 			SPIDCaptureTime, 
 			request_session_id, 
 			request_request_id, 
@@ -3497,6 +3503,7 @@ There are a number of points worth noting re: the below scoping queries:
 		)
 		SELECT 
 			@CollectionInitiatorID,
+			UTCCaptureTime,
 			SPIDCaptureTime,
 			request_session_id,
 			request_request_id,
@@ -3517,6 +3524,7 @@ There are a number of points worth noting re: the below scoping queries:
 			COUNT(*)
 		FROM (
 			SELECT
+				UTCCaptureTime = @lv__UTCCaptureTime,
 				SPIDCaptureTime = @lv__SPIDCaptureTime,
 				l.request_session_id,		--BOL: The owning session ID can change for distributed and bound transactions. A value of -2 indicates that the request 
 											-- belongs to an orphaned distributed transaction. A value of -3 indicates that the request belongs to a deferred recovery 
@@ -3636,7 +3644,9 @@ There are a number of points worth noting re: the below scoping queries:
 				ON sar.sess__session_id = l.request_session_id
 				AND sar.rqst__request_id = l.request_request_id
 		) ss
-		GROUP BY SPIDCaptureTime,
+		GROUP BY 
+			UTCCaptureTime,
+			SPIDCaptureTime,
 			request_session_id,
 			request_request_id,
 			TimeIdentifier,
@@ -3678,94 +3688,11 @@ There are a number of points worth noting re: the below scoping queries:
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'LockCap:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'LockCap:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END		--IF @thresh__maxWaitLength_BlockedSPID >= @ObtainLocksForBlockRelevantThreshold
 
-
-	/* Moving the page resolution logic to the Every 15 Minute Master job	
-	IF @ResolvePageLatches = N'Y' AND ISNULL(@thresh__PAGELATCHpresent,0) > 0 AND ISNULL(@thresh__GhostCleanupIsRunning,0) <> 1
-	BEGIN	--Resolve the page IDs for page and pageio latch waits
-		SET @lv__SmallDynSQL = N'DBCC PAGE(@dbid, @fileid, @pageid) WITH TABLERESULTS';
-
-		SET @errorloc = N'PageLatch cursor pop';
-
-		DECLARE resolvelatchtags CURSOR LOCAL FAST_FORWARD FOR 
-		SELECT DISTINCT resource_dbid, wait_special_number, resource_associatedobjid
-		FROM #tasks_and_waits taw
-		WHERE taw.wait_special_category IN (@enum__waitspecial__pg, @enum__waitspecial__pgio, @enum__waitspecial__pgblocked)
-		AND taw.resource_dbid IS NOT NULL
-		AND taw.resource_associatedobjid IS NOT NULL
-		AND taw.wait_special_number IS NOT NULL
-		--don't try to parse tempdb pages
-		AND taw.resource_dbid <> 2
-		--Note that if the page id is a system bitmap page, decoding is not applicable
-		AND NOT (taw.resource_associatedobjid % 8088 = 0 OR taw.resource_associatedobjid = 1)	--PFS
-		AND NOT ( (taw.resource_associatedobjid-1) % 511232 = 0 OR taw.resource_associatedobjid = 3) --SGAM
-		AND NOT (taw.resource_associatedobjid % 511232 = 0 OR taw.resource_associatedobjid = 2) --GAM
-		AND NOT ( (taw.resource_associatedobjid-6) % 511232 = 0 OR taw.resource_associatedobjid = 6) --Diff map
-		AND NOT ( (taw.resource_associatedobjid-7) % 511232 = 0 OR taw.resource_associatedobjid = 7) --ML map
-		ORDER BY resource_dbid, wait_special_number, resource_associatedobjid
-		OPTION(MAXDOP 1, KEEPFIXED PLAN);
-
-		OPEN resolvelatchtags;
-		FETCH resolvelatchtags INTO @lv__curlatchdbid, @lv__curfileid, @lv__curpageid;
-
-		SET @errorloc = N'PageLatch loop';
-		WHILE @@FETCH_STATUS = 0
-		BEGIN
-			TRUNCATE TABLE #t__dbccpage;
-			SET @scratch__int = 0;
-		
-			BEGIN TRY
-				INSERT INTO #t__dbccpage (ParentObject, Objectcol, Fieldcol, Valuecol)
-					EXEC sp_executesql @lv__SmallDynSQL, N'@dbid SMALLINT, @fileid SMALLINT, @pageID BIGINT', 
-							@lv__curlatchdbid, @lv__curfileid, @lv__curpageid;
-
-					SET @scratch__int = @@ROWCOUNT;
-			END TRY
-			BEGIN CATCH	--no action needed, just leave the taw data alone, as it already has dbid:fileid:pageid info (in both string and atomic form)
-			END CATCH
-
-			IF @scratch__int > 0
-			BEGIN	--we resolved the page. Now, update the record we just inserted with the dbid/fileid/pageid combo				
-				UPDATE taw 
-				SET wait_special_tag = 'ObjId:' + ObId + ', IxId:' + IxId
-				FROM #tasks_and_waits taw
-					INNER JOIN (
-						SELECT ss1.ObId, ss2.IxId, @lv__curlatchdbid as [dbid], @lv__curfileid as [fileid], @lv__curpageid as [pageid]
-						FROM (
-							SELECT t.Valuecol as ObId
-							FROM #t__dbccpage t
-							WHERE t.Fieldcol = 'Metadata: ObjectId'
-						) ss1
-						CROSS JOIN (
-							SELECT t.Valuecol as IxId
-							FROM #t__dbccpage t
-							WHERE t.Fieldcol = 'Metadata: IndexId'
-						) ss2
-					) ss3
-						ON taw.resource_dbid = ss3.dbid
-						AND taw.wait_special_number = ss3.fileid
-						AND taw.resource_associatedobjid = ss3.pageid
-				WHERE taw.wait_special_category IN (@enum__waitspecial__pg, @enum__waitspecial__pgio, @enum__waitspecial__pgblocked)
-				OPTION(MAXDOP 1, KEEPFIXED PLAN);
-			END
-
-			FETCH resolvelatchtags INTO @lv__curlatchdbid, @lv__curfileid, @lv__curpageid;
-		END
-
-		CLOSE resolvelatchtags;
-		DEALLOCATE resolvelatchtags;
-
-		IF @DebugSpeed = N'Y'
-		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'PgLRes:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
-		END
-	END		--IF ISNULL(@thresh__PAGELATCHpresent,0) > 0 AND @ResolvePageLatches = N'Y'
-	*/
 
 	--If we have a Bchain, insert a -997 record
 	IF @lv__BChainRecsExist = 1
@@ -3795,8 +3722,8 @@ There are a number of points worth noting re: the below scoping queries:
 	BEGIN
 		SET @errorloc = N'DimCommand population';
 		INSERT INTO AutoWho.DimCommand 
-		(command, TimeAdded)
-		SELECT rqst__command, @lv__SPIDCaptureTime 
+		(command, TimeAdded, TimeAddedUTC)
+		SELECT rqst__command, @lv__SPIDCaptureTime, @lv__UTCCaptureTime
 		FROM (
 			SELECT DISTINCT sar.rqst__command
 			FROM #sessions_and_requests sar
@@ -3814,8 +3741,8 @@ There are a number of points worth noting re: the below scoping queries:
 		;
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopCommand:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopCommand:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -3824,11 +3751,11 @@ There are a number of points worth noting re: the below scoping queries:
 		SET @errorloc = N'DimConnectionAttribute population';
 		INSERT INTO AutoWho.DimConnectionAttribute
 		(net_transport, protocol_type, protocol_version, endpoint_id,
-			node_affinity, net_packet_size, encrypt_option, auth_scheme, TimeAdded)
+			node_affinity, net_packet_size, encrypt_option, auth_scheme, TimeAdded, TimeAddedUTC)
 		SELECT
 			conn__net_transport, conn__protocol_type, 
 			conn__protocol_version, conn__endpoint_id, conn__node_affinity,
-			conn__net_packet_size, conn__encrypt_option, conn__auth_scheme, @lv__SPIDCaptureTime
+			conn__net_packet_size, conn__encrypt_option, conn__auth_scheme, @lv__SPIDCaptureTime, @lv__UTCCaptureTime
 		FROM (
 			SELECT DISTINCT sar.conn__net_transport, sar.conn__protocol_type, 
 				sar.conn__protocol_version, sar.conn__endpoint_id, sar.conn__node_affinity,
@@ -3856,8 +3783,8 @@ There are a number of points worth noting re: the below scoping queries:
 		;
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopConnAttr:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopConnAttr:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -3865,8 +3792,8 @@ There are a number of points worth noting re: the below scoping queries:
 	BEGIN
 		SET @errorloc = N'DimLoginName population';
 		INSERT INTO AutoWho.DimLoginName
-		(login_name, original_login_name, TimeAdded)
-		SELECT sess__login_name, sess__original_login_name, @lv__SPIDCaptureTime
+		(login_name, original_login_name, TimeAdded, TimeAddedUTC)
+		SELECT sess__login_name, sess__original_login_name, @lv__SPIDCaptureTime, @lv__UTCCaptureTime
 		FROM (
 			SELECT DISTINCT sess__login_name, sess__original_login_name
 			FROM #sessions_and_requests sar
@@ -3886,8 +3813,8 @@ There are a number of points worth noting re: the below scoping queries:
 		;
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopLogin:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopLogin:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -3895,8 +3822,8 @@ There are a number of points worth noting re: the below scoping queries:
 	BEGIN
 		SET @errorloc = N'DimNetAddress population';
 		INSERT INTO AutoWho.DimNetAddress
-		(client_net_address, local_net_address, local_tcp_port, TimeAdded)
-		SELECT conn__client_net_address, conn__local_net_address, conn__local_tcp_port, @lv__SPIDCaptureTime
+		(client_net_address, local_net_address, local_tcp_port, TimeAdded, TimeAddedUTC)
+		SELECT conn__client_net_address, conn__local_net_address, conn__local_tcp_port, @lv__SPIDCaptureTime, @lv__UTCCaptureTime
 		FROM (
 			SELECT DISTINCT sar.conn__client_net_address, sar.conn__local_net_address, sar.conn__local_tcp_port
 			FROM #sessions_and_requests sar
@@ -3917,8 +3844,8 @@ There are a number of points worth noting re: the below scoping queries:
 		;
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopNetAddr:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopNetAddr:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -3927,10 +3854,10 @@ There are a number of points worth noting re: the below scoping queries:
 		SET @errorloc = N'DimSessionAttribute';
 		INSERT INTO AutoWho.DimSessionAttribute
 		([host_name], [program_name], client_version, client_interface_name, endpoint_id, 
-			transaction_isolation_level, [deadlock_priority], group_id, TimeAdded)
+			transaction_isolation_level, [deadlock_priority], group_id, TimeAdded, TimeAddedUTC)
 		SELECT 
 			sess__host_name, sess__program_name, sess__client_version, sess__client_interface_name, sess__endpoint_id,
-			sess__transaction_isolation_level, sess__deadlock_priority, sess__group_id, @lv__SPIDCaptureTime
+			sess__transaction_isolation_level, sess__deadlock_priority, sess__group_id, @lv__SPIDCaptureTime, @lv__UTCCaptureTime
 		FROM (
 			SELECT DISTINCT sar.sess__host_name, sar.sess__program_name, sar.sess__client_version,
 				sar.sess__client_interface_name, sar.sess__endpoint_id, 
@@ -3958,8 +3885,8 @@ There are a number of points worth noting re: the below scoping queries:
 		;
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopSessAttr:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopSessAttr:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -3967,12 +3894,13 @@ There are a number of points worth noting re: the below scoping queries:
 	BEGIN
 		SET @errorloc = N'DimWaitType population SAR';
 		INSERT INTO AutoWho.DimWaitType
-		(wait_type, wait_type_short, latch_subtype, TimeAdded)
+		(wait_type, wait_type_short, latch_subtype, TimeAdded, TimeAddedUTC)
 		SELECT 
 			rqst__wait_type,
 			wait_type_short,
 			rqst__wait_latch_subtype,
-			@lv__SPIDCaptureTime 
+			@lv__SPIDCaptureTime,
+			@lv__UTCCaptureTime
 		FROM (
 			SELECT 
 				rqst__wait_type, 
@@ -4022,8 +3950,8 @@ There are a number of points worth noting re: the below scoping queries:
 		;
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopSARDWT:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopSARDWT:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -4031,12 +3959,13 @@ There are a number of points worth noting re: the below scoping queries:
 	BEGIN
 		SET @errorloc = N'DimWaitType population TAW';
 		INSERT INTO AutoWho.DimWaitType 
-		(wait_type, wait_type_short, latch_subtype, TimeAdded)
+		(wait_type, wait_type_short, latch_subtype, TimeAdded, TimeAddedUTC)
 		SELECT 
 			ss2.wait_type,
 			ss2.wait_type_short, 
 			ss2.wait_latch_subtype,
-			@lv__SPIDCaptureTime
+			@lv__SPIDCaptureTime,
+			@lv__UTCCaptureTime
 		FROM (
 			SELECT 
 				taw.wait_type,
@@ -4083,8 +4012,8 @@ There are a number of points worth noting re: the below scoping queries:
 		;
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopTAWDWT:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimPopTAWDWT:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -4233,8 +4162,8 @@ There are a number of points worth noting re: the below scoping queries:
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimReapply:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'DimReapply:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -4245,7 +4174,7 @@ There are a number of points worth noting re: the below scoping queries:
 	BEGIN
 		SET @errorloc = N'BadDim INSERT';
 		INSERT INTO AutoWho.SARException(
-			SPIDCaptureTime, sess__session_id, rqst__request_id, TimeIdentifier, sess__login_time, sess__host_name, 
+			SPIDCaptureTime, UTCCaptureTime, sess__session_id, rqst__request_id, TimeIdentifier, sess__login_time, sess__host_name, 
 			sess__program_name, sess__host_process_id, sess__client_version, sess__client_interface_name, sess__login_name, 
 			sess__status_code, sess__cpu_time, sess__memory_usage, sess__total_scheduled_time, sess__total_elapsed_time, 
 			sess__endpoint_id, sess__last_request_start_time, sess__last_request_end_time, sess__reads, sess__writes, 
@@ -4270,7 +4199,7 @@ There are a number of points worth noting re: the below scoping queries:
 			calc__record_priority, calc__is_compiling, calc__duration_ms, calc__blocking_session_id, calc__block_relevant, 
 			calc__return_to_user, calc__is_blocker, calc__sysspid_isinteresting, calc__tmr_wait, calc__threshold_ignore, RecordReason
 		)
-		SELECT @lv__SPIDCaptureTime, sess__session_id, rqst__request_id, TimeIdentifier, sess__login_time, sess__host_name, 
+		SELECT @lv__SPIDCaptureTime, @lv__UTCCaptureTime, sess__session_id, rqst__request_id, TimeIdentifier, sess__login_time, sess__host_name, 
 			sess__program_name, sess__host_process_id, sess__client_version, sess__client_interface_name, sess__login_name, 
 			sess__status_code, sess__cpu_time, sess__memory_usage, sess__total_scheduled_time, sess__total_elapsed_time, 
 			sess__endpoint_id, sess__last_request_start_time, sess__last_request_end_time, sess__reads, sess__writes, 
@@ -4307,8 +4236,8 @@ There are a number of points worth noting re: the below scoping queries:
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'BadDims:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'BadDims:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -4334,15 +4263,15 @@ There are a number of points worth noting re: the below scoping queries:
 				perm.fail_to_obtain = t.fail_to_obtain,
 				perm.datalen_batch = t.datalen_batch,
 				perm.stmt_text = t.stmt_text,
-				perm.LastTouchedBy_SPIDCaptureTime = @lv__SPIDCaptureTime
+				perm.LastTouchedBy_UTCCaptureTime = @lv__UTCCaptureTime
 		WHEN NOT MATCHED BY TARGET THEN 
 			--new entry
 			INSERT (sql_handle, statement_start_offset, statement_end_offset, 
 				dbid, objectid, fail_to_obtain, datalen_batch, stmt_text, 
-				Insertedby_SPIDCaptureTime, LastTouchedBy_SPIDCaptureTime)
+				InsertedBy_UTCCaptureTime, LastTouchedBy_UTCCaptureTime)
 			VALUES (t.sql_handle, t.statement_start_offset, t.statement_end_offset,
 				t.dbid, t.objectid, t.fail_to_obtain, t.datalen_batch, t.stmt_text, 
-				@lv__SPIDCaptureTime, @lv__SPIDCaptureTime)
+				@lv__UTCCaptureTime, @lv__UTCCaptureTime)
 		;
 
 		SET @errorloc = N'StmtStore UPDATE';
@@ -4355,15 +4284,15 @@ There are a number of points worth noting re: the below scoping queries:
 				AND sss.statement_end_offset = sar.rqst__statement_end_offset
 		WHERE sar.calc__FKSQLStmtStoreID IS NULL
 			--this lets us IxSeek quickly to the rows in SQLStmtStore that we just pulled
-		AND sss.LastTouchedBy_SPIDCaptureTime = @lv__SPIDCaptureTime
+		AND sss.LastTouchedBy_UTCCaptureTime = @lv__UTCCaptureTime
 		OPTION(FORCE ORDER, MAXDOP 1);
 	END		--IF @lv__StatementsPulled = CONVERT(BIT,1)
 
 
 	IF @DebugSpeed = N'Y'
 	BEGIN
-		SET @lv__stmtdurations = @lv__stmtdurations +  N'StmtStore:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-		SET @lv__beforedt = GETDATE();
+		SET @lv__stmtdurations = @lv__stmtdurations +  N'StmtStore:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+		SET @lv__beforedt = GETUTCDATE();
 	END
 
 	--Update the batch store if we pulled any SQL batches
@@ -4374,16 +4303,16 @@ There are a number of points worth noting re: the below scoping queries:
 			USING #t__batch t
 				ON perm.sql_handle = t.sql_handle
 		WHEN MATCHED THEN UPDATE
-			SET perm.LastTouchedBy_SPIDCaptureTime = @lv__SPIDCaptureTime,
+			SET perm.LastTouchedBy_UTCCaptureTime = @lv__UTCCaptureTime,
 				perm.dbid = t.dbid,
 				perm.objectid = t.objectid,
 				perm.fail_to_obtain = t.fail_to_obtain,
 				perm.batch_text = t.batch_text
 		WHEN NOT MATCHED BY TARGET THEN
 			INSERT (sql_handle, dbid, objectid, fail_to_obtain, batch_text, 
-				Insertedby_SPIDCaptureTime, LastTouchedBy_SPIDCaptureTime)
+				InsertedBy_UTCCaptureTime, LastTouchedBy_UTCCaptureTime)
 			VALUES (t.sql_handle, t.dbid, t.objectid, t.fail_to_obtain, t.batch_text, 
-				@lv__SPIDCaptureTime, @lv__SPIDCaptureTime)
+				@lv__UTCCaptureTime, @lv__UTCCaptureTime)
 		;
 
 		SET @errorloc = N'BatchStore UPDATE';
@@ -4392,14 +4321,14 @@ There are a number of points worth noting re: the below scoping queries:
 		FROM #sessions_and_requests sar
 			INNER hash JOIN CoreXR.SQLBatchStore bs
 				ON bs.sql_handle = sar.rqst__sql_handle
-		WHERE bs.LastTouchedBy_SPIDCaptureTime = @lv__SPIDCaptureTime
+		WHERE bs.LastTouchedBy_UTCCaptureTime = @lv__UTCCaptureTime
 		AND sar.calc__FKSQLBatchStoreID IS NULL
 		OPTION(FORCE ORDER, MAXDOP 1);
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'BatchStore:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'BatchStore:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -4408,7 +4337,7 @@ There are a number of points worth noting re: the below scoping queries:
 	BEGIN
 		--logic from before LastTouched column was added and logic converted to MERGE
 		--INSERT INTO CoreXR.InputBufferStore
-		--(AWBufferHash, InputBuffer, Insertedby_SPIDCaptureTime)
+		--(AWBufferHash, InputBuffer, InsertedBy_UTCCaptureTime)
 		--SELECT t.aw_buffer_hash, t.InputBuffer, @lv__SPIDCaptureTime
 		--FROM #t__ib t
 		--WHERE NOT EXISTS (
@@ -4430,10 +4359,10 @@ There are a number of points worth noting re: the below scoping queries:
 				ON perm.AWBufferHash = t.aw_buffer_hash
 				AND perm.InputBuffer = t.InputBuffer
 		WHEN MATCHED THEN UPDATE
-			SET perm.LastTouchedBy_SPIDCaptureTime = @lv__SPIDCaptureTime
+			SET perm.LastTouchedBy_UTCCaptureTime = @lv__UTCCaptureTime
 		WHEN NOT MATCHED BY TARGET THEN 
-			INSERT (AWBufferHash, InputBuffer, Insertedby_SPIDCaptureTime, LastTouchedBy_SPIDCaptureTime)
-			VALUES (t.aw_buffer_hash, t.InputBuffer, @lv__SPIDCaptureTime, @lv__SPIDCaptureTime)
+			INSERT (AWBufferHash, InputBuffer, InsertedBy_UTCCaptureTime, LastTouchedBy_UTCCaptureTime)
+			VALUES (t.aw_buffer_hash, t.InputBuffer, @lv__UTCCaptureTime, @lv__UTCCaptureTime)
 		;
 
 		SET @errorloc = N'IB UPDATE';
@@ -4443,13 +4372,13 @@ There are a number of points worth noting re: the below scoping queries:
 			INNER JOIN CoreXR.InputBufferStore s
 				ON t.aw_buffer_hash = s.AWBufferHash
 				AND t.InputBuffer = s.InputBuffer
-		WHERE s.LastTouchedBy_SPIDCaptureTime = @lv__SPIDCaptureTime
+		WHERE s.LastTouchedBy_UTCCaptureTime = @lv__UTCCaptureTime
 		;
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'IBStore:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'IBStore:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -4458,7 +4387,7 @@ There are a number of points worth noting re: the below scoping queries:
 	BEGIN
 		--logic before the LastTouched column was added and the logic converted to MERGE
 		--INSERT INTO CoreXR.QueryPlanBatchStore
-		--(AWBatchPlanHash, plan_handle, dbid, objectid, fail_to_obtain, query_plan, Insertedby_SPIDCaptureTime)
+		--(AWBatchPlanHash, plan_handle, dbid, objectid, fail_to_obtain, query_plan, InsertedBy_UTCCaptureTime)
 		--SELECT 
 		--	t.aw_batchplan_hash, t.plan_handle, t.dbid, t.objectid, t.fail_to_obtain, t.query_plan, @lv__SPIDCaptureTime
 		--FROM #t__batchqp t
@@ -4477,14 +4406,14 @@ There are a number of points worth noting re: the below scoping queries:
 				ON perm.AWBatchPlanHash = t.aw_batchplan_hash
 				AND perm.plan_handle = t.plan_handle
 		WHEN MATCHED THEN UPDATE
-			SET perm.LastTouchedBy_SPIDCaptureTime = @lv__SPIDCaptureTime,
+			SET perm.LastTouchedBy_UTCCaptureTime = @lv__UTCCaptureTime,
 				perm.dbid = t.dbid,
 				perm.objectid = t.objectid
 		WHEN NOT MATCHED BY TARGET THEN
 			INSERT (AWBatchPlanHash, plan_handle, dbid, objectid, fail_to_obtain, query_plan, 
-				Insertedby_SPIDCaptureTime, LastTouchedBy_SPIDCaptureTime)
+				InsertedBy_UTCCaptureTime, LastTouchedBy_UTCCaptureTime)
 			VALUES (t.aw_batchplan_hash, t.plan_handle, t.dbid, t.objectid, t.fail_to_obtain, t.query_plan, 
-				@lv__SPIDCaptureTime, @lv__SPIDCaptureTime)
+				@lv__UTCCaptureTime, @lv__UTCCaptureTime)
 		;
 
 		SET @errorloc = N'PlanBatch UPDATE';
@@ -4494,13 +4423,13 @@ There are a number of points worth noting re: the below scoping queries:
 			INNER JOIN CoreXR.QueryPlanBatchStore bs
 				ON bs.AWBatchPlanHash = t.aw_batchplan_hash
 				AND bs.plan_handle = t.plan_handle
-		WHERE bs.LastTouchedBy_SPIDCaptureTime = @lv__SPIDCaptureTime
+		WHERE bs.LastTouchedBy_UTCCaptureTime = @lv__UTCCaptureTime
 		;
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'PlanBatchStore:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'PlanBatchStore:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
@@ -4509,7 +4438,7 @@ There are a number of points worth noting re: the below scoping queries:
 		--logic before we added the LastTouched column and converted the logic to MERGE
 		--INSERT INTO CoreXR.QueryPlanStmtStore 
 		--(AWStmtPlanHash, plan_handle, statement_start_offset, statement_end_offset, 
-		--	dbid, objectid, fail_to_obtain, query_plan, Insertedby_SPIDCaptureTime)
+		--	dbid, objectid, fail_to_obtain, query_plan, InsertedBy_UTCCaptureTime)
 		--SELECT t.aw_stmtplan_hash, t.plan_handle, t.statement_start_offset, t.statement_end_offset,
 		--	t.dbid, t.objectid, t.fail_to_obtain, t.query_plan, @lv__SPIDCaptureTime
 		--FROM #t__stmtqp t
@@ -4535,16 +4464,16 @@ There are a number of points worth noting re: the below scoping queries:
 			--We overwrite dbid/objectid b/c I don't have 100% certainty that a plan_handle/offset combo, with
 			-- the plan hash, will ALWAYS have the same dbid/objectid (though it seems mathematically almost 
 			-- impossible to have a collision here).
-			SET perm.LastTouchedBy_SPIDCaptureTime = @lv__SPIDCaptureTime,
+			SET perm.LastTouchedBy_UTCCaptureTime = @lv__UTCCaptureTime,
 				perm.dbid = t.dbid,
 				perm.objectid = t.objectid
 		WHEN NOT MATCHED THEN
 			INSERT (AWStmtPlanHash, plan_handle, statement_start_offset, statement_end_offset, 
 				dbid, objectid, fail_to_obtain, query_plan, 
-				Insertedby_SPIDCaptureTime, LastTouchedBy_SPIDCaptureTime)
+				InsertedBy_UTCCaptureTime, LastTouchedBy_UTCCaptureTime)
 			VALUES (t.aw_stmtplan_hash, t.plan_handle, t.statement_start_offset, t.statement_end_offset,
 				t.dbid, t.objectid, t.fail_to_obtain, t.query_plan, 
-				@lv__SPIDCaptureTime, @lv__SPIDCaptureTime)
+				@lv__UTCCaptureTime, @lv__UTCCaptureTime)
 		;
 
 		SET @errorloc = N'PlanStmt UPDATE';
@@ -4563,192 +4492,194 @@ There are a number of points worth noting re: the below scoping queries:
 				AND qps.plan_handle = t.plan_handle
 				AND qps.statement_start_offset = t.statement_start_offset
 				AND qps.statement_end_offset = t.statement_end_offset
-		WHERE qps.LastTouchedBy_SPIDCaptureTime = @lv__SPIDCaptureTime
+		WHERE qps.LastTouchedBy_UTCCaptureTime = @lv__UTCCaptureTime
 		;
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'PlanStmtStore:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'PlanStmtStore:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
-
+	--UTCCaptureTime is at the bottom of the col list b/c I didn't want to renumber everything
 	SET @errorloc = N'SAR permanence DynSQL';
 	SET @lv__BigNvar = N'
 	INSERT INTO AutoWho.SessionsAndRequests 
 	(	CollectionInitiatorID,			--1
+		UTCCaptureTime,
 		SPIDCaptureTime,
 		session_id, 
 		request_id, 
-		TimeIdentifier,					--5
+		TimeIdentifier,
 		sess__login_time,
 		sess__host_process_id, 
 		sess__status_code, 
-		sess__cpu_time, 
-		sess__memory_usage,				--10
+		sess__cpu_time,					--10
+		sess__memory_usage,
 		sess__total_scheduled_time,
 		sess__total_elapsed_time, 
 		sess__last_request_start_time, 
 		sess__last_request_end_time,
-		sess__reads,					--15
+		sess__reads,
 		sess__writes,
 		sess__logical_reads,
 		sess__is_user_process, 
-		sess__lock_timeout, 
-		sess__row_count,				--20
+		sess__lock_timeout,				--20
+		sess__row_count,
 		sess__open_transaction_count,
 		sess__database_id,
 		sess__FKDimLoginName, 
 		sess__FKDimSessionAttribute, 
-		conn__connect_time,				--25
+		conn__connect_time,
 		conn__client_tcp_port,
 		conn__FKDimNetAddress,
 		conn__FKDimConnectionAttribute,
-		rqst__start_time, 
-		rqst__status_code,				--30
+		rqst__start_time,				--30
+		rqst__status_code,
 		rqst__blocking_session_id,
 		rqst__wait_time,
 		rqst__wait_resource,
 		rqst__open_transaction_count, 
-		rqst__open_resultset_count,		--35
+		rqst__open_resultset_count,
 		rqst__percent_complete,	
 		rqst__cpu_time,
 		rqst__total_elapsed_time,
-		rqst__scheduler_id, 
-		rqst__reads,					--40
+		rqst__scheduler_id,				--40
+		rqst__reads,
 		rqst__writes,
 		rqst__logical_reads,
 		rqst__transaction_isolation_level,
 		rqst__lock_timeout,
-		rqst__deadlock_priority,		--45
+		rqst__deadlock_priority,
 		rqst__row_count,
 		rqst__granted_query_memory,
 		rqst__executing_managed_code,
-		rqst__group_id,	
-		rqst__query_hash,				--50
+		rqst__group_id,					--50
+		rqst__query_hash,
 		rqst__query_plan_hash,
 		rqst__FKDimCommand,
 		rqst__FKDimWaitType,
 		tempdb__sess_user_objects_alloc_page_count,
-		tempdb__sess_user_objects_dealloc_page_count,		--55
+		tempdb__sess_user_objects_dealloc_page_count,
 		tempdb__sess_internal_objects_alloc_page_count,
 		tempdb__sess_internal_objects_dealloc_page_count,
 		tempdb__task_user_objects_alloc_page_count,
-		tempdb__task_user_objects_dealloc_page_count,
-		tempdb__task_internal_objects_alloc_page_count,		--60
+		tempdb__task_user_objects_dealloc_page_count,		--60
+		tempdb__task_internal_objects_alloc_page_count,
 		tempdb__task_internal_objects_dealloc_page_count,
 		tempdb__CalculatedNumberOfTasks,
 		mgrant__request_time,
 		mgrant__grant_time,	
-		mgrant__requested_memory_kb,				--65
+		mgrant__requested_memory_kb,
 		mgrant__required_memory_kb,
 		mgrant__granted_memory_kb,
 		mgrant__used_memory_kb,
-		mgrant__max_used_memory_kb,
-		mgrant__dop,								--70
+		mgrant__max_used_memory_kb,					--70
+		mgrant__dop,
 		calc__record_priority, 
 		calc__is_compiling,
 		calc__duration_ms,
 		calc__blocking_session_id,
-		calc__block_relevant,						--75
+		calc__block_relevant,
 		calc__return_to_user, 
 		calc__is_blocker,
 		calc__sysspid_isinteresting,
-		calc__tmr_wait,
-		calc__threshold_ignore,						--80
+		calc__tmr_wait,								--80
+		calc__threshold_ignore,
 		calc__node_info,
 		calc__status_info,
 		FKSQLStmtStoreID,
 		FKSQLBatchStoreID,
-		FKInputBufferStoreID,						--85
+		FKInputBufferStoreID,
 		FKQueryPlanBatchStoreID,
-		FKQueryPlanStmtStoreID						--87
+		FKQueryPlanStmtStoreID						--88
 	)
 	';
 
 	SET @lv__BigNvar = @lv__BigNvar + N'
 	SELECT 
 		@CollectionInitiatorID,				--1
+		@lv__UTCCaptureTime,
 		@lv__SPIDCaptureTime,
 		sar.sess__session_id,
 		request_id = sar.rqst__request_id,
-		sar.TimeIdentifier,					--5
+		sar.TimeIdentifier,
 		sar.sess__login_time,
 		sar.sess__host_process_id,
 		sar.sess__status_code,
-		sar.sess__cpu_time,
-		sar.sess__memory_usage,				--10
+		sar.sess__cpu_time,					--10
+		sar.sess__memory_usage,
 		sar.sess__total_scheduled_time,
 		sar.sess__total_elapsed_time,
 		sar.sess__last_request_start_time,
 		sar.sess__last_request_end_time,
-		sar.sess__reads,					--15
+		sar.sess__reads,
 		sar.sess__writes,
 		sar.sess__logical_reads,
 		sar.sess__is_user_process,
-		sar.sess__lock_timeout,
-		sar.sess__row_count,				--20
+		sar.sess__lock_timeout,				--20
+		sar.sess__row_count,
 		sar.sess__open_transaction_count,
 		sar.sess__database_id,
 		sar.sess__FKDimLoginName,
 		sar.sess__FKDimSessionAttribute,
-		sar.conn__connect_time,				--25
+		sar.conn__connect_time,
 		sar.conn__client_tcp_port,
 		sar.conn__FKDimNetAddress,
 		sar.conn__FKDimConnectionAttribute,
-		sar.rqst__start_time,
-		sar.rqst__status_code,				--30
+		sar.rqst__start_time,				--30
+		sar.rqst__status_code,
 		sar.rqst__blocking_session_id,
 		sar.rqst__wait_time,
 		sar.rqst__wait_resource,
 		sar.rqst__open_transaction_count,
-		sar.rqst__open_resultset_count,		--35
+		sar.rqst__open_resultset_count,
 		sar.rqst__percent_complete,
 		sar.rqst__cpu_time,	
 		sar.rqst__total_elapsed_time,
-		sar.rqst__scheduler_id,
-		sar.rqst__reads,					--40
+		sar.rqst__scheduler_id,				--40
+		sar.rqst__reads,
 		sar.rqst__writes,
 		sar.rqst__logical_reads,
 		sar.rqst__transaction_isolation_level,
 		sar.rqst__lock_timeout,
-		sar.rqst__deadlock_priority,		--45
+		sar.rqst__deadlock_priority,
 		sar.rqst__row_count,
 		sar.rqst__granted_query_memory,
 		sar.rqst__executing_managed_code,
-		sar.rqst__group_id,
-		sar.rqst__query_hash,				--50
+		sar.rqst__group_id,					--50
+		sar.rqst__query_hash,
 		sar.rqst__query_plan_hash,
 		sar.rqst__FKDimCommand,
 		sar.rqst__FKDimWaitType,
 		sar.tempdb__sess_user_objects_alloc_page_count,
-		sar.tempdb__sess_user_objects_dealloc_page_count,		--55
+		sar.tempdb__sess_user_objects_dealloc_page_count,
 		sar.tempdb__sess_internal_objects_alloc_page_count,
 		sar.tempdb__sess_internal_objects_dealloc_page_count,
 		sar.tempdb__task_user_objects_alloc_page_count,
-		sar.tempdb__task_user_objects_dealloc_page_count,
-		sar.tempdb__task_internal_objects_alloc_page_count,		--60
+		sar.tempdb__task_user_objects_dealloc_page_count,		--60
+		sar.tempdb__task_internal_objects_alloc_page_count,
 		sar.tempdb__task_internal_objects_dealloc_page_count,
 		sar.tempdb__CalculatedNumberOfTasks,
 		sar.mgrant__request_time,
 		sar.mgrant__grant_time,
-		sar.mgrant__requested_memory_kb,				--65
+		sar.mgrant__requested_memory_kb,
 		sar.mgrant__required_memory_kb, 
 		sar.mgrant__granted_memory_kb,
 		sar.mgrant__used_memory_kb,
-		sar.mgrant__max_used_memory_kb,	
-		sar.mgrant__dop,								--70
+		sar.mgrant__max_used_memory_kb,					--70
+		sar.mgrant__dop,
 		sar.calc__record_priority, 
 		sar.calc__is_compiling,
 		sar.calc__duration_ms,
 		sar.calc__blocking_session_id,
-		sar.calc__block_relevant,						--75
+		sar.calc__block_relevant,
 		sar.calc__return_to_user,
 		sar.calc__is_blocker,
 		sar.calc__sysspid_isinteresting,
-		sar.calc__tmr_wait,
-		sar.calc__threshold_ignore,						--80
+		sar.calc__tmr_wait,								--80
+		sar.calc__threshold_ignore,
 		calc__node_info = N''<placeholder>'',
 		calc__status_info = N''<placeholder>'',
 		sar.calc__FKSQLStmtStoreID,
@@ -4797,19 +4728,20 @@ There are a number of points worth noting re: the below scoping queries:
 		';
 
 	SET @errorloc = N'SAR permanence SQLExec';
-	EXEC sp_executesql @lv__BigNvar, N'@CollectionInitiatorID TINYINT, @lv__SPIDCaptureTime DATETIME, @lv__nullsmallint SMALLINT', 
-		@CollectionInitiatorID, @lv__SPIDCaptureTime, @lv__nullsmallint;
+	EXEC sp_executesql @lv__BigNvar, N'@CollectionInitiatorID TINYINT, @lv__UTCCaptureTime DATETIME, @lv__SPIDCaptureTime DATETIME, @lv__nullsmallint SMALLINT', 
+		@CollectionInitiatorID, @lv__UTCCaptureTime, @lv__SPIDCaptureTime, @lv__nullsmallint;
 
 	IF @DebugSpeed = N'Y'
 	BEGIN
-		SET @lv__stmtdurations = @lv__stmtdurations +  N'SARPerm:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-		SET @lv__beforedt = GETDATE();
+		SET @lv__stmtdurations = @lv__stmtdurations +  N'SARPerm:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+		SET @lv__beforedt = GETUTCDATE();
 	END
 
 
 	SET @errorloc = N'TAW permanence';
 	INSERT INTO AutoWho.TasksAndWaits (
 		CollectionInitiatorID,
+		UTCCaptureTime,
 		SPIDCaptureTime, 
 		task_address, 
 		parent_task_address, 
@@ -4837,6 +4769,7 @@ There are a number of points worth noting re: the below scoping queries:
 	)
 	SELECT 
 		@CollectionInitiatorID,
+		[UTCCaptureTime] = @lv__UTCCaptureTime,
 		[SPIDCaptureTime] = @lv__SPIDCaptureTime,
 		task_address,
 		parent_task_address,
@@ -4921,8 +4854,8 @@ There are a number of points worth noting re: the below scoping queries:
 
 	IF @DebugSpeed = N'Y'
 	BEGIN
-		SET @lv__stmtdurations = @lv__stmtdurations +  N'TAWperm:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-		SET @lv__beforedt = GETDATE();
+		SET @lv__stmtdurations = @lv__stmtdurations +  N'TAWperm:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+		SET @lv__beforedt = GETUTCDATE();
 	END
 
 
@@ -4931,6 +4864,7 @@ There are a number of points worth noting re: the below scoping queries:
 		SET @errorloc = N'BChain permanence';
 		INSERT INTO AutoWho.BlockingGraphs (
 			CollectionInitiatorID,
+			UTCCaptureTime,
 			SPIDCaptureTime, 
 			session_id, 
 			request_id, 
@@ -4947,6 +4881,7 @@ There are a number of points worth noting re: the below scoping queries:
 			rn)
 		SELECT 
 			@CollectionInitiatorID,
+			@lv__UTCCaptureTime,
 			@lv__SPIDCaptureTime, 
 			b.session_id, 
 			b.request_id, 
@@ -4971,36 +4906,44 @@ There are a number of points worth noting re: the below scoping queries:
 
 		IF @DebugSpeed = N'Y'
 		BEGIN
-			SET @lv__stmtdurations = @lv__stmtdurations +  N'BChainPerm:'+CONVERT(NVARCHAR(20),DATEDIFF(millisecond, @lv__beforedt, GETDATE())) + N',';
-			SET @lv__beforedt = GETDATE();
+			SET @lv__stmtdurations = @lv__stmtdurations +  N'BChainPerm:'+CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__beforedt, GETUTCDATE())) + N',';
+			SET @lv__beforedt = GETUTCDATE();
 		END
 	END
 
-	--And then I'm done, I think!
+	--And then I'm done!
 	SET @errorloc = N'CaptureTime INSERT';
 	INSERT INTO AutoWho.CaptureTimes (
-		CollectionInitiatorID, 
-		SPIDCaptureTime, 
-		UTCCaptureTime, 
-		RunWasSuccessful, 
-		PostProcessed,
-		CaptureSummaryPopulated, 
-		AutoWhoDuration_ms, 
-		SpidsCaptured, 
-		DurationBreakdown,
-		ExtractedForDW
+		[CollectionInitiatorID],
+		[SPIDCaptureTime],
+		[UTCCaptureTime],
+		[RunWasSuccessful],
+		[SpidsCaptured],
+		[PostProcessed_StmtStats],
+		[PostProcessed_Latch],
+		[PostProcessed_Lock],
+		[PostProcessed_NodeStatus],
+		[ExtractedForDW],
+		[CaptureSummaryPopulated],
+		[CaptureSummaryDeltaPopulated],
+		[AutoWhoDuration_ms],
+		[DurationBreakdown]
 	)
 	SELECT 
-		@CollectionInitiatorID,
-		@lv__SPIDCaptureTime, 
-		DATEADD(HOUR, DATEDIFF(HOUR, GETDATE(), GETUTCDATE()), @lv__SPIDCaptureTime),
-		1, 
-		0,
-		0, 
-		DATEDIFF(ms, @lv__procstartdt, GETDATE()), 
-		@NumSPIDs, 
-		@lv__stmtdurations,
-		0;
+		[CollectionInitiatorID] = @CollectionInitiatorID,
+		[SPIDCaptureTime] = @lv__SPIDCaptureTime, 
+		[UTCCaptureTime] = @lv__UTCCaptureTime,
+		[RunWasSuccessful] = 1, 
+		[SpidsCaptured] = @NumSPIDs, 
+		[PostProcessed_StmtStats] = 0,
+		[PostProcessed_Latch] = 0,
+		[PostProcessed_Lock] = 0,
+		[PostProcessed_NodeStatus] = 0,
+		[ExtractedForDW] = 0,
+		[CaptureSummaryPopulated] = 0,
+		[CaptureSummaryDeltaPopulated] = 0,
+		[AutoWhoDuration_ms] = DATEDIFF(MILLISECOND, @lv__procstartdt, GETUTCDATE()), 
+		[DurationBreakdown] = @lv__stmtdurations;
 END TRY
 BEGIN CATCH
 	IF @@TRANCOUNT > 0 ROLLBACK;
@@ -5013,7 +4956,7 @@ BEGIN CATCH
 
 	--Write the SAR table to its exception cousin so we have some data to debug the exception
 	INSERT INTO AutoWho.SARException(
-		SPIDCaptureTime, sess__session_id, rqst__request_id, TimeIdentifier, sess__login_time, sess__host_name, 
+		SPIDCaptureTime, UTCCaptureTime, sess__session_id, rqst__request_id, TimeIdentifier, sess__login_time, sess__host_name, 
 		sess__program_name, sess__host_process_id, sess__client_version, sess__client_interface_name, sess__login_name, 
 		sess__status_code, sess__cpu_time, sess__memory_usage, sess__total_scheduled_time, sess__total_elapsed_time, 
 		sess__endpoint_id, sess__last_request_start_time, sess__last_request_end_time, sess__reads, sess__writes, 
@@ -5040,7 +4983,7 @@ BEGIN CATCH
 		calc__return_to_user, calc__is_blocker, calc__sysspid_isinteresting, calc__tmr_wait, calc__threshold_ignore, 
 		calc__FKSQLStmtStoreID, calc__FKSQLBatchStoreID, RecordReason
 	)
-	SELECT @lv__SPIDCaptureTime, sess__session_id, rqst__request_id, TimeIdentifier, sess__login_time, sess__host_name, 
+	SELECT @lv__SPIDCaptureTime, @lv__UTCCaptureTime, sess__session_id, rqst__request_id, TimeIdentifier, sess__login_time, sess__host_name, 
 		sess__program_name, sess__host_process_id, sess__client_version, sess__client_interface_name, sess__login_name, 
 		sess__status_code, sess__cpu_time, sess__memory_usage, sess__total_scheduled_time, sess__total_elapsed_time, 
 		sess__endpoint_id, sess__last_request_start_time, sess__last_request_end_time, sess__reads, sess__writes, 
@@ -5069,12 +5012,12 @@ BEGIN CATCH
 	FROM #sessions_and_requests sar;
 
 	INSERT INTO AutoWho.TAWException (
-		SPIDCaptureTime, task_address, parent_task_address, session_id, request_id, exec_context_id, 
+		SPIDCaptureTime, UTCCaptureTime, task_address, parent_task_address, session_id, request_id, exec_context_id, 
 		tstate, scheduler_id, context_switches_count, wait_type, wait_latch_subtype, wait_duration_ms, 
 		wait_special_category, wait_order_category, wait_special_number, wait_special_tag, task_priority, 
 		blocking_task_address, blocking_session_id, blocking_exec_context_id, resource_description, 
 		resource_dbid, resource_associatedobjid, RecordReason)
-	SELECT @lv__SPIDCaptureTime, task_address, parent_task_address, session_id, request_id, exec_context_id, 
+	SELECT @lv__SPIDCaptureTime, @lv__UTCCaptureTime, task_address, parent_task_address, session_id, request_id, exec_context_id, 
 		taw.tstate, taw.scheduler_id, context_switches_count, wait_type, wait_latch_subtype, wait_duration_ms, 
 		wait_special_category, wait_order_category, wait_special_number, wait_special_tag, task_priority, 
 		blocking_task_address, blocking_session_id, blocking_exec_context_id, resource_description, 

@@ -206,8 +206,8 @@ BEGIN
 	FROM
 	(SELECT 'CoreXR.InputBufferStore' as TableName) Tb
 		LEFT OUTER JOIN (
-			SELECT InsertHour = CONVERT(varchar(30),CONVERT(DATE, Insertedby_SPIDCaptureTime)) + 
-							' ' + CONVERT(varchar(30),DATEPART(HOUR, Insertedby_SPIDCaptureTime)) + ':00'
+			SELECT InsertHour = CONVERT(varchar(30),CONVERT(DATE, InsertedBy_UTCCaptureTime)) + 
+							' ' + CONVERT(varchar(30),DATEPART(HOUR, InsertedBy_UTCCaptureTime)) + ':00'
 			FROM [CoreXR].[InputBufferStore]
 		) d
 		ON 1=1
@@ -218,8 +218,8 @@ BEGIN
 	FROM
 	(SELECT 'CoreXR.QueryPlanBatchStore' as TableName) Tb
 		LEFT OUTER JOIN (
-		SELECT InsertHour = CONVERT(varchar(30),CONVERT(DATE, Insertedby_SPIDCaptureTime)) + 
-						' ' + CONVERT(varchar(30),DATEPART(HOUR, Insertedby_SPIDCaptureTime)) + ':00'
+		SELECT InsertHour = CONVERT(varchar(30),CONVERT(DATE, InsertedBy_UTCCaptureTime)) + 
+						' ' + CONVERT(varchar(30),DATEPART(HOUR, InsertedBy_UTCCaptureTime)) + ':00'
 		FROM [CoreXR].[QueryPlanBatchStore]
 		) d
 		ON 1=1
@@ -230,8 +230,8 @@ BEGIN
 	FROM
 	(SELECT 'CoreXR.QueryPlanStmtStore' as TableName) Tb
 		LEFT OUTER JOIN (
-		SELECT InsertHour = CONVERT(varchar(30),CONVERT(DATE, Insertedby_SPIDCaptureTime)) + 
-						' ' + CONVERT(varchar(30),DATEPART(HOUR, Insertedby_SPIDCaptureTime)) + ':00'
+		SELECT InsertHour = CONVERT(varchar(30),CONVERT(DATE, InsertedBy_UTCCaptureTime)) + 
+						' ' + CONVERT(varchar(30),DATEPART(HOUR, InsertedBy_UTCCaptureTime)) + ':00'
 		FROM [CoreXR].[QueryPlanStmtStore]
 		) d
 		ON 1=1
@@ -242,8 +242,8 @@ BEGIN
 	FROM
 	(SELECT 'CoreXR.SQLBatchStore' as TableName) Tb
 		LEFT OUTER JOIN (
-		SELECT InsertHour = CONVERT(varchar(30),CONVERT(DATE, Insertedby_SPIDCaptureTime)) + 
-						' ' + CONVERT(varchar(30),DATEPART(HOUR, Insertedby_SPIDCaptureTime)) + ':00'
+		SELECT InsertHour = CONVERT(varchar(30),CONVERT(DATE, InsertedBy_UTCCaptureTime)) + 
+						' ' + CONVERT(varchar(30),DATEPART(HOUR, InsertedBy_UTCCaptureTime)) + ':00'
 		FROM [CoreXR].[SQLBatchStore]
 		) d
 		ON 1=1
@@ -254,8 +254,8 @@ BEGIN
 	FROM
 	(SELECT 'CoreXR.SQLStmtStore' as TableName) Tb
 		LEFT OUTER JOIN (
-		SELECT InsertHour = CONVERT(varchar(30),CONVERT(DATE, Insertedby_SPIDCaptureTime)) + 
-						' ' + CONVERT(varchar(30),DATEPART(HOUR, Insertedby_SPIDCaptureTime)) + ':00'
+		SELECT InsertHour = CONVERT(varchar(30),CONVERT(DATE, InsertedBy_UTCCaptureTime)) + 
+						' ' + CONVERT(varchar(30),DATEPART(HOUR, InsertedBy_UTCCaptureTime)) + ':00'
 		FROM [CoreXR].[SQLStmtStore]
 		) d
 		ON 1=1

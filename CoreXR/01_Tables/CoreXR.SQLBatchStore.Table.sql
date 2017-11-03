@@ -38,14 +38,14 @@ GO
 SET ANSI_PADDING ON
 GO
 CREATE TABLE [CoreXR].[SQLBatchStore](
-	[PKSQLBatchStoreID] [bigint] IDENTITY(1,1) NOT NULL,
-	[sql_handle] [varbinary](64) NOT NULL,
-	[dbid] [smallint] NOT NULL,
-	[objectid] [int] NOT NULL,
-	[fail_to_obtain] [bit] NOT NULL,
-	[batch_text] [nvarchar](max) NOT NULL,
-	[Insertedby_SPIDCaptureTime] [datetime] NOT NULL,
-	[LastTouchedBy_SPIDCaptureTime] [datetime] NOT NULL,
+	[PKSQLBatchStoreID]			[bigint] IDENTITY(1,1) NOT NULL,
+	[sql_handle]				[varbinary](64) NOT NULL,
+	[dbid]						[smallint] NOT NULL,
+	[objectid]					[int] NOT NULL,
+	[fail_to_obtain]			[bit] NOT NULL,
+	[batch_text]				[nvarchar](max) NOT NULL,
+	[InsertedBy_UTCCaptureTime]	[datetime] NOT NULL,	--In AutoWho, these 2 fields map to UTCCaptureTime in AutoWho.CaptureTimes,
+	[LastTouchedBy_UTCCaptureTime] [datetime] NOT NULL,
  CONSTRAINT [PKSQLBatchStore] PRIMARY KEY CLUSTERED 
 (
 	[PKSQLBatchStoreID] ASC
@@ -60,7 +60,7 @@ SET ANSI_PADDING ON
 GO
 CREATE NONCLUSTERED INDEX [NCL_LastTouched] ON [CoreXR].[SQLBatchStore]
 (
-	[LastTouchedBy_SPIDCaptureTime] ASC
+	[LastTouchedBy_UTCCaptureTime] ASC
 )
 INCLUDE ( 	[sql_handle],
 	[PKSQLBatchStoreID]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]

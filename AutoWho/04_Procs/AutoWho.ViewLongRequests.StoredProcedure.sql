@@ -192,13 +192,23 @@ BEGIN TRY
 		FilterName	NVARCHAR(255)
 	);
 
+	CREATE TABLE #CaptureTimes (
+		SPIDCaptureTime		DATETIME NOT NULL,
+		UTCCaptureTime		DATETIME NOT NULL,
+		PrevUTCCaptureTime	DATETIME,
+		diffMS				INT		--diff in milliseconds between cap time and PrevCaptureTime
+	);
+	CREATE UNIQUE CLUSTERED INDEX CL1 ON #CaptureTimes (UTCCaptureTime);
+
 	CREATE TABLE #LongBatches (
 		session_id			INT NOT NULL,
 		request_id			INT NOT NULL,
 		rqst__start_time	DATETIME NOT NULL,
 		BatchIdentifier		INT NOT NULL,
-		FirstSeen			DATETIME NOT NULL,
-		LastSeen			DATETIME NOT NULL, 
+		FirstSeenUTC		DATETIME NOT NULL,
+		LastSeenUTC			DATETIME NOT NULL,
+		FirstSeen			DATETIME NULL,
+		LastSeen			DATETIME NULL, 
 		StartingDBID		INT NULL,
 		FKInputBufferStore	BIGINT,
 		SessAttr			NVARCHAR(MAX),
@@ -206,6 +216,7 @@ BEGIN TRY
 	);
 
 	CREATE TABLE #sarcache (
+		UTCCaptureTime		DATETIME NOT NULL,
 		SPIDCaptureTime		DATETIME NOT NULL,
 		session_id			INT NOT NULL,
 		request_id			INT NOT NULL,
@@ -235,6 +246,7 @@ BEGIN TRY
 	);
 
 	CREATE TABLE #tawcache (
+		UTCCaptureTime		DATETIME NOT NULL,
 		SPIDCaptureTime		DATETIME NOT NULL,
 		session_id			INT NOT NULL,
 		request_id			INT NOT NULL,
@@ -254,8 +266,10 @@ BEGIN TRY
 		FKSQLStmtStoreID	BIGINT NOT NULL, 
 		FKQueryPlanStmtStoreID BIGINT NOT NULL,
 		[#Seen]				INT NOT NULL,
-		FirstSeen			DATETIME NOT NULL, 
-		LastSeen			DATETIME NOT NULL,
+		FirstSeenUTC		DATETIME NOT NULL, 
+		LastSeenUTC			DATETIME NOT NULL,
+		FirstSeen			DATETIME NULL,
+		LastSeen			DATETIME NULL,
 		StatusCodeAgg		NVARCHAR(100) NULL,
 		Waits				NVARCHAR(4000) NULL,
 		CXWaits				NVARCHAR(4000) NULL,
@@ -305,7 +319,7 @@ BEGIN TRY
 		--qmem_used__FirstLastDeltaKB
 		--qmem_used__MinMaxDeltaKB
 
-		tasks__FirstSeen		SMALLINT NULL,
+		tasks__FirstSeen	SMALLINT NULL,
 		tasks__LastSeen		SMALLINT NULL,
 		tasks__MinSeen		SMALLINT NULL,
 		tasks__MaxSeen		SMALLINT NULL,
@@ -587,6 +601,73 @@ BEGIN TRY
 		RAISERROR('A session ID cannot be specified in both the @spids and @xspids filter parameters.', 16, 1);
 		RETURN -1;
 	END
+
+	SET @lv__errorloc = N'Identify capture times';
+		IF @init = 255
+	BEGIN
+		INSERT INTO #CaptureTimes (
+			UTCCaptureTime,
+			SPIDCaptureTime,
+			PrevUTCCaptureTime,
+			diffMS
+		)
+		SELECT 
+			ct.UTCCaptureTime,
+			ct.SPIDCaptureTime, 
+			[PrevUTCCaptureTime] = prevCap.UTCCaptureTime,
+			[diffMS] = CASE WHEN prevCap.UTCCaptureTime IS NULL THEN NULL 
+				ELSE DATEDIFF(MILLISECOND, prevCap.UTCCaptureTime, ct.UTCCaptureTime)
+				END
+		FROM AutoWho.CaptureTimes ct
+			OUTER APPLY (
+				SELECT TOP 1
+					ct2.UTCCaptureTime
+				FROM AutoWho.CaptureTimes ct2
+				WHERE ct2.UTCCaptureTime < ct.UTCCaptureTime
+				AND ct2.RunWasSuccessful = 1
+				--Only pull the prev time if it was fairly close to the current row
+				AND ct2.UTCCaptureTime > DATEADD(MINUTE, -2, ct.UTCCaptureTime)
+				ORDER BY ct2.UTCCaptureTime DESC
+			) prevCap
+		WHERE ct.SPIDCaptureTime BETWEEN @start AND @end	--we search by local, but our logic heavily depends on UTC
+		AND ct.RunWasSuccessful = 1;
+	END
+	ELSE
+	BEGIN
+		INSERT INTO #CaptureTimes (
+			UTCCaptureTime,
+			SPIDCaptureTime,
+			PrevUTCCaptureTime,
+			diffMS
+		)
+		SELECT 
+			ct.UTCCaptureTime,
+			ct.SPIDCaptureTime, 
+			[PrevUTCCaptureTime] = prevCap.UTCCaptureTime,
+			[diffMS] = CASE WHEN prevCap.UTCCaptureTime IS NULL THEN NULL 
+				ELSE DATEDIFF(MILLISECOND, prevCap.UTCCaptureTime, ct.UTCCaptureTime)
+				END
+		FROM AutoWho.UserCollectionTimes ct
+			OUTER APPLY (
+				SELECT TOP 1
+					ct2.UTCCaptureTime
+				FROM AutoWho.UserCollectionTimes ct2
+				WHERE ct2.UTCCaptureTime < ct.UTCCaptureTime
+				AND ct2.UTCCaptureTime > DATEADD(MINUTE, -2, ct.UTCCaptureTime)
+				ORDER BY ct2.UTCCaptureTime DESC
+			) prevCap
+		WHERE ct.SPIDCaptureTime BETWEEN @start AND @end;	--we search by local, but our logic heavily depends on UTC
+	END
+
+	DECLARE @EffectiveStartUTC	DATETIME,
+			@EffectiveEndUTC	DATETIME;
+			--@EffectiveStart		DATETIME,
+			--@EffectiveEnd		DATETIME;
+
+	SELECT 
+		@EffectiveStartUTC = MIN(ct.UTCCaptureTime),
+		@EffectiveEndUTC = MAX(ct.UTCCaptureTime)
+	FROM #CaptureTimes ct;
 	
 	SET @lv__errorloc = N'Identify long requests';
 	INSERT INTO #LongBatches (
@@ -594,26 +675,28 @@ BEGIN TRY
 		request_id,
 		rqst__start_time,
 		BatchIdentifier,
-		FirstSeen,
-		LastSeen,
+		FirstSeenUTC,
+		LastSeenUTC,
 		FilteredOut
 	)
 	SELECT 
 		session_id, request_id, rqst__start_time, 
 		BatchIdentifier = RANK() OVER (ORDER BY rqst__start_time, session_id, request_id),
-		FirstSeen,
-		LastSeen,
+		FirstSeenUTC,
+		LastSeenUTC,
 		0
 	FROM (
 		SELECT 
 			sar.session_id, 
 			sar.request_id,
 			sar.rqst__start_time,
-			FirstSeen = MIN(SpidCaptureTime),		--"Min" only within the @start/@end range
-			LastSeen = MAX(SpidCaptureTime)			--"Max" only within the @start/@end range
+			FirstSeenUTC = MIN(UTCCaptureTime),		--"Min" only within the start/end range
+			LastSeenUTC = MAX(UTCCaptureTime)		--"Max" only within the start/end range
 		FROM AutoWho.SessionsAndRequests sar
+			INNER JOIN #CaptureTimes ct	--limit to just successful runs
+				ON ct.UTCCaptureTime = sar.UTCCaptureTime
 		WHERE sar.CollectionInitiatorID = @init
-		AND sar.SPIDCaptureTime BETWEEN @start AND @end 
+		AND sar.UTCCaptureTime BETWEEN @EffectiveStartUTC AND @EffectiveEndUTC
 		AND sar.request_id >= 0
 		AND sar.rqst__start_time IS NOT NULL 
 		AND sar.sess__is_user_process = 1
@@ -653,20 +736,20 @@ BEGIN TRY
 
 	CREATE STATISTICS custstat1 ON #LongBatches (session_id, request_id, rqst__start_time, FirstSeen);
 
-	--Can't filter by database until we have the DB info obtained (see previous statement)
+	--Can't filter by database until we have the DB info obtained (see previous statement). 
+	--The DB of a request is the first-observed DB
 	IF @attr = N'n'
 	BEGIN
 		UPDATE lb 
 		SET lb.StartingDBID = sar.sess__database_id
 		FROM #LongBatches lb
 			INNER JOIN AutoWho.SessionsAndRequests sar 
-				ON sar.SPIDCaptureTime = lb.FirstSeen
+				ON sar.UTCCaptureTime = lb.FirstSeenUTC
 				AND sar.session_id = lb.session_id
 				AND sar.request_id = lb.request_id
 				AND sar.rqst__start_time = lb.rqst__start_time
 		WHERE sar.CollectionInitiatorID = @init
-		AND sar.SPIDCaptureTime BETWEEN @start and @end
-		;
+		AND sar.UTCCaptureTime BETWEEN @EffectiveStartUTC AND @EffectiveEndUTC;
 	END
 	ELSE
 	BEGIN
@@ -703,7 +786,7 @@ BEGIN TRY
 					NCHAR(13) + N' -- ?>'
 		FROM #LongBatches lb
 			INNER JOIN AutoWho.SessionsAndRequests sar 
-				ON sar.SPIDCaptureTime = lb.FirstSeen
+				ON sar.UTCCaptureTime = lb.FirstSeenUTC
 				AND sar.session_id = lb.session_id
 				AND sar.request_id = lb.request_id
 				AND sar.rqst__start_time = lb.rqst__start_time
@@ -714,8 +797,7 @@ BEGIN TRY
 			LEFT OUTER JOIN AutoWho.DimConnectionAttribute dca
 				ON sar.conn__FKDimConnectionAttribute = dca.DimConnectionAttributeID
 		WHERE sar.CollectionInitiatorID = @init
-		AND sar.SPIDCaptureTime BETWEEN @start and @end
-		;
+		AND sar.UTCCaptureTime BETWEEN @EffectiveStartUTC AND @EffectiveEndUTC;
 	END
 
 	IF @DBInclusionsExist = 1
@@ -751,6 +833,7 @@ BEGIN TRY
 	-- trips to the much larger tables.
 	SET @lv__errorloc = N'Populate SAR cache';
 	INSERT INTO #sarcache (
+		UTCCaptureTime,
 		SPIDCaptureTime,
 		session_id,
 		request_id,
@@ -778,18 +861,19 @@ BEGIN TRY
 		FKQueryPlanStmtStoreID
 	)
 	SELECT 
-		sar.SPIDCaptureTime,				--1
+		sar.UTCCaptureTime,
+		sar.SPIDCaptureTime,
 		sar.session_id,
 		sar.request_id,
 		sar.rqst__start_time,
 		lb.BatchIdentifier,
-		sar.rqst__status_code,				--5
-		sar.rqst__cpu_time,			
-		sar.rqst__reads,			
-		sar.rqst__writes,			
-		sar.rqst__logical_reads,	
-		sar.rqst__FKDimCommand,				--10
-		sar.rqst__FKDimWaitType,			--11
+		sar.rqst__status_code,
+		sar.rqst__cpu_time,
+		sar.rqst__reads,
+		sar.rqst__writes,
+		sar.rqst__logical_reads,
+		sar.rqst__FKDimCommand,
+		sar.rqst__FKDimWaitType,
 		[tempdb__task] = (CASE WHEN (ISNULL(sar.tempdb__task_user_objects_alloc_page_count,0) - ISNULL(sar.tempdb__task_user_objects_dealloc_page_count,0)) < 0 THEN 0
 								ELSE (ISNULL(sar.tempdb__task_user_objects_alloc_page_count,0) - ISNULL(sar.tempdb__task_user_objects_dealloc_page_count,0)) END + 
 						CASE WHEN (ISNULL(sar.tempdb__task_internal_objects_alloc_page_count,0) - ISNULL(sar.tempdb__task_internal_objects_dealloc_page_count,0)) < 0 THEN 0
@@ -801,30 +885,32 @@ BEGIN TRY
 						CASE WHEN (ISNULL(sar.tempdb__sess_internal_objects_alloc_page_count,0) - ISNULL(sar.tempdb__sess_internal_objects_dealloc_page_count,0)) < 0 THEN 0
 								ELSE (ISNULL(sar.tempdb__sess_internal_objects_alloc_page_count,0) - ISNULL(sar.tempdb__sess_internal_objects_dealloc_page_count,0)) END
 						),
-		sar.tempdb__CalculatedNumberOfTasks,	--13	
+		sar.tempdb__CalculatedNumberOfTasks,
 		ISNULL(sar.mgrant__requested_memory_kb,0),
-		ISNULL(sar.mgrant__granted_memory_kb,0),		--14
+		ISNULL(sar.mgrant__granted_memory_kb,0),
 		ISNULL(sar.mgrant__used_memory_kb,0),
 		ISNULL(sar.mgrant__dop,0),
 		ISNULL(trx.tran_log_bytes,0),
 		sar.calc__tmr_wait,
 		
-		ISNULL(sar.FKSQLStmtStoreID,-1),				--20
+		ISNULL(sar.FKSQLStmtStoreID,-1),
 		sar.FKInputBufferStoreID,
 		CASE WHEN FKQueryPlanStmtStoreID IS NULL OR @plan=N'n' THEN -1 ELSE sar.FKQueryPlanStmtStoreID END
 
 	FROM AutoWho.SessionsAndRequests sar
+		INNER JOIN #CaptureTimes ct	--limit to just successful runs
+			ON sar.UTCCaptureTime = ct.UTCCaptureTime
 		INNER JOIN #LongBatches lb
 			ON lb.session_id = sar.session_id
 			AND lb.request_id = sar.request_id
 			AND lb.rqst__start_time = sar.rqst__start_time
 		LEFT OUTER JOIN (
 			SELECT 
-				SPIDCaptureTime,
+				UTCCaptureTime,
 				session_id,
 				tran_log_bytes = SUM(tran_log_bytes)
 			FROM (
-				SELECT td.SPIDCaptureTime,
+				SELECT td.UTCCaptureTime,
 					td.session_id, 
 					[tran_log_bytes] = CASE WHEN (ISNULL(dtdt_database_transaction_log_bytes_used,0) + ISNULL(dtdt_database_transaction_log_bytes_used_system,0)) >= 
 													(ISNULL(dtdt_database_transaction_log_bytes_reserved,0) + ISNULL(dtdt_database_transaction_log_bytes_reserved_system,0)) 
@@ -832,21 +918,22 @@ BEGIN TRY
 											ELSE ISNULL(dtdt_database_transaction_log_bytes_reserved,0) + ISNULL(dtdt_database_transaction_log_bytes_reserved_system,0) END
 				FROM AutoWho.TransactionDetails td
 				WHERE td.CollectionInitiatorID = @init
-				AND td.SPIDCaptureTime BETWEEN @start AND @end 
+				AND td.UTCCaptureTime BETWEEN @EffectiveStartUTC AND @EffectiveEndUTC
 			) ss
-			GROUP BY SPIDCaptureTime, session_id
+			GROUP BY UTCCaptureTime, session_id
 		) trx
-			ON sar.SPIDCaptureTime = trx.SPIDCaptureTime
+			ON sar.UTCCaptureTime = trx.UTCCaptureTime
 			AND sar.session_id = trx.session_id
 	WHERE sar.CollectionInitiatorID = @init
-	AND sar.SPIDCaptureTime BETWEEN @start AND @end 
+	AND sar.UTCCaptureTime BETWEEN @EffectiveStartUTC AND @EffectiveEndUTC
 	OPTION(RECOMPILE);
 
-	CREATE UNIQUE CLUSTERED INDEX CL1 ON #sarcache (BatchIdentifier, FKSQLStmtStoreID, FKQueryPlanStmtStoreID, SPIDCaptureTime);
+	CREATE UNIQUE CLUSTERED INDEX CL1 ON #sarcache (BatchIdentifier, FKSQLStmtStoreID, FKQueryPlanStmtStoreID, UTCCaptureTime);
 
 
 	SET @lv__errorloc = N'Populate TAW cache';
 	INSERT INTO #tawcache (
+		UTCCaptureTime,
 		SPIDCaptureTime,
 		session_id,
 		request_id,
@@ -861,13 +948,14 @@ BEGIN TRY
 		wait_special_number
 	)
 	SELECT 
+		UTCCaptureTime,
 		SPIDCaptureTime,
 		session_id,
 		request_id,
 		task_address,
 		BatchIdentifier,
 		TaskIdentifier = ROW_NUMBER() OVER (PARTITION BY BatchIdentifier, task_address
-											ORDER BY SPIDCaptureTime ASC),
+											ORDER BY UTCCaptureTime ASC),
 		tstate, 
 		FKDimWaitType,
 		wait_duration_ms,
@@ -876,6 +964,7 @@ BEGIN TRY
 		wait_special_number
 	FROM (
 		SELECT 
+			taw.UTCCaptureTime,
 			taw.SPIDCaptureTime,
 			taw.session_id, 
 			taw.request_id,
@@ -889,7 +978,8 @@ BEGIN TRY
 			taw.wait_special_number
 		FROM (
 				SELECT 
-					SPIDCaptureTime, 
+					UTCCaptureTime, 
+					SPIDCaptureTime,
 					session_id,
 					request_id,
 					task_address,
@@ -909,14 +999,14 @@ BEGIN TRY
 					wait_special_number,
 					--A task_address can be waiting on multiple blockers. We just choose the row
 					-- that has the largest wait_duration_ms
-					rn = ROW_NUMBER() OVER (PARTITION BY SPIDCaptureTime, session_id, request_id, task_address
+					rn = ROW_NUMBER() OVER (PARTITION BY UTCCaptureTime, session_id, request_id, task_address
 											ORDER BY wait_duration_ms DESC)
 				FROM AutoWho.TasksAndWaits taw
 				WHERE taw.CollectionInitiatorID = @init
-				AND taw.SPIDCaptureTime BETWEEN @start AND @end
+				AND taw.UTCCaptureTime BETWEEN @EffectiveStartUTC AND @EffectiveEndUTC
 			) taw
 			INNER JOIN #sarcache sar
-				ON sar.SPIDCaptureTime = taw.SPIDCaptureTime
+				ON sar.UTCCaptureTime = taw.UTCCaptureTime
 				AND sar.session_id = taw.session_id
 				AND sar.request_id = taw.request_id
 		WHERE taw.rn = 1
@@ -932,8 +1022,8 @@ BEGIN TRY
 		[FKSQLStmtStoreID],
 		[FKQueryPlanStmtStoreID],
 		[#Seen],
-		[FirstSeen],					--5
-		[LastSeen],
+		[FirstSeenUTC],					--5
+		[LastSeenUTC],
 
 		tempdb_task__MinPages,
 		tempdb_task__MaxPages,
@@ -983,8 +1073,8 @@ BEGIN TRY
 		s.FKSQLStmtStoreID,
 		s.FKQueryPlanStmtStoreID,
 		SUM(1) AS [#Seen], 
-		MIN(SPIDCaptureTime) as FirstSeen,		--5
-		MAX(SPIDCaptureTime) as LastSeen,
+		[FirstSeenUTC] = MIN(UTCCaptureTime),
+		[LastSeenUTC] = MAX(UTCCaptureTime),
 
 		MIN(s.tempdb__TaskPages),
 		MAX(s.tempdb__TaskPages),
@@ -1078,7 +1168,7 @@ BEGIN TRY
 			WHERE cf.BatchIdentifier = targ.BatchIdentifier
 			AND cf.FKSQLStmtStoreID = targ.FKSQLStmtStoreID
 			AND cf.FKQueryPlanStmtStoreID = targ.FKQueryPlanStmtStoreID
-			AND cf.SPIDCaptureTime = targ.FirstSeen
+			AND cf.UTCCaptureTime = targ.FirstSeenUTC
 		) f
 		CROSS APPLY (
 			SELECT
@@ -1098,7 +1188,7 @@ BEGIN TRY
 			WHERE cf.BatchIdentifier = targ.BatchIdentifier
 			AND cf.FKSQLStmtStoreID = targ.FKSQLStmtStoreID
 			AND cf.FKQueryPlanStmtStoreID = targ.FKQueryPlanStmtStoreID
-			AND cf.SPIDCaptureTime = targ.LastSeen
+			AND cf.UTCCaptureTime = targ.LastSeenUTC
 		) l
 
 	--We now have the first and last observed time for each Batch/Stmt/Plan combo. Go and get 
@@ -1149,7 +1239,7 @@ BEGIN TRY
 				-- and find where the "current" wait time is actually > the gap between cur & prev SPIDCaptureTimes.
 				SELECT 
 					cur.BatchIdentifier,
-					cur.SPIDCaptureTime,
+					cur.UTCCaptureTime,
 					cur.session_id,
 					cur.request_id,
 					cur.tstate,
@@ -1159,7 +1249,7 @@ BEGIN TRY
 					cur.wait_special_number,
 					wait_duration_ms = CASE WHEN prev.wait_duration_ms IS NULL THEN cur.wait_duration_ms
 										ELSE (--we have a match, and we already know the wait type is the same
-											CASE WHEN cur.wait_duration_ms > DATEDIFF(millisecond, prev.SPIDCaptureTime, cur.SPIDCaptureTime)
+											CASE WHEN cur.wait_duration_ms > DATEDIFF(millisecond, prev.UTCCaptureTime, cur.UTCCaptureTime)
 												THEN cur.wait_duration_ms - prev.wait_duration_ms
 												ELSE cur.wait_duration_ms
 												END
@@ -1172,7 +1262,7 @@ BEGIN TRY
 						AND cur.FKDimWaitType = prev.FKDimWaitType
 						AND cur.TaskIdentifier = prev.TaskIdentifier+1
 					) taw
-				ON sar.SPIDCaptureTime = taw.SPIDCaptureTime
+				ON sar.UTCCaptureTime = taw.UTCCaptureTime
 				AND sar.session_id = taw.session_id
 				AND sar.request_id = taw.request_id
 		) tbase
@@ -1801,6 +1891,30 @@ BEGIN TRY
 		AND targ.FKSQLStmtStoreID = t0.FKSQLStmtStoreID
 		AND targ.FKQueryPlanStmtStoreID = t0.FKQueryPlanStmtStoreID
 		;
+
+
+
+	/****************************************************************************************************
+	**********								UTC-local translation							   **********
+	*****************************************************************************************************/
+	UPDATE targ 
+	SET FirstSeen = ct1.SPIDCaptureTime,
+		LastSeen = ct2.SPIDCaptureTime
+	FROM #LongBatches targ 
+		INNER JOIN #CaptureTimes ct1
+			ON targ.FirstSeenUTC = ct1.UTCCaptureTime
+		INNER JOIN #CaptureTimes ct2
+			ON targ.LastSeenUTC = ct2.UTCCaptureTime;
+
+	UPDATE targ 
+	SET FirstSeen = ct1.SPIDCaptureTime,
+		LastSeen = ct2.SPIDCaptureTime
+	FROM #stmtstats targ 
+		INNER JOIN #CaptureTimes ct1
+			ON targ.FirstSeenUTC = ct1.UTCCaptureTime
+		INNER JOIN #CaptureTimes ct2
+			ON targ.LastSeenUTC = ct2.UTCCaptureTime;
+
 
 	/****************************************************************************************************
 	**********								Final Result Set								   **********

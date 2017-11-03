@@ -93,9 +93,9 @@ BEGIN
 			@lv__nullsmallint								SMALLINT,
 
 			--derived or intermediate values
-			@lv__MaxSPIDCaptureTime							DATETIME,
-			@lv__MinPurge_SPIDCaptureTime					DATETIME,
-			@lv__MaxPurge_SPIDCaptureTime					DATETIME,
+			@lv__MaxUTCCaptureTime							DATETIME,
+			@lv__MinPurge_UTCCaptureTime					DATETIME,
+			@lv__MaxPurge_UTCCaptureTime					DATETIME,
 			@lv__TableSize_ReservedPages					BIGINT,
 			@lv__HardDeleteCaptureTime						DATETIME,
 			@lv__NextDWExtractionCaptureTime				DATETIME
@@ -107,11 +107,11 @@ BEGIN
 
 		SET @lv__ErrorLoc = N'Temp table creation';
 		CREATE TABLE #AutoWhoDistinctStoreKeys (
-			[FKSQLStmtStoreID] BIGINT,
-			[FKSQLBatchStoreID] BIGINT,
-			[FKInputBufferStoreID] BIGINT,
-			[FKQueryPlanBatchStoreID] BIGINT,
-			[FKQueryPlanStmtStoreID] BIGINT
+			[FKSQLStmtStoreID]		BIGINT NULL,
+			[FKSQLBatchStoreID]		BIGINT NULL,
+			[FKInputBufferStoreID]	BIGINT NULL,
+			[FKQueryPlanBatchStoreID] BIGINT NULL,
+			[FKQueryPlanStmtStoreID] BIGINT NULL
 		);
 
 		CREATE TABLE #StoreTableIDsToPurge (
@@ -120,7 +120,7 @@ BEGIN
 
 		CREATE TABLE #RecordsToPurge (
 			CollectionInitiatorID			TINYINT NOT NULL,
-			SPIDCaptureTime					DATETIME NOT NULL,
+			UTCCaptureTime					DATETIME NOT NULL,
 			session_id						SMALLINT NOT NULL,
 			request_id						INT NOT NULL,
 			TimeIdentifier					DATETIME NOT NULL,
@@ -156,25 +156,25 @@ BEGIN
 		FROM AutoWho.Options;
 
 		--Calculate the datetime boundary for each of these retention policies.
-		SET @retainAfter__IdleSPIDs_NoTran = DATEADD(HOUR, 0 - @opt__Retention_IdleSPIDs_NoTran, GETDATE());
-		SET @retainAfter__IdleSPIDs_WithShortTran = DATEADD(HOUR, 0 - @opt__Retention_IdleSPIDs_WithShortTran, GETDATE());
-		SET @retainAfter__IdleSPIDs_WithLongTran = DATEADD(HOUR, 0 - @opt__Retention_IdleSPIDs_WithLongTran, GETDATE());
-		SET @retainAfter__IdleSPIDs_HighTempDB = DATEADD(HOUR, 0 - @opt__Retention_IdleSPIDs_HighTempDB, GETDATE());
-		SET @retainAfter__ActiveLow = DATEADD(HOUR, 0 - @opt__Retention_ActiveLow, GETDATE());
-		SET @retainAfter__ActiveMedium = DATEADD(HOUR, 0 - @opt__Retention_ActiveMedium, GETDATE());
-		SET @retainAfter__ActiveHigh = DATEADD(HOUR, 0 - @opt__Retention_ActiveHigh, GETDATE());
-		SET @retainAfter__ActiveBatch = DATEADD(HOUR, 0 - @opt__Retention_ActiveBatch, GETDATE());
+		SET @retainAfter__IdleSPIDs_NoTran = DATEADD(HOUR, 0 - @opt__Retention_IdleSPIDs_NoTran, GETUTCDATE());
+		SET @retainAfter__IdleSPIDs_WithShortTran = DATEADD(HOUR, 0 - @opt__Retention_IdleSPIDs_WithShortTran, GETUTCDATE());
+		SET @retainAfter__IdleSPIDs_WithLongTran = DATEADD(HOUR, 0 - @opt__Retention_IdleSPIDs_WithLongTran, GETUTCDATE());
+		SET @retainAfter__IdleSPIDs_HighTempDB = DATEADD(HOUR, 0 - @opt__Retention_IdleSPIDs_HighTempDB, GETUTCDATE());
+		SET @retainAfter__ActiveLow = DATEADD(HOUR, 0 - @opt__Retention_ActiveLow, GETUTCDATE());
+		SET @retainAfter__ActiveMedium = DATEADD(HOUR, 0 - @opt__Retention_ActiveMedium, GETUTCDATE());
+		SET @retainAfter__ActiveHigh = DATEADD(HOUR, 0 - @opt__Retention_ActiveHigh, GETUTCDATE());
+		SET @retainAfter__ActiveBatch = DATEADD(HOUR, 0 - @opt__Retention_ActiveBatch, GETUTCDATE());
 
 		SET @lv__ErrorLoc = N'Next extract & Hard Delete';
 		SELECT 
-			@lv__NextDWExtractionCaptureTime = MIN(ct.SPIDCaptureTime)
+			@lv__NextDWExtractionCaptureTime = MIN(ct.UTCCaptureTime)
 		FROM AutoWho.CaptureTimes ct
 		WHERE ct.ExtractedForDW = 0
 		AND ct.CollectionInitiatorID = 255;	--DW extraction only occurs for captures by the background collector.
 
 		IF @lv__NextDWExtractionCaptureTime IS NULL
 		BEGIN
-			SET @lv__NextDWExtractionCaptureTime = GETDATE();
+			SET @lv__NextDWExtractionCaptureTime = GETUTCDATE();
 		END
 
 		/* Calculate our "Hard-delete" policy. Anything older than this *WILL* be deleted by this purge run. 
@@ -183,19 +183,19 @@ BEGIN
 			recent than our @lv__NextDWExtractionCaptureTime.
 		*/
 		SELECT 
-			@lv__HardDeleteCaptureTime = ss.SPIDCaptureTime
+			@lv__HardDeleteCaptureTime = ss.UTCCaptureTime
 		FROM (
-			SELECT TOP 1 ct.SPIDCaptureTime
+			SELECT TOP 1 ct.UTCCaptureTime
 			FROM AutoWho.CaptureTimes ct
 			WHERE ct.CollectionInitiatorID = 255
 			AND ct.RunWasSuccessful = 1
-			AND ct.SPIDCaptureTime < DATEADD(DAY, 0 - @opt__Retention_CaptureTimes, GETDATE())
-			ORDER BY ct.SPIDCaptureTime DESC
+			AND ct.UTCCaptureTime < DATEADD(DAY, 0 - @opt__Retention_CaptureTimes, GETUTCDATE())
+			ORDER BY ct.UTCCaptureTime DESC
 		) ss;
 
 		IF @lv__HardDeleteCaptureTime IS NULL
 		BEGIN
-			SET @lv__HardDeleteCaptureTime = DATEADD(DAY, 0 - @opt__Retention_CaptureTimes, GETDATE());
+			SET @lv__HardDeleteCaptureTime = DATEADD(DAY, 0 - @opt__Retention_CaptureTimes, GETUTCDATE());
 		END
 
 		IF @opt__PurgeUnextractedData = N'N'
@@ -220,13 +220,13 @@ BEGIN
 		--To avoid contention with the AutoWho collector proc itself, we first obtain a "max committed SPIDCaptureTime" value that
 		-- we will use with our queries to ensure that the records we're looking at are not close to the ones being inserted.
 		-- Since none of the retention policies can be < 1 hour, we choose a time that is at least an hour back
-		SELECT @lv__MaxSPIDCaptureTime = SPIDCaptureTime
+		SELECT @lv__MaxUTCCaptureTime = UTCCaptureTime
 		FROM (
-			SELECT TOP 1 SPIDCaptureTime
+			SELECT TOP 1 UTCCaptureTime
 			FROM AutoWho.SessionsAndRequests sar WITH (READPAST, ROWLOCK, READCOMMITTED)
-			WHERE SPIDCaptureTime < DATEADD(HOUR, -1, GETDATE())
+			WHERE UTCCaptureTime < DATEADD(HOUR, -1, GETUTCDATE())
 			AND CollectionInitiatorID = 255
-			ORDER BY SPIDCaptureTime DESC
+			ORDER BY UTCCaptureTime DESC
 		) ss;
 
 
@@ -237,7 +237,7 @@ BEGIN
 		SET @lv__ErrorLoc = N'#RecordsToPurge pop';
 		INSERT INTO #RecordsToPurge (
 			CollectionInitiatorID,
-			SPIDCaptureTime,
+			UTCCaptureTime,
 			session_id,
 			request_id,
 			TimeIdentifier,
@@ -253,7 +253,7 @@ BEGIN
 		)
 		SELECT DISTINCT 
 			CollectionInitiatorID,
-			SPIDCaptureTime, 
+			UTCCaptureTime, 
 			session_id, 
 			request_id, 
 			TimeIdentifier,
@@ -270,7 +270,7 @@ BEGIN
 		FROM (
 			SELECT 
 				sar.CollectionInitiatorID,
-				sar.SPIDCaptureTime, 
+				sar.UTCCaptureTime, 
 				sar.session_id, 
 				sar.request_id, 
 				sar.TimeIdentifier, 
@@ -279,7 +279,7 @@ BEGIN
 					- idle spid; "High TempDB" retention only applies to idle spids b/c the goal of the retention (and the scoping inclusion that correlates to the retention policy)
 						is for spids that were idle w/o a tran, but had a high enough tempdb usage that we want to capture them
 					- TempDB usage is >= our "High TempDB" threshold
-					- SPIDCaptureTime is more recent than @retainAfter__IdleSPIDs_HighTempDB
+					- UTCCaptureTime is more recent than @retainAfter__IdleSPIDs_HighTempDB
 				*/
 				[Retain_IdleSPID_HighTempDB] = CASE 
 					WHEN sar.session_id > 0 
@@ -312,7 +312,7 @@ BEGIN
 								)
 							)
 
-						AND @retainAfter__IdleSPIDs_HighTempDB < sar.SPIDCaptureTime
+						AND @retainAfter__IdleSPIDs_HighTempDB < sar.UTCCaptureTime
 					THEN 1
 					ELSE 0
 					END,
@@ -321,7 +321,7 @@ BEGIN
 					- idle spid
 					- has an open transaction
 					- has a tran length and it is >= our "long transaction" threshold
-					- SPIDCaptureTime is > @retainAfter__IdleSPIDs_WithLongTran
+					- UTCCaptureTime is > @retainAfter__IdleSPIDs_WithLongTran
 				*/
 				[Retain_IdleSPID_WithLongTran] = CASE 
 					WHEN sar.session_id > 0 AND sar.request_id = @lv__nullsmallint
@@ -329,7 +329,7 @@ BEGIN
 						AND (td.TranLength_sec IS NOT NULL	--"NOT NULL" unnecessary b/c of the AND'd >= clause, but just want to be explicit
 															-- here that NULL tran lengths are handled by the "Short Tran" policy.
 							AND td.TranLength_sec >= @opt__LongTransactionThreshold)
-						AND @retainAfter__IdleSPIDs_WithLongTran < sar.SPIDCaptureTime
+						AND @retainAfter__IdleSPIDs_WithLongTran < sar.UTCCaptureTime
 					THEN 1
 					ELSE 0
 					END,
@@ -338,7 +338,7 @@ BEGIN
 					- idle spid
 					- has an open transaction
 					- the tran has no duration or the length is < our "Long Transaction" threshold
-					- the SPIDCaptureTime is > @retainAfter__IdleSPIDs_WithShortTran
+					- the UTCCaptureTime is > @retainAfter__IdleSPIDs_WithShortTran
 				*/
 				[Retain_IdleSPID_WithShortTran] = CASE 
 					WHEN sar.session_id > 0 AND sar.request_id = @lv__nullsmallint
@@ -346,7 +346,7 @@ BEGIN
 						AND (td.TranLength_sec IS NULL 
 							OR td.TranLength_sec < @opt__LongTransactionThreshold)
 
-						AND @retainAfter__IdleSPIDs_WithShortTran < sar.SPIDCaptureTime
+						AND @retainAfter__IdleSPIDs_WithShortTran < sar.UTCCaptureTime
 					THEN 1
 					ELSE 0
 					END,
@@ -354,19 +354,19 @@ BEGIN
 				/* Retain_IdleSPID_WithNoTran is a reason to keep the row if:
 					- idle spid
 					- no transactions open
-					- if blocker, SPIDCaptureTime is > @lv__HardDeleteCaptureTime
-					- if not blocker, SPIDCaptureTime is > @retainAfter__IdleSPIDs_NoTran
+					- if blocker, UTCCaptureTime is > @lv__HardDeleteCaptureTime
+					- if not blocker, UTCCaptureTime is > @retainAfter__IdleSPIDs_NoTran
 				*/
 				[Retain_IdleSPID_WithNoTran] = CASE 
 					WHEN sar.session_id > 0 AND sar.request_id = @lv__nullsmallint
 						AND ISNULL(sar.sess__open_transaction_count,0) = 0
 						AND (
 							(sar.calc__is_blocker = 1
-							AND @lv__HardDeleteCaptureTime < sar.SPIDCaptureTime
+							AND @lv__HardDeleteCaptureTime < sar.UTCCaptureTime
 							)
 							OR 
 							(sar.calc__is_blocker = 0
-							AND @retainAfter__IdleSPIDs_NoTran < sar.SPIDCaptureTime
+							AND @retainAfter__IdleSPIDs_NoTran < sar.UTCCaptureTime
 							)
 						)
 					THEN 1
@@ -376,12 +376,12 @@ BEGIN
 				/* Retain_ActiveLow is a reason to keep the row if:
 					- active request
 					- duration is < our medium threshold
-					- SPIDCaptureTime is more recent than @retainAfter__ActiveLow
+					- UTCCaptureTime is more recent than @retainAfter__ActiveLow
 				*/
 				[Retain_ActiveLow] = CASE 
 					WHEN sar.session_id > 0 AND sar.request_id <> @lv__nullsmallint
 						AND sar.calc__duration_ms < @opt__MediumDurationThreshold*1000
-						AND @retainAfter__ActiveLow < sar.SPIDCaptureTime
+						AND @retainAfter__ActiveLow < sar.UTCCaptureTime
 					THEN 1
 					ELSE 0
 					END,
@@ -389,13 +389,13 @@ BEGIN
 				/* Retain_ActiveMedium is a reason to keep the row if:
 					- active request
 					- duration between our medium and high thresholds
-					- SPIDCaptureTime is more recent than @retainAfter__ActiveMedium
+					- UTCCaptureTime is more recent than @retainAfter__ActiveMedium
 				*/
 				[Retain_ActiveMedium] = CASE 
 					WHEN sar.session_id > 0 AND sar.request_id <> @lv__nullsmallint
 						AND (sar.calc__duration_ms >= @opt__MediumDurationThreshold*1000
 							AND sar.calc__duration_ms < @opt__HighDurationThreshold*1000)
-						AND @retainAfter__ActiveMedium < sar.SPIDCaptureTime
+						AND @retainAfter__ActiveMedium < sar.UTCCaptureTime
 					THEN 1
 					ELSE 0
 					END,
@@ -403,13 +403,13 @@ BEGIN
 				/* Retain_ActiveHigh is a reason to keep the row if:
 					-active request
 					-duration between our High and Batch thresholds
-					-SPIDCaptureTime is more recent than @retainAfter__ActiveHigh
+					-UTCCaptureTime is more recent than @retainAfter__ActiveHigh
 				*/
 				[Retain_ActiveHigh] = CASE 
 					WHEN sar.session_id > 0 AND sar.request_id <> @lv__nullsmallint
 						AND (sar.calc__duration_ms >= @opt__HighDurationThreshold*1000
 							AND sar.calc__duration_ms < @opt__BatchDurationThreshold*1000)
-						AND @retainAfter__ActiveHigh < sar.SPIDCaptureTime
+						AND @retainAfter__ActiveHigh < sar.UTCCaptureTime
 					THEN 1
 					ELSE 0
 					END,
@@ -417,18 +417,18 @@ BEGIN
 				/* Retain_ActiveBatch is a reason to keep the row if:
 					- active request
 					- duration >= our "batch duration threshold"
-					- SPIDCaptureTime is more recent than @retainAfter__ActiveBatch
+					- UTCCaptureTime is more recent than @retainAfter__ActiveBatch
 				*/
 				[Retain_ActiveBatch] = CASE 
 					WHEN sar.session_id > 0 AND sar.request_id <> @lv__nullsmallint
 						AND sar.calc__duration_ms >= @opt__BatchDurationThreshold*1000
-						AND @retainAfter__ActiveBatch < sar.SPIDCaptureTime
+						AND @retainAfter__ActiveBatch < sar.UTCCaptureTime
 					THEN 1
 					ELSE 0
 					END,
 
 				[Retain_SpecialRows] = CASE 
-					WHEN sar.session_id <= 0 AND @lv__HardDeleteCaptureTime < sar.SPIDCaptureTime
+					WHEN sar.session_id <= 0 AND @lv__HardDeleteCaptureTime < sar.UTCCaptureTime
 					THEN 1
 					ELSE 0
 					END
@@ -438,7 +438,7 @@ BEGIN
 				LEFT OUTER JOIN (
 					SELECT 
 						td.CollectionInitiatorID,
-						td.SPIDCaptureTime, 
+						td.UTCCaptureTime, 
 						td.session_id,
 						td.TimeIdentifier, 
 							--since a spid could have transactions that span databases 
@@ -464,13 +464,14 @@ BEGIN
 					--		3 = System transaction
 					AND td.dtdt_database_transaction_type NOT IN (2,3) --we don't want DB trans that are read-only or system trans
 					*/
-					GROUP BY td.CollectionInitiatorID, td.SPIDCaptureTime, td.session_id, td.TimeIdentifier
+					GROUP BY td.CollectionInitiatorID, td.UTCCaptureTime, td.session_id, td.TimeIdentifier
 				) td
 					ON sar.CollectionInitiatorID = td.CollectionInitiatorID
-					AND sar.SPIDCaptureTime = td.SPIDCaptureTime
+					AND sar.UTCCaptureTime = td.UTCCaptureTime
 					AND sar.session_id = td.session_id
 					AND sar.TimeIdentifier = td.TimeIdentifier
-			WHERE sar.SPIDCaptureTime <= @lv__MaxSPIDCaptureTime
+			WHERE sar.UTCCaptureTime <= @lv__MaxUTCCaptureTime
+			AND sar.CollectionInitiatorID = 255
 		) ss
 		WHERE 
 		--If any of the "Retain_" columns is 1, then we have at least 1 retention policy that gives us a reason
@@ -492,7 +493,7 @@ BEGIN
 			This only applies to data collected by AutoWho's background collector.
 		*/
 		AND 0 = (CASE WHEN @opt__PurgeUnextractedData = N'N' 
-						AND ss.SPIDCaptureTime >= @lv__NextDWExtractionCaptureTime
+						AND ss.UTCCaptureTime >= @lv__NextDWExtractionCaptureTime
 						AND ss.CollectionInitiatorID = 255
 						THEN 1
 					ELSE 0
@@ -506,14 +507,14 @@ BEGIN
 			SET @lv__ErrorMessage = 'No rows found to be purged. Exiting...';
 			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=1, @TraceID=NULL, @Location=N'After #RecordsToPurge INSERT', @Message=@lv__ErrorMessage;
 
-			DELETE FROM AutoWho.[Log] WHERE LogDT <= @lv__HardDeleteCaptureTime;
+			DELETE FROM AutoWho.[Log] WHERE LogDTUTC <= @lv__HardDeleteCaptureTime;
 			RETURN 0;
 		END
 
 		SET @lv__ErrorLoc = N'#RecordsToPurge index';
 		CREATE UNIQUE CLUSTERED INDEX CL1 ON #RecordsToPurge (
 			CollectionInitiatorID,
-			SPIDCaptureTime,
+			UTCCaptureTime,
 			session_id,
 			request_id,
 			TimeIdentifier
@@ -521,19 +522,19 @@ BEGIN
 
 		SET @lv__ErrorLoc = N'Final prep';
 		SELECT 
-			@lv__MinPurge_SPIDCaptureTime = ss.minnie,
-			@lv__MaxPurge_SPIDCaptureTime = ss.maxie
+			@lv__MinPurge_UTCCaptureTime = ss.minnie,
+			@lv__MaxPurge_UTCCaptureTime = ss.maxie
 		FROM (
 			SELECT 
-				MIN(SPIDCaptureTime)as minnie,
-				MAX(SPIDCaptureTime) maxie
+				MIN(UTCCaptureTime)as minnie,
+				MAX(UTCCaptureTime) maxie
 			FROM #RecordsToPurge 
 		) ss;
 
 
 					SET @lv__ErrorMessage = ISNULL(CONVERT(NVARCHAR(20),@lv__RowCount),N'<null>') + ' rows identified that have no reason to be retained, ranging from ' + 
-						ISNULL(CONVERT(NVARCHAR(20), @lv__MinPurge_SPIDCaptureTime),N'<null>') + ' to ' + 
-						ISNULL(CONVERT(NVARCHAR(20),@lv__MaxPurge_SPIDCaptureTime),N'<null>') + '.';
+						ISNULL(CONVERT(NVARCHAR(20), @lv__MinPurge_UTCCaptureTime),N'<null>') + ' to ' + 
+						ISNULL(CONVERT(NVARCHAR(20),@lv__MaxPurge_UTCCaptureTime),N'<null>') + '.';
 					EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location=N'Purge data announcement', @Message=@lv__ErrorMessage;
 
 
@@ -542,12 +543,13 @@ BEGIN
 		FROM AutoWho.LockDetails targ
 			INNER JOIN #RecordsToPurge r
 				ON targ.CollectionInitiatorID = r.CollectionInitiatorID
-				AND targ.SPIDCaptureTime = r.SPIDCaptureTime
+				AND targ.UTCCaptureTime = r.UTCCaptureTime
 				AND targ.request_session_id = r.session_id
 				AND targ.request_request_id = r.request_id
 				AND targ.TimeIdentifier = r.TimeIdentifier
-		WHERE targ.SPIDCaptureTime >= @lv__MinPurge_SPIDCaptureTime
-		AND targ.SPIDCaptureTime <= @lv__MaxPurge_SPIDCaptureTime
+		WHERE targ.CollectionInitiatorID = 255
+		AND targ.UTCCaptureTime >= @lv__MinPurge_UTCCaptureTime
+		AND targ.UTCCaptureTime <= @lv__MaxPurge_UTCCaptureTime
 		OPTION(RECOMPILE);
 
 					SET @lv__RowCount = ROWCOUNT_BIG();
@@ -557,7 +559,8 @@ BEGIN
 		--If rows somehow slip by our above criteria, we delete anything older than our hard-delete boundary
 		DELETE targ 
 		FROM AutoWho.LockDetails targ 
-		WHERE targ.SPIDCaptureTime <= @lv__HardDeleteCaptureTime; 
+		WHERE targ.UTCCaptureTime <= @lv__HardDeleteCaptureTime
+		AND targ.CollectionInitiatorID = 255; 
 
 					SET @lv__RowCount = ROWCOUNT_BIG();
 					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows hard-deleted from AutoWho.LockDetails.';
@@ -568,11 +571,12 @@ BEGIN
 		FROM AutoWho.TransactionDetails targ
 			INNER JOIN #RecordsToPurge r
 				ON targ.CollectionInitiatorID = r.CollectionInitiatorID
-				AND targ.SPIDCaptureTime = r.SPIDCaptureTime
+				AND targ.UTCCaptureTime = r.UTCCaptureTime
 				AND targ.session_id = r.session_id
 				AND targ.TimeIdentifier = r.TimeIdentifier
-		WHERE targ.SPIDCaptureTime >= @lv__MinPurge_SPIDCaptureTime
-		AND targ.SPIDCaptureTime <= @lv__MaxPurge_SPIDCaptureTime
+		WHERE targ.CollectionInitiatorID = 255
+		AND targ.SPIDCaptureTime >= @lv__MinPurge_UTCCaptureTime
+		AND targ.SPIDCaptureTime <= @lv__MaxPurge_UTCCaptureTime
 		OPTION(RECOMPILE);
 
 					SET @lv__RowCount = ROWCOUNT_BIG();
@@ -581,7 +585,8 @@ BEGIN
 
 		DELETE targ 
 		FROM AutoWho.TransactionDetails targ
-		WHERE targ.SPIDCaptureTime < @lv__HardDeleteCaptureTime;
+		WHERE targ.UTCCaptureTime < @lv__HardDeleteCaptureTime
+		AND targ.CollectionInitiatorID = 255;
 
 					SET @lv__RowCount = ROWCOUNT_BIG();
 					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows hard-deleted from AutoWho.TransactionDetails.';
@@ -592,11 +597,12 @@ BEGIN
 		FROM AutoWho.TasksAndWaits targ 
 			INNER JOIN #RecordsToPurge r
 				ON targ.CollectionInitiatorID = r.CollectionInitiatorID
-				AND targ.SPIDCaptureTime = r.SPIDCaptureTime
+				AND targ.UTCCaptureTime = r.UTCCaptureTime
 				AND targ.session_id = r.session_id
 				AND targ.request_id = r.request_id
-		WHERE targ.SPIDCaptureTime >= @lv__MinPurge_SPIDCaptureTime
-		AND targ.SPIDCaptureTime <= @lv__MaxPurge_SPIDCaptureTime
+		WHERE targ.CollectionInitiatorID = 255
+		AND targ.UTCCaptureTime >= @lv__MinPurge_UTCCaptureTime
+		AND targ.UTCCaptureTime <= @lv__MaxPurge_UTCCaptureTime
 		OPTION(RECOMPILE);
 
 					SET @lv__RowCount = ROWCOUNT_BIG();
@@ -605,7 +611,8 @@ BEGIN
 
 		DELETE targ 
 		FROM AutoWho.TasksAndWaits targ 
-		WHERE targ.SPIDCaptureTime < @lv__HardDeleteCaptureTime;
+		WHERE targ.UTCCaptureTime < @lv__HardDeleteCaptureTime
+		AND targ.CollectionInitiatorID = 255;
 
 					SET @lv__RowCount = ROWCOUNT_BIG();
 					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows hard-deleted from AutoWho.TasksAndWaits.';
@@ -616,12 +623,13 @@ BEGIN
 		FROM AutoWho.SessionsAndRequests targ 
 			INNER JOIN #RecordsToPurge r
 				ON targ.CollectionInitiatorID = r.CollectionInitiatorID
-				AND targ.SPIDCaptureTime = r.SPIDCaptureTime
+				AND targ.UTCCaptureTime = r.UTCCaptureTime
 				AND targ.session_id = r.session_id
 				AND targ.request_id = r.request_id
 				AND targ.TimeIdentifier = r.TimeIdentifier
-		WHERE targ.SPIDCaptureTime >= @lv__MinPurge_SPIDCaptureTime
-		AND targ.SPIDCaptureTime <= @lv__MaxPurge_SPIDCaptureTime;
+		WHERE targ.UTCCaptureTime >= @lv__MinPurge_UTCCaptureTime
+		AND targ.UTCCaptureTime <= @lv__MaxPurge_UTCCaptureTime
+		AND targ.CollectionInitiatorID = 255;
 
 					SET @lv__RowCount = ROWCOUNT_BIG();
 					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.SessionsAndRequests.';
@@ -629,7 +637,8 @@ BEGIN
 
 		DELETE targ 
 		FROM AutoWho.SessionsAndRequests targ
-		WHERE targ.SPIDCaptureTime < @lv__HardDeleteCaptureTime;
+		WHERE targ.UTCCaptureTime < @lv__HardDeleteCaptureTime
+		AND targ.CollectionInitiatorID = 255;
 
 					SET @lv__RowCount = ROWCOUNT_BIG();
 					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows hard-deleted from AutoWho.SessionsAndRequests.';
@@ -640,13 +649,15 @@ BEGIN
 		SET @lv__ErrorLoc = N'BG delete';
 		DELETE targ 
 		FROM AutoWho.BlockingGraphs targ
-		WHERE targ.SPIDCaptureTime <= @lv__MaxPurge_SPIDCaptureTime
+		WHERE targ.UTCCaptureTime <= @lv__MaxPurge_UTCCaptureTime
+		AND targ.CollectionInitiatorID = 255
 		AND NOT EXISTS (
 			SELECT *
 			FROM AutoWho.SessionsAndRequests sar
 			WHERE sar.CollectionInitiatorID = targ.CollectionInitiatorID
-			AND sar.SPIDCaptureTime = targ.SPIDCaptureTime
-			AND sar.SPIDCaptureTime <= @lv__MaxPurge_SPIDCaptureTime		--avoid conflicts with AutoWho
+			AND sar.CollectionInitiatorID = 255
+			AND sar.UTCCaptureTime = targ.UTCCaptureTime
+			AND sar.UTCCaptureTime <= @lv__MaxPurge_UTCCaptureTime		--avoid conflicts with AutoWho
 			AND sar.session_id > 0		--don't let a special row keep us from deleting a blocking graph
 		)
 		OPTION(RECOMPILE);
@@ -725,7 +736,7 @@ BEGIN
 					WHERE sar.FKInputBufferStoreID IS NOT NULL) sar
 				RIGHT OUTER hash JOIN CoreXR.InputBufferStore targ 
 					ON targ.PKInputBufferStoreID = sar.FKInputBufferStoreID
-			WHERE targ.LastTouchedBy_SPIDCaptureTime < DATEADD(HOUR, 0-@max__RetentionHours, GETDATE())
+			WHERE targ.LastTouchedBy_UTCCaptureTime < DATEADD(HOUR, 0-@max__RetentionHours, GETUTCDATE())
 			AND sar.FKInputBufferStoreID IS NULL 
 			OPTION(RECOMPILE, FORCE ORDER);
 
@@ -776,7 +787,7 @@ BEGIN
 					WHERE sar.FKQueryPlanBatchStoreID IS NOT NULL) sar
 				RIGHT OUTER hash JOIN CoreXR.QueryPlanBatchStore targ
 					ON targ.PKQueryPlanBatchStoreID = sar.FKQueryPlanBatchStoreID
-			WHERE targ.LastTouchedBy_SPIDCaptureTime < DATEADD(HOUR, 0-@max__RetentionHours, GETDATE())
+			WHERE targ.LastTouchedBy_UTCCaptureTime < DATEADD(HOUR, 0-@max__RetentionHours, GETUTCDATE())
 			AND sar.FKQueryPlanBatchStoreID IS NULL
 			OPTION(RECOMPILE, FORCE ORDER);
 
@@ -827,7 +838,7 @@ BEGIN
 					WHERE sar.FKQueryPlanStmtStoreID IS NOT NULL) sar
 				RIGHT OUTER hash JOIN CoreXR.QueryPlanStmtStore targ
 					ON targ.PKQueryPlanStmtStoreID = sar.FKQueryPlanStmtStoreID
-			WHERE targ.LastTouchedBy_SPIDCaptureTime < DATEADD(HOUR, 0-@max__RetentionHours, GETDATE())
+			WHERE targ.LastTouchedBy_UTCCaptureTime < DATEADD(HOUR, 0-@max__RetentionHours, GETUTCDATE())
 			AND sar.FKQueryPlanStmtStoreID IS NULL
 			OPTION(RECOMPILE, FORCE ORDER);
 
@@ -878,7 +889,7 @@ BEGIN
 					WHERE sar.FKSQLBatchStoreID IS NOT NULL) sar
 				RIGHT OUTER hash JOIN CoreXR.SQLBatchStore targ
 					ON targ.PKSQLBatchStoreID = sar.FKSQLBatchStoreID
-			WHERE targ.LastTouchedBy_SPIDCaptureTime < DATEADD(HOUR, 0-@max__RetentionHours, GETDATE())
+			WHERE targ.LastTouchedBy_UTCCaptureTime < DATEADD(HOUR, 0-@max__RetentionHours, GETUTCDATE())
 			AND sar.FKSQLBatchStoreID IS NULL
 			OPTION(RECOMPILE, FORCE ORDER);
 
@@ -927,7 +938,7 @@ BEGIN
 					WHERE sar.FKSQLStmtStoreID IS NOT NULL) sar
 				RIGHT OUTER hash JOIN CoreXR.SQLStmtStore targ
 					ON targ.PKSQLStmtStoreID = sar.FKSQLStmtStoreID
-			WHERE targ.LastTouchedBy_SPIDCaptureTime < DATEADD(HOUR, 0-@max__RetentionHours, GETDATE())
+			WHERE targ.LastTouchedBy_UTCCaptureTime < DATEADD(HOUR, 0-@max__RetentionHours, GETUTCDATE())
 			AND sar.FKSQLStmtStoreID IS NULL
 			OPTION(RECOMPILE, FORCE ORDER);
 
@@ -956,43 +967,45 @@ BEGIN
 
 		DELETE targ 
 		FROM AutoWho.StatementCaptureTimes targ
-		WHERE targ.SPIDCaptureTime <= @lv__HardDeleteCaptureTime;
+		WHERE targ.UTCCaptureTime <= @lv__HardDeleteCaptureTime;
 
 					SET @lv__RowCount = ROWCOUNT_BIG();
 					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.StatementCaptureTimes.';
 
-
+		/* Will reconsider purge for user collection later
 		DELETE targ 
 		FROM AutoWho.UserCollectionTimes targ
 		WHERE targ.SPIDCaptureTime <= @lv__HardDeleteCaptureTime;
 
 					SET @lv__RowCount = ROWCOUNT_BIG();
 					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.UserCollectionTimes.';
+		*/
 
 
 		--LightweightSessions, LightweightTasks, LightweightTrans, SARException, TAWException
 		-- since these are heaps, we use tablock to allow the pages to be deallocated
 		SET @lv__ErrorLoc = N'Lightweight deletes';
 		DELETE FROM AutoWho.LightweightSessions WITH (TABLOCK)
-		WHERE SPIDCaptureTime < @lv__HardDeleteCaptureTime;
+		WHERE UTCCaptureTime < @lv__HardDeleteCaptureTime;
 
 		DELETE FROM AutoWho.LightweightTasks WITH (TABLOCK)
-		WHERE SPIDCaptureTime < @lv__HardDeleteCaptureTime;
+		WHERE UTCCaptureTime < @lv__HardDeleteCaptureTime;
 
 		DELETE FROM AutoWho.LightweightTrans WITH (TABLOCK)
-		WHERE SPIDCaptureTime < @lv__HardDeleteCaptureTime;
+		WHERE UTCCaptureTime < @lv__HardDeleteCaptureTime;
 
 		DELETE FROM AutoWho.SARException WITH (TABLOCK)
-		WHERE SPIDCaptureTime < @lv__HardDeleteCaptureTime;
+		WHERE UTCCaptureTime < @lv__HardDeleteCaptureTime;
 
 		DELETE FROM AutoWho.TAWException WITH (TABLOCK)
-		WHERE SPIDCaptureTime < @lv__HardDeleteCaptureTime;
+		WHERE UTCCaptureTime < @lv__HardDeleteCaptureTime;
 
 		--Get rid of metadata
 		SET @lv__ErrorLoc = N'Metadata Deletes';
 		DELETE AutoWho.CaptureTimes
-		WHERE SPIDCaptureTime <= @lv__MaxSPIDCaptureTime
-		AND SPIDCaptureTime <= @lv__HardDeleteCaptureTime;
+		WHERE CollectionInitiatorID = 255
+		AND UTCCaptureTime <= @lv__MaxUTCCaptureTime
+		AND UTCCaptureTime <= @lv__HardDeleteCaptureTime;
 
 					SET @lv__RowCount = ROWCOUNT_BIG();
 					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from AutoWho.CaptureTimes.';
@@ -1000,11 +1013,12 @@ BEGIN
 
 		DELETE targ 
 		FROM AutoWho.CaptureSummary targ 
-		WHERE targ.SPIDCaptureTime <= @lv__MaxSPIDCaptureTime
+		WHERE targ.CollectionInitiatorID = 255
+		AND targ.UTCCaptureTime <= @lv__MaxUTCCaptureTime
 		AND NOT EXISTS (
 			SELECT *
 			FROM AutoWho.CaptureTimes ct
-			WHERE ct.SPIDCaptureTime = targ.SPIDCaptureTime
+			WHERE ct.UTCCaptureTime = targ.UTCCaptureTime
 		);
 
 					SET @lv__RowCount = ROWCOUNT_BIG();
@@ -1033,11 +1047,11 @@ BEGIN
 			ord.StartTime, 
 			ord.EndTime
 		FROM CoreXR.CaptureOrdinalCache ord
-		WHERE ord.Utility IN (N'AutoWho',N'SessionViewer',N'QueryProgress')		--AutoWho-related utilities only
+		WHERE ord.Utility IN (N'AutoWho',N'sp_XR_SessionViewer',N'sp_XR_QueryProgress')		--AutoWho-related utilities only
 		AND NOT EXISTS (
 			SELECT *
 			FROM AutoWho.CaptureTimes ct
-			WHERE ct.SPIDCaptureTime = ord.CaptureTime
+			WHERE ct.UTCCaptureTime = ord.CaptureTimeUTC
 		);
 
 		DELETE p
@@ -1072,13 +1086,13 @@ BEGIN
 
 		DELETE FROM CoreXR.[Traces]
 		WHERE Utility = N'AutoWho'
-		AND CreateTime <= @lv__HardDeleteCaptureTime;
+		AND CreateTimeUTC <= @lv__HardDeleteCaptureTime;
 
 					SET @lv__RowCount = ROWCOUNT_BIG();
 					EXEC AutoWho.LogRowCount @ProcID=@@PROCID, @RC=@lv__RowCount, @TraceID=NULL, @Location='Rows deleted from CoreXR.Traces.';
 
 
-		DELETE FROM AutoWho.[Log] WHERE LogDT <= @lv__HardDeleteCaptureTime;
+		DELETE FROM AutoWho.[Log] WHERE LogDTUTC <= @lv__HardDeleteCaptureTime;
 		RETURN 0;
 	END TRY
 	BEGIN CATCH

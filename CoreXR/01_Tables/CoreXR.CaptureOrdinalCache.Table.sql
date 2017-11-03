@@ -40,12 +40,17 @@ GO
 CREATE TABLE [CoreXR].[CaptureOrdinalCache](
 	[Utility] [nvarchar](30) NOT NULL,
 	[CollectionInitiatorID] [tinyint] NOT NULL,
-	[StartTime] [datetime] NOT NULL,
-	[EndTime] [datetime] NOT NULL,
+	[StartTime] [datetime] NOT NULL,		--We don't have UTC versions of these 2 time fields because we expect the user
+	[EndTime] [datetime] NOT NULL,			--to always enter time locally (how most people think). If they enter a time between
+											--1am and 2am on a DST "fall back" day, they'll get records for both UTC time windows.
+											--If they enter a time between 2am and 3am on a DST "leap forward" day, they won't
+											--get anything.
 	[Ordinal] [int] NOT NULL,
 	[OrdinalNegative] [int] NOT NULL,
 	[CaptureTime] [datetime] NOT NULL,
+	[CaptureTimeUTC] [datetime] NOT NULL,
 	[TimePopulated] [datetime] NOT NULL,
+	[TimePopulatedUTC] [datetime] NOT NULL,
  CONSTRAINT [PKCaptureOrdinalCache] PRIMARY KEY CLUSTERED 
 (
 	[Utility] ASC,
@@ -59,15 +64,19 @@ CREATE TABLE [CoreXR].[CaptureOrdinalCache](
 GO
 CREATE UNIQUE NONCLUSTERED INDEX [UNCL_OrdinalNegative] ON [CoreXR].[CaptureOrdinalCache]
 (
-	--TODO: doesn't this need both the Utility and initiator ID fields?
+	[Utility] ASC,
+	[CollectionInitiatorID] ASC,
 	[StartTime] ASC,
 	[EndTime] ASC,
 	[OrdinalNegative] ASC
 )
 INCLUDE ( 	[Ordinal],
 	[CaptureTime],
+	[CaptureTimeUTC],
 	[TimePopulated]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, 
 		IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 GO
-ALTER TABLE [CoreXR].[CaptureOrdinalCache] ADD  CONSTRAINT [DF_CoreXR_CaptureOrdinalCache_TimePopulated]  DEFAULT (getdate()) FOR [TimePopulated]
+ALTER TABLE [CoreXR].[CaptureOrdinalCache] ADD  CONSTRAINT [DF_CoreXR_CaptureOrdinalCache_TimePopulated]  DEFAULT (GETDATE()) FOR [TimePopulated]
+GO
+ALTER TABLE [CoreXR].[CaptureOrdinalCache] ADD  CONSTRAINT [DF_CoreXR_CaptureOrdinalCache_TimePopulatedUTC]  DEFAULT (GETUTCDATE()) FOR [TimePopulatedUTC]
 GO

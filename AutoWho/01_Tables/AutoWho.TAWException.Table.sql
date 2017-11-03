@@ -39,6 +39,7 @@ SET ANSI_PADDING ON
 GO
 CREATE TABLE [AutoWho].[TAWException](
 	[SPIDCaptureTime] [datetime] NOT NULL,
+	[UTCCaptureTime] [datetime] NOT NULL,
 	[task_address] [varbinary](8) NOT NULL,
 	[parent_task_address] [varbinary](8) NULL,
 	[session_id] [smallint] NOT NULL,

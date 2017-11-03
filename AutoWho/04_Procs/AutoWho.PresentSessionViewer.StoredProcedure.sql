@@ -60,8 +60,8 @@ To Execute
 ------------------------
 Shouldn't be called by programs or used regularly. Only call when debugging.
 
-EXEC [AutoWho].[PresentSessionViewer] @hct='2016-04-25 08:12', @dur=0, 
-	@db=N'', @xdb=N'', @spid=N'', @xspid=N'', @blockonly=N'N', 
+EXEC [AutoWho].[PresentSessionViewer] @htcUTC='2016-04-25 16:12', @hct='2016-04-25 08:12',
+	@dur=0, @db=N'', @xdb=N'', @spid=N'', @xspid=N'', @blockonly=N'N',
 	@attr=N'N', @resource=N'N', @batch=N'N', @plan=N'none',		-- 'statement', 'full'
 	@ibuf=N'N', @bchain=0, @tran=N'N', @waits=0		--0, 1, 2, or 3
 
@@ -69,6 +69,7 @@ EXEC [AutoWho].[PresentSessionViewer] @hct='2016-04-25 08:12', @dur=0,
 (
 	@init				TINYINT,				-- CollectionInitiatorID (which method the data was collected)
 	@currentmode		BIT,					--0 or 1
+	@hctUTC				DATETIME,				-- cannot be NULL
 	@hct				DATETIME,				-- cannot be NULL
 
 	--filters:
@@ -92,7 +93,7 @@ EXEC [AutoWho].[PresentSessionViewer] @hct='2016-04-25 08:12', @dur=0,
 
 	@savespace			NCHAR(1)=N'N',			-- adjusts the formatting of various columns to reduce horizontal length, thus making the display more compressed so that
 												-- more information fits in one screen.
-	@effectiveordinal	INT,					-- presents the @offset (parameter to sp_XR_SessionViewer) value to the user to let them know which offset they are at the SPIDCaptureTime range they chose.
+	@effectiveordinal	INT,					-- presents the @offset (parameter to sp_XR_SessionViewer) value to the user to let them know which offset they are at in the time range they chose.
 	@dir				NVARCHAR(512)			-- misc directives
 )
 AS
@@ -189,7 +190,7 @@ BEGIN
 	SET @enum__waitspecial__other =			CONVERT(TINYINT, 25);
 
 	/*
-		Our final result set's top row indicates whether the BGraph, LockDetails, and TranDetails data was collected at this @hct, so that
+		Our final result set's top row indicates whether the BGraph, LockDetails, and TranDetails data was collected at this @hctUTC, so that
 		the user knows whether inspecting that data is even an option. 
 	
 		For historical runs, we can just use the simple 1/0 flags that are stored in AutoWho.CaptureSummary by the 
@@ -203,27 +204,27 @@ BEGIN
 	IF @currentmode = 1
 	BEGIN
 		SELECT 
-			@lv__BChainAvailable = CASE WHEN b.SPIDCaptureTime IS NULL THEN 0 ELSE 1 END,
-			@lv__LockDetailsAvailable = CASE WHEN l.SPIDCaptureTime IS NULL THEN 0 ELSE 1 END,
-			@lv__TranDetailsAvailable = CASE WHEN tr.SPIDCaptureTime IS NULL THEN 0 ELSE 1 END
+			@lv__BChainAvailable = CASE WHEN b.UTCCaptureTime IS NULL THEN 0 ELSE 1 END,
+			@lv__LockDetailsAvailable = CASE WHEN l.UTCCaptureTime IS NULL THEN 0 ELSE 1 END,
+			@lv__TranDetailsAvailable = CASE WHEN tr.UTCCaptureTime IS NULL THEN 0 ELSE 1 END
 		FROM (SELECT 1 as col1) t
 			OUTER APPLY (
-				SELECT TOP 1 b.SPIDCaptureTime
+				SELECT TOP 1 b.UTCCaptureTime
 				FROM AutoWho.BlockingGraphs b
 				WHERE b.CollectionInitiatorID = @init
-				AND b.SPIDCaptureTime = @hct
+				AND b.UTCCaptureTime = @hctUTC
 			) b
 			OUTER APPLY (
-				SELECT TOP 1 l.SPIDCaptureTime
+				SELECT TOP 1 l.UTCCaptureTime
 				FROM AutoWho.LockDetails l
 				WHERE l.CollectionInitiatorID = @init
-				AND l.SPIDCaptureTime = @hct
+				AND l.UTCCaptureTime = @hctUTC
 			) l
 			OUTER APPLY (
-				SELECT TOP 1 t.SPIDCaptureTime
+				SELECT TOP 1 t.UTCCaptureTime
 				FROM AutoWho.TransactionDetails t
 				WHERE t.CollectionInitiatorID = @init
-				AND t.SPIDCaptureTime = @hct
+				AND t.UTCCaptureTime = @hctUTC
 			) tr
 	END
 	ELSE
@@ -241,7 +242,7 @@ BEGIN
 					LockDetails,
 					TranDetails
 				FROM AutoWho.CaptureSummary cs
-				WHERE cs.SPIDCaptureTime = @hct
+				WHERE cs.UTCCaptureTime = @hctUTC
 				AND cs.CollectionInitiatorID = @init
 			) xapp1;
 	END
@@ -547,7 +548,7 @@ BEGIN
 		tran__info					NVARCHAR(MAX)
 	);
 
-	--Our very top row holds some info about the collection that occurred at @hct time. We place that in the Cmd XML return column since
+	--Our very top row holds some info about the collection that occurred at @hctUTC time. We place that in the Cmd XML return column since
 	-- the contents can be quite large (e.g. if the "queries" directive is specified)
 	CREATE TABLE #CapTimeCmdText (
 		captimecmd_xml				XML
@@ -580,18 +581,18 @@ BEGIN
 						CASE WHEN @lv__TranDetailsAvailable = 1 THEN N' trans' ELSE N'' END +
 						CASE WHEN @lv__LockDetailsAvailable = 1 THEN N' waits3' ELSE N'' END + NCHAR(10) + NCHAR(13) +
 						N' -- ' + NCHAR(10) + NCHAR(13) + 
-						N'SELECT * FROM AutoWho.CaptureTimes ct WITH (NOLOCK) ORDER BY ct.SPIDCaptureTime DESC;
+						N'SELECT * FROM AutoWho.CaptureTimes ct WITH (NOLOCK) ORDER BY ct.UTCCaptureTime DESC;
 SELECT * FROM AutoWho.Log l WITH (NOLOCK) ORDER BY l.LogDT DESC;
-SELECT * FROM AutoWho.SessionsAndRequests sar WITH (NOLOCK) WHERE sar.SPIDCaptureTime = ''' + 
-	REPLACE(CONVERT(NVARCHAR(20), @hct, 102),'.','-')+' '+CONVERT(NVARCHAR(20), @hct, 108)+'.'+RIGHT(CONVERT(NVARCHAR(20),N'000')+CONVERT(NVARCHAR(20),DATEPART(MILLISECOND, @hct)),3)+N''';
-SELECT * FROM AutoWho.TasksAndWaits taw WITH (NOLOCK) WHERE taw.SPIDCaptureTime = ''' + 
-	REPLACE(CONVERT(NVARCHAR(20), @hct, 102),'.','-')+' '+CONVERT(NVARCHAR(20), @hct, 108)+'.'+RIGHT(CONVERT(NVARCHAR(20),N'000')+CONVERT(NVARCHAR(20),DATEPART(MILLISECOND, @hct)),3)+N''';
-SELECT * FROM AutoWho.TransactionDetails td WITH (NOLOCK) WHERE td.SPIDCaptureTime = ''' + 
-	REPLACE(CONVERT(NVARCHAR(20), @hct, 102),'.','-')+' '+CONVERT(NVARCHAR(20), @hct, 108)+'.'+RIGHT(CONVERT(NVARCHAR(20),N'000')+CONVERT(NVARCHAR(20),DATEPART(MILLISECOND, @hct)),3)+N''';
-SELECT * FROM AutoWho.LockDetails ld WITH (NOLOCK) WHERE ld.SPIDCaptureTime = ''' + 
-	REPLACE(CONVERT(NVARCHAR(20), @hct, 102),'.','-')+' '+CONVERT(NVARCHAR(20), @hct, 108)+'.'+RIGHT(CONVERT(NVARCHAR(20),N'000')+CONVERT(NVARCHAR(20),DATEPART(MILLISECOND, @hct)),3)+N''';
-SELECT * FROM AutoWho.BlockingGraphs bg WITH (NOLOCK) WHERE bg.SPIDCaptureTime = ''' + 
-	REPLACE(CONVERT(NVARCHAR(20), @hct, 102),'.','-')+' '+CONVERT(NVARCHAR(20), @hct, 108)+'.'+RIGHT(CONVERT(NVARCHAR(20),N'000')+CONVERT(NVARCHAR(20),DATEPART(MILLISECOND, @hct)),3)+N''';
+SELECT * FROM AutoWho.SessionsAndRequests sar WITH (NOLOCK) WHERE sar.UTCCaptureTime = ''' + 
+	REPLACE(CONVERT(NVARCHAR(20), @hctUTC, 102),'.','-')+' '+CONVERT(NVARCHAR(20), @hctUTC, 108)+'.'+RIGHT(CONVERT(NVARCHAR(20),N'000')+CONVERT(NVARCHAR(20),DATEPART(MILLISECOND, @hctUTC)),3)+N''';
+SELECT * FROM AutoWho.TasksAndWaits taw WITH (NOLOCK) WHERE taw.UTCCaptureTime = ''' + 
+	REPLACE(CONVERT(NVARCHAR(20), @hctUTC, 102),'.','-')+' '+CONVERT(NVARCHAR(20), @hctUTC, 108)+'.'+RIGHT(CONVERT(NVARCHAR(20),N'000')+CONVERT(NVARCHAR(20),DATEPART(MILLISECOND, @hctUTC)),3)+N''';
+SELECT * FROM AutoWho.TransactionDetails td WITH (NOLOCK) WHERE td.UTCCaptureTime = ''' + 
+	REPLACE(CONVERT(NVARCHAR(20), @hctUTC, 102),'.','-')+' '+CONVERT(NVARCHAR(20), @hctUTC, 108)+'.'+RIGHT(CONVERT(NVARCHAR(20),N'000')+CONVERT(NVARCHAR(20),DATEPART(MILLISECOND, @hctUTC)),3)+N''';
+SELECT * FROM AutoWho.LockDetails ld WITH (NOLOCK) WHERE ld.UTCCaptureTime = ''' + 
+	REPLACE(CONVERT(NVARCHAR(20), @hctUTC, 102),'.','-')+' '+CONVERT(NVARCHAR(20), @hctUTC, 108)+'.'+RIGHT(CONVERT(NVARCHAR(20),N'000')+CONVERT(NVARCHAR(20),DATEPART(MILLISECOND, @hctUTC)),3)+N''';
+SELECT * FROM AutoWho.BlockingGraphs bg WITH (NOLOCK) WHERE bg.UTCCaptureTime = ''' + 
+	REPLACE(CONVERT(NVARCHAR(20), @hctUTC, 102),'.','-')+' '+CONVERT(NVARCHAR(20), @hctUTC, 108)+'.'+RIGHT(CONVERT(NVARCHAR(20),N'000')+CONVERT(NVARCHAR(20),DATEPART(MILLISECOND, @hctUTC)),3)+N''';
 SELECT * FROM CoreXR.SQLStmtStore sss WITH (NOLOCK) WHERE sss.PKSQLStmtStoreID = ;
 SELECT * FROM CoreXR.QueryPlanStmtStore qpss WITH (NOLOCK) WHERE qpss.PKQueryPlanStmtStoreID = ;
 SELECT dco.* --,sar.* 
@@ -650,7 +651,7 @@ FROM AutoWho.DimWaitType dwt INNER JOIN AutoWho.TasksAndWaits taw WITH (NOLOCK) 
 	END
 
 	SET @lv__ResultDynSQL = @lv__ResultDynSQL + N'
-		WHERE sar.SPIDCaptureTime = @hct 
+		WHERE sar.UTCCaptureTime = @hctUTC
 		AND sar.CollectionInitiatorID = ' + CONVERT(NVARCHAR,@init) + '
 	';
 
@@ -697,7 +698,7 @@ FROM AutoWho.DimWaitType dwt INNER JOIN AutoWho.TasksAndWaits taw WITH (NOLOCK) 
 	END
 	;
 	--print @lv__ResultDynSQL;
-	EXEC sp_executesql @stmt=@lv__ResultDynSQL, @params=N'@hct DATETIME', @hct=@hct;
+	EXEC sp_executesql @stmt=@lv__ResultDynSQL, @params=N'@hctUTC DATETIME', @hctUTC=@hctUTC;
 
 	
 	INSERT INTO #SQLStmtStore (
@@ -1270,15 +1271,14 @@ FROM AutoWho.DimWaitType dwt INNER JOIN AutoWho.TasksAndWaits taw WITH (NOLOCK) 
 				FROM AutoWho.BlockingGraphs bg
 					LEFT OUTER JOIN CoreXR.SQLStmtStore stmt
 						ON bg.FKSQLStmtStoreID = stmt.PKSQLStmtStoreID
-				WHERE bg.SPIDCaptureTime = @hct
+				WHERE bg.UTCCaptureTime = @hctUTC
 				AND bg.CollectionInitiatorID = @init
 				AND bg.levelindc < = (@bchain - 1)
 				) ss
-			--TODO: uh, should I be sorting by sort_value here?
 			ORDER BY sort_value
 			OPTION(MAXDOP 1, KEEPFIXED PLAN, MAXRECURSION 100);
 
-			--select * from AutoWho.BlockingGraphs order by SPIDCaptureTime 
+			--select * from AutoWho.BlockingGraphs order by UTCCaptureTime 
 
 			SET @lv__BChainString = N'<?BChain --' + NCHAR(13) + NCHAR(10) + 
 			N'Spid   Rqst   Ecid   WaitTyp                 Wait_Dur_ms       Wait Resource                              If idle, Input Buffer; If running, Object Name and Current Statement' + NCHAR(13) + NCHAR(10) +
@@ -1316,7 +1316,7 @@ FROM AutoWho.DimWaitType dwt INNER JOIN AutoWho.TasksAndWaits taw WITH (NOLOCK) 
 		BEGIN TRY
 			--for debugging: 
 			--DECLARE @lv__LockString NVARCHAR(MAX),
-			--	@hct DATETIME;
+			--	@hctUTC DATETIME;
 
 			;WITH FormattedAndOrdered AS (
 				SELECT TOP 2147483647
@@ -1384,7 +1384,7 @@ FROM AutoWho.DimWaitType dwt INNER JOIN AutoWho.TasksAndWaits taw WITH (NOLOCK) 
 												ELSE N'?'
 											END
 					FROM AutoWho.LockDetails
-					WHERE SPIDCaptureTime = @hct	-- '2015-07-06 16:32:52.733'
+					WHERE UTCCaptureTime = @hctUTC	-- '2015-07-06 16:32:52.733'
 					AND CollectionInitiatorID = @init 
 				) ss
 			ORDER BY request_session_id, 
@@ -1429,7 +1429,7 @@ N' -- ?>';
 			/*
 			SELECT * from #LockDetailsConverted;
 			SELECT * FROM dbo.AutoWho_SessionsAndRequests sar 
-			WHERE sar.SPIDCaptureTime = @hct 
+			WHERE sar.UTCCaptureTime = @hctUTC
 			AND sar.session_id = -996;
 			*/
 		END TRY
@@ -1606,7 +1606,7 @@ N' -- ?>';
 								[dtdt_database_transaction_next_undo_lsn]
 								*/
 							FROM AutoWho.TransactionDetails t
-							WHERE t.SPIDCaptureTime = @hct
+							WHERE t.UTCCaptureTime = @hctUTC
 							AND t.CollectionInitiatorID = @init
 						) SS1
 					) SS2
@@ -2117,11 +2117,11 @@ N' -- ?>';
 			LEFT OUTER JOIN AutoWho.DimCommand dimcmd
 				ON sar.rqst__FKDimCommand = dimcmd.DimCommandID
 			LEFT OUTER JOIN AutoWho.TasksAndWaits taw
-				ON sar.SPIDCaptureTime = taw.SPIDCaptureTime
+				ON sar.UTCCaptureTime = taw.UTCCaptureTime
 				AND sar.session_id = taw.session_id
 				AND sar.request_id = taw.request_id
 				AND taw.task_priority = 1
-				AND taw.SPIDCaptureTime = @tvar
+				AND taw.UTCCaptureTime = @tvar
 			LEFT OUTER JOIN AutoWho.DimWaitType dwt
 				ON taw.FKDimWaitType = dwt.DimWaitTypeID
 			LEFT OUTER JOIN AutoWho.DimLoginName dln
@@ -2172,7 +2172,7 @@ N' -- ?>';
 				ELSE N'' END + 
 				
 				+ N'
-		WHERE sar.SPIDCaptureTime = @tvar
+		WHERE sar.UTCCaptureTime = @tvar
 		AND sar.CollectionInitiatorID = @init ' + 
 		CASE WHEN ISNULL(@dur,0) <= 0 THEN N''
 		ELSE N' AND ( sar.session_id < 0 OR sar.calc__duration_ms >= ' + CONVERT(nvarchar(20), @dur) + N' ) '
@@ -2240,7 +2240,7 @@ N' -- ?>';
 
 		EXEC sp_executesql @stmt=@lv__ResultDynSQL, 
 			@params=N'@lv__nullsmallint SMALLINT, @lv__nullint INT, @lv__nullstring NVARCHAR(8), @tvar DATETIME, @init TINYINT', 
-			@lv__nullsmallint=@lv__nullsmallint, @lv__nullint = @lv__nullint, @lv__nullstring = @lv__nullstring, @tvar=@hct, @init=@init;
+			@lv__nullsmallint=@lv__nullsmallint, @lv__nullint = @lv__nullint, @lv__nullstring = @lv__nullstring, @tvar=@hctUTC, @init=@init;
 
 		RETURN 0;
 	END
@@ -2307,11 +2307,11 @@ N' -- ?>';
 
 	SET @lv__Formatted = 
 	N', formatteddata AS (
-	' + CASE WHEN @hct IS NOT NULL 
+	' + CASE WHEN @hctUTC IS NOT NULL 
 		THEN @lv__DummyRow 
 		ELSE N'' END + N'
 	SELECT 
-		' + CASE WHEN @hct IS NOT NULL THEN N'' ELSE N'SPIDCaptureTime,' END + N'
+		' + CASE WHEN @hctUTC IS NOT NULL THEN N'' ELSE N'SPIDCaptureTime,' END + N'
 		[order_duration] = (CASE WHEN session_id < 0 THEN 0
 					WHEN calc__duration_seconds IS NULL THEN 99999
 					WHEN request_id = @lv__nullsmallint THEN 
@@ -2667,7 +2667,7 @@ N' -- ?>';
 	print SUBSTRING(@lv__DebugBase,4001,8000);
 	print SUBSTRING(@lv__DebugBase,8001,12000);
 
-	EXEC sp_executesql @stmt=@lv__DebugBase, @params=N'@st1 DATETIME, @st2 DATETIME', @st1=@hct, @st2=@hct;
+	EXEC sp_executesql @stmt=@lv__DebugBase, @params=N'@st1 DATETIME, @st2 DATETIME', @st1=@hctUTC, @st2=@hctUTC;
 
 	return 0;
 	*/
@@ -2687,7 +2687,7 @@ N' -- ?>';
 
 	EXEC sp_executesql @stmt=@lv__ResultDynSQL, 
 		@params=N'@lv__nullsmallint SMALLINT, @lv__nullint INT, @lv__nullstring NVARCHAR(8), @tvar DATETIME, @init TINYINT', 
-		@lv__nullsmallint=@lv__nullsmallint, @lv__nullint = @lv__nullint, @lv__nullstring = @lv__nullstring, @tvar=@hct, @init=@init;
+		@lv__nullsmallint=@lv__nullsmallint, @lv__nullint = @lv__nullint, @lv__nullstring = @lv__nullstring, @tvar=@hctUTC, @init=@init;
 
 	RETURN 0;
 END

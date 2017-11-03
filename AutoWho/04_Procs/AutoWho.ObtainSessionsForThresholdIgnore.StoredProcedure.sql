@@ -130,8 +130,6 @@ BEGIN
 			FROM @IBResults t
 			WHERE (
 				t.InputBuffer LIKE '%AeosDMVMonitoring%'
-				OR 
-				t.InputBuffer LIKE '%Collector%'	--could be ServerEye or AutoWho
 				)
 			AND NOT EXISTS (SELECT * FROM @SPIDsToFilter t2
 							WHERE t2.SessionID = @tmpSPID);

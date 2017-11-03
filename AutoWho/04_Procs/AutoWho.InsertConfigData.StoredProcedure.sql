@@ -79,9 +79,6 @@ BEGIN
 		OR EXISTS (SELECT * FROM AutoWho.DimSessionAttribute)
 		OR EXISTS (SELECT * FROM AutoWho.DimWaitType)
 		OR EXISTS (SELECT * FROM CoreXR.ProcessingTimes WHERE Label IN (
-										N'AutoWhoLastLatchResolve',
-										N'AutoWhoLastLockResolve',
-										N'AutoWhoLastNodeStatusResolve',
 										N'AutoWhoStoreLastTouched')
 					)
 	BEGIN
@@ -185,17 +182,8 @@ BEGIN
 
 	EXEC AutoWho.ResetUserCollectionOptions;
 
-	INSERT INTO CoreXR.ProcessingTimes (Label, LastProcessedTime)
-	SELECT N'AutoWhoStoreLastTouched', NULL;
-
-	INSERT INTO CoreXR.ProcessingTimes (Label, LastProcessedTime)
-	SELECT N'AutoWhoLastNodeStatusResolve', NULL;
-
-	INSERT INTO CoreXR.ProcessingTimes (Label, LastProcessedTime)
-	SELECT N'AutoWhoLastLatchResolve', NULL;
-
-	INSERT INTO CoreXR.ProcessingTimes (Label, LastProcessedTime)
-	SELECT N'AutoWhoLastLockResolve', NULL;
+	INSERT INTO CoreXR.ProcessingTimes (Label, LastProcessedTime, LastProcessedTimeUTC)
+	SELECT N'AutoWhoStoreLastTouched', NULL, NULL;
 
 	RETURN 0;
 END

@@ -39,6 +39,7 @@ SET ANSI_PADDING ON
 GO
 CREATE TABLE [AutoWho].[TasksAndWaits] (
 	[CollectionInitiatorID] [tinyint] NOT NULL,
+	[UTCCaptureTime] [datetime] NOT NULL,
 	[SPIDCaptureTime] [datetime] NOT NULL,
 	[task_address] [varbinary](8) NOT NULL,
 	[parent_task_address] [varbinary](8) NULL,
@@ -71,7 +72,7 @@ GO
 CREATE CLUSTERED INDEX [CL_CapTime_Sess_Rqst] ON [AutoWho].[TasksAndWaits]
 (
 	[CollectionInitiatorID] ASC,
-	[SPIDCaptureTime] ASC,
+	[UTCCaptureTime] ASC,
 	[session_id] ASC,
 	[request_id] ASC,
 	[task_priority] ASC

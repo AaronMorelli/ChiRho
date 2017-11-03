@@ -56,9 +56,10 @@ To Execute
 EXEC CoreXR.AbortTrace @Utility=N'AutoWho', @TraceID=NULL, @PreventAllDay=N'N'
 */
 (
-	@Utility NVARCHAR(20),
-	@TraceID INT=NULL, 
-	@PreventAllDay NCHAR(1) = N'N'
+	@Utility		NVARCHAR(20),
+	@TraceID		INT=NULL, 
+	@AbortCode		NCHAR(1),
+	@PreventAllDay	NCHAR(1) = N'N'
 )
 AS
 BEGIN
@@ -68,6 +69,12 @@ BEGIN
 	IF @Utility IS NULL
 	BEGIN
 		RAISERROR('Parameter @Utility cannot be NULL',16,1);
+		RETURN -1;
+	END
+
+	IF @AbortCode IS NULL
+	BEGIN
+		RAISERROR('Parameter @AbortCode cannot be NULL',16,1);
 		RETURN -1;
 	END
 
@@ -105,7 +112,12 @@ BEGIN
 		RETURN -1;
 	END
 
-	--If we get this far, we have a trace that has not been stopped.
+	--If we get this far, we have a trace that has not been stopped. Let's stop it
+	UPDATE CoreXR.Traces
+	SET StopTime = GETDATE(),
+		StopTimeUTC = GETUTCDATE(),
+		AbortCode = @AbortCode
+	WHERE TraceID = @RowExists
 	
 	IF @Utility = N'AutoWho'
 	BEGIN 
@@ -115,19 +127,22 @@ BEGIN
 			RETURN -1;
 		END
 
+		DELETE FROM AutoWho.SignalTable
+		WHERE SignalName = N'AbortTrace' ;
+
 		IF UPPER(@PreventAllDay) = N'N'
 		BEGIN
 			INSERT INTO AutoWho.SignalTable 
-			(SignalName, SignalValue, InsertTime)
-			VALUES (N'AbortTrace', N'OneTime', GETDATE());		-- N'OneTime' --> the Wrapper proc, when it sees this row for the same day,
+			(SignalName, SignalValue, InsertTime, InsertTimeUTC)
+			VALUES (N'AbortTrace', N'OneTime', GETDATE(), GETUTCDATE());	-- N'OneTime' --> the Wrapper proc, when it sees this row for the same day,
 																-- will abort the loop early and then delete this row so that
 																-- the next time it starts it will continue to run
 		END
 		ELSE
 		BEGIN
 			INSERT INTO AutoWho.SignalTable 
-				(SignalName, SignalValue, InsertTime)
-			VALUES (N'AbortTrace', N'AllDay', GETDATE());		-- N'AllDay' --> the Wrapper proc, when it sees this row for the same day,
+				(SignalName, SignalValue, InsertTime, InsertTimeUTC)
+			VALUES (N'AbortTrace', N'AllDay', GETDATE(), GETUTCDATE());		-- N'AllDay' --> the Wrapper proc, when it sees this row for the same day,
 																-- will abort the loop early, but wil NOT delete this row. Thus, 
 																-- that row will prevent this wrapper proc from running the rest of the day
 		END
@@ -141,6 +156,8 @@ BEGIN
 			RAISERROR('Parameter @PreventAllDay must be either "N" or "Y"', 16, 1);
 			RETURN -1;
 		END
+
+		--TODO: delete from the signal table
 
 		IF UPPER(@PreventAllDay) = N'N'
 		BEGIN

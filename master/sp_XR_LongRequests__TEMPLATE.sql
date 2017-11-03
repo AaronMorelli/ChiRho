@@ -69,6 +69,8 @@ BEGIN
 	SET ANSI_PADDING ON;
 
 	DECLARE @scratch__int				INT,
+			@lv__StartUTC				DATETIME,
+			@lv__EndUTC					DATETIME,
 			@helpexec					NVARCHAR(4000),
 			@err__msg					NVARCHAR(MAX),
 			@DynSQL						NVARCHAR(MAX),
@@ -122,7 +124,12 @@ exec sp_XR_LongRequests @start=''<start datetime>'', @end=''<end datetime>'', @m
 														RIGHT(CONVERT(NVARCHAR(20),N'000') + CONVERT(NVARCHAR(20),DATEPART(MILLISECOND, @end)),3)
 						);
 
-	IF @start > GETDATE() OR @end > GETDATE()
+	SET @lv__StartUTC = DATEADD(MINUTE, DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()), @start);
+	SET @lv__EndUTC = DATEADD(MINUTE, DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()), @end);
+
+	--We use UTC for this check b/c of the DST "fall-back" scenario. We don't want to prevent a user from calling this proc for a timerange 
+	--that already occurred (e.g. 1:30am-1:45am) at the second occurrence of 1:15am that day.
+	IF @lv__StartUTC > GETUTCDATE() OR @lv__EndUTC > GETUTCDATE()
 	BEGIN
 		RAISERROR(@helpexec,10,1);
 		RAISERROR('Neither of the parameters @start or @end can be in the future.',16,1);

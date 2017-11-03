@@ -39,6 +39,7 @@ CREATE TABLE [AutoWho].[SignalTable](
 	[SignalName] [nvarchar](100) NOT NULL,
 	[SignalValue] [nvarchar](100) NULL,
 	[InsertTime] [datetime] NOT NULL,
+	[InsertTimeUTC] [datetime] NOT NULL,
  CONSTRAINT [PK_AutoWho_SignalTable] PRIMARY KEY CLUSTERED 
 (
 	[SignalName] ASC

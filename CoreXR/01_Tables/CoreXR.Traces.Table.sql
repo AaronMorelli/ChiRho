@@ -40,14 +40,18 @@ CREATE TABLE [CoreXR].[Traces](
 	[Utility] [nvarchar](20) NOT NULL,
 	[Type] [nvarchar](20) NOT NULL CONSTRAINT [DF_CoreXRTraces_Type]  DEFAULT (N'N''Background'),
 	[CreateTime] [datetime] NOT NULL CONSTRAINT [DF_CoreXRTraces_CreateTime]  DEFAULT (getdate()),
+	[CreateTimeUTC] [datetime] NOT NULL CONSTRAINT [DF_CoreXRTraces_CreateTimeUTC]  DEFAULT (getutcdate()),
 	[IntendedStopTime] [datetime] NOT NULL,
+	[IntendedStopTimeUTC] [datetime] NOT NULL,
 	[StopTime] [datetime] NULL,
+	[StopTimeUTC] [datetime] NULL,
 	[AbortCode] [nchar](1) NULL,
 	[TerminationMessage] [nvarchar](MAX) NULL,
 	[Payload_int] [int] NULL,
 	[Payload_bigint] [bigint] NULL, 
 	[Payload_decimal] [decimal](28,9) NULL,
 	[Payload_datetime] [datetime] NULL,
+	[Payload_datetimeUTC] [datetime] NULL,
 	[Payload_nvarchar] [nvarchar](MAX) NULL
  CONSTRAINT [PKCoreXRTraces] PRIMARY KEY CLUSTERED 
 (

@@ -38,6 +38,7 @@ SET ANSI_PADDING ON
 GO
 CREATE TABLE [AutoWho].[SARException](
 	[SPIDCaptureTime] [datetime] NOT NULL,
+	[UTCCaptureTime] [datetime] NOT NULL,
 	[sess__session_id] [smallint] NOT NULL,
 	[rqst__request_id] [smallint] NOT NULL,
 	[TimeIdentifier] [datetime] NOT NULL,

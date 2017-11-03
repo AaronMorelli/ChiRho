@@ -41,7 +41,8 @@ GO
 SET ANSI_PADDING ON
 GO
 CREATE TABLE [AutoWho].[LightweightSessions](
-	[SPIDCaptureTime] [datetime] NULL,
+	[SPIDCaptureTime] [datetime] NOT NULL,
+	[UTCCaptureTime] [datetime] NOT NULL,		--unlike SAR, we need a UTC field because lightweight captures are not recorded in AutoWho.CaptureTime
 	[sess__session_id] [smallint] NOT NULL,
 	[sess__login_time] [datetime] NOT NULL,
 	[sess__host_name] [nvarchar](128) NULL,

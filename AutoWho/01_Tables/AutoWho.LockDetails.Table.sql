@@ -36,6 +36,7 @@ SET QUOTED_IDENTIFIER ON
 GO
 CREATE TABLE [AutoWho].[LockDetails](
 	[CollectionInitiatorID] [tinyint] NOT NULL,
+	[UTCCaptureTime] [datetime] NOT NULL,
 	[SPIDCaptureTime] [datetime] NOT NULL,
 	[request_session_id] [smallint] NOT NULL,
 	[request_request_id] [smallint] NULL,
@@ -58,10 +59,10 @@ CREATE TABLE [AutoWho].[LockDetails](
 GO
 --No, this table does not currently have a primary key. I'm not sure one is possible
 -- given the nature of the DMV it stores.
-CREATE CLUSTERED INDEX [CL_SPIDCaptureTime] ON [AutoWho].[LockDetails]
+CREATE CLUSTERED INDEX [CL_UTCCaptureTime] ON [AutoWho].[LockDetails]
 (
 	[CollectionInitiatorID] ASC,
-	[SPIDCaptureTime] ASC,
+	[UTCCaptureTime] ASC,
 	[request_session_id] ASC,
 	[request_request_id] ASC,
 	[TimeIdentifier] ASC

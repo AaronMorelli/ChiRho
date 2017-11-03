@@ -88,6 +88,7 @@ BEGIN
 	--If we get this far, there is a not-stopped trace.
 	UPDATE CoreXR.[Traces]
 	SET StopTime = GETDATE(),
+		StopTimeUTC = GETUTCDATE(),
 		AbortCode = ISNULL(@AbortCode,N'N')
 	WHERE TraceID = @TraceID;
 

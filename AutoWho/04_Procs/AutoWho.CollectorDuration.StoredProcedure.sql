@@ -128,20 +128,23 @@ BEGIN
 		SPIDCaptureTime, 
 		AutoWhoDuration_ms, 
 		Tag, 
-		TagDuration_ms
+		TagDuration_ms,
+		UTCCaptureTime
 	FROM (
 		SELECT 
 			ss2.SPIDCaptureTime, 
 			ss2.AutoWhoDuration_ms, 
 			[Tag] = SUBSTRING(TagWithDuration,1, CHARINDEX('':'', TagWithDuration)-1), 
 			[TagDuration_ms] = SUBSTRING(TagWithDuration, CHARINDEX('':'', TagWithDuration)+1, LEN(TagWithDuration)),
-			[TagWithDuration]
+			[TagWithDuration],
+			ss2.UTCCaptureTime
 		FROM (
 			SELECT ss.*, 
 				[TagWithDuration] = Split.a.value(N''.'', ''NVARCHAR(512)'')
 			FROM (
 				SELECT 
 					t.SPIDCaptureTime, 
+					t.UTCCaptureTime,
 					t.AutoWhoDuration_ms, 
 					[loclist] = CAST(N''<M>'' + REPLACE(DurationBreakdown,  N'','' , N''</M><M>'') + N''</M>'' AS XML)
 				FROM AutoWho.CaptureTimes t with(nolock)
@@ -152,7 +155,7 @@ BEGIN
 		) ss2
 		WHERE LTRIM(RTRIM(TagWithDuration)) <> ''''
 	) ss3
-	--ORDER BY 
+	--ORDER BY ss3.UTCCaptureTime
 	OPTION(RECOMPILE)
 	;';
 

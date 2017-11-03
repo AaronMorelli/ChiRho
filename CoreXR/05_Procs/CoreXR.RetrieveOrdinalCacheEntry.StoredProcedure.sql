@@ -34,31 +34,36 @@ CREATE PROCEDURE [CoreXR].[RetrieveOrdinalCacheEntry]
 					sqlcrossjoin.wordpress.com
 
 	PURPOSE: For a given utility (@ut), and a start/end range (@st/@et), and an ordinal in that range (@ord),
-		finds the historical Capture Time (@hct) that corresponds to that ordinal. The first time that a @st/@et
-		pair (e.g. "2016-04-24 09:00", "2016-04-24 09:30") is passed into this proc
+		finds the historical Capture Time (@hct) and the related UTC time that corresponds to that ordinal. The first time 
+		that a @st/@et pair (e.g. "2016-04-24 09:00", "2016-04-24 09:30") is passed into this proc, a new cache is built.
 
 
 		This proc has 3 ways of ending:
-			1. Finds the @hct successfully and returns 0
+			1. Finds the @hct/@hctUTC successfully and returns 0
 
-			2. Doesn't find the @hct, but this occurs in such a way as to not be worthy of an exception, but rather 
+			2. Doesn't find the @hct/@hctUTC, but this occurs in such a way as to not be worthy of an exception, but rather 
 				of just a warning message and a positive return code.
 
-				This gives the calling proc the choice on how to handle the inability to obtain an @hct.
+				This gives the calling proc the choice on how to handle the inability to obtain an @hct/@hctUTC.
 
 			3. Fails in some way worthy of an exception, and a RETURN -1;
 
 To Execute
 ------------------------
-EXEC CoreXR.RetrieveOrdinalCacheEntry
+DECLARE @hct DATETIME, @hctUTC DATETIME, @msg NVARCHAR(MAX);
+
+EXEC CoreXR.RetrieveOrdinalCacheEntry @ut=N'sp_XR_SessionViewer', @init=255, @st='2017-11-06 10:46', @et='2017-11-06 16:00', @ord=33, 
+	@hct = @hct OUTPUT, @hctUTC = @hctUTC OUTPUT, @msg = @msg OUTPUT;
 */
 (
-	@ut NVARCHAR(20),
-	@init TINYINT,
-	@st DATETIME,
-	@et DATETIME,
+	@ut NVARCHAR(20),	--valid values: (AutoWho): N'sp_XR_SessionViewer', N'sp_XR_QueryProgress'; (ServerEye): TBD
+	@init TINYINT,		--valid values: (AutoWho): 255 (background), 1 (sp_XR_SessionViewer), 2 (sp_XR_QueryProgress)
+	@st DATETIME,		--Note that these are in local time. If a time between 1am-2am is requested on the DST "fall back" 
+	@et DATETIME,		--day, when 2 different UTC time ranges will match the same local time range, both ranges are included 
+						--in any cache creation. (This is intentional, b/c we expect the user to think in local time).
 	@ord INT,
 	@hct DATETIME OUTPUT,
+	@hctUTC DATETIME OUTPUT,
 	@msg NVARCHAR(MAX) OUTPUT
 )
 AS
@@ -66,10 +71,10 @@ BEGIN
 	
 	/*
 	The ordinal cache works as follows (using AutoWho as an example):
-		even though there is only a single table (i.e. denormalized), 
-		the ordinal cache is really a series of caches, each of which has a StartTime and EndTime.
-		In fact, there can only be one cache for each StartTime/EndTime pair. (Pairs can overlap each other).
-		In a pair, both the StartTime & EndTime must be in the past when the cache is first requested.
+		Even though there is only a single table (i.e. denormalized), the ordinal cache is really a series of 
+		caches, each of which has a StartTime and EndTime. In fact, there can only be one cache for each 
+		StartTime/EndTime pair. (Pairs can overlap each other). In a pair, both the StartTime & EndTime must 
+		be in the past when the cache is first requested.
 
 		When a cache doesn't exist, the AutoWho.CaptureTimes table is first queried to determine whether 
 		there is any AutoWho capture data with "CaptureSummaryPopulated=0" for the time range specified by
@@ -79,6 +84,7 @@ BEGIN
 		for the time range of @st/@et. 
 
 		The actual ordinal cache is then created for @st/@et from the data in the CaptureSummary table. 
+		(See the above notes about Daylight Savings Time by the @st and @et parameters)
 
 		Now, what about invalidation? The user can't specify times in the future, but what if he/she specifies
 		a time far enough in the past that data has actually been purged? We handle this by purging the
@@ -117,7 +123,9 @@ BEGIN
 		IF @ord > 0 
 		BEGIN
 			SET @codeloc = 'HCT1';
-			SELECT @hct = c.CaptureTime
+			SELECT 
+				@hct = c.CaptureTime,
+				@hctUTC = c.CaptureTimeUTC
 			FROM CoreXR.CaptureOrdinalCache c
 			WHERE c.Utility = @ut
 			AND c.CollectionInitiatorID = @init
@@ -128,7 +136,9 @@ BEGIN
 		ELSE
 		BEGIN
 			SET @codeloc = 'HCT2';
-			SELECT @hct = c.CaptureTime
+			SELECT 
+				@hct = c.CaptureTime,
+				@hctUTC = c.CaptureTimeUTC
 			FROM CoreXR.CaptureOrdinalCache c
 			WHERE c.Utility = @ut 
 			AND c.CollectionInitiatorID = @init
@@ -198,8 +208,9 @@ BEGIN
 					IF EXISTS (SELECT * FROM AutoWho.CaptureTimes t 
 							WHERE t.CollectionInitiatorID = @init
 							AND t.SPIDCaptureTime BETWEEN @st and @et 
-							AND RunWasSuccessful = 1
-							AND CaptureSummaryPopulated = 0)
+							AND (CaptureSummaryPopulated = 0 OR CaptureSummaryDeltaPopulated = 0))
+							--Note that we don't qualify by only successful runs. The below proc
+							--will take care of correctly handling the 2 "populated" flags for either success or failure as appropriate
 					BEGIN
 						SET @codeloc = 'ExecPopCapSumm';
 						EXEC @scratchint = AutoWho.PopulateCaptureSummary @CollectionInitiatorID = @init, @StartTime = @st, @EndTime = @et; 
@@ -226,17 +237,28 @@ BEGIN
 					--Ok, the AutoWho.CaptureSummary table now has entries for all of the capture times that occurred
 					-- between @st and @et. Now, build our cache
 					SET @codeloc = 'CapOrdCache1';
-					INSERT INTO CoreXR.CaptureOrdinalCache
-					(Utility, CollectionInitiatorID, StartTime, EndTime, Ordinal, OrdinalNegative, CaptureTime)
+					INSERT INTO CoreXR.CaptureOrdinalCache (
+						Utility, 
+						CollectionInitiatorID, 
+						StartTime, 
+						EndTime, 
+						Ordinal, 
+						OrdinalNegative, 
+						CaptureTime,
+						CaptureTimeUTC
+					)
 					SELECT 
 						@ut, @init, @st, @et, 
-						Ordinal = ROW_NUMBER() OVER (ORDER BY t.SPIDCaptureTime ASC),
-						OrdinalNegative = 0 - ROW_NUMBER() OVER (ORDER BY t.SPIDCaptureTime DESC),
-						t.SPIDCaptureTime
+						Ordinal = ROW_NUMBER() OVER (ORDER BY ct.UTCCaptureTime ASC),
+						OrdinalNegative = 0 - ROW_NUMBER() OVER (ORDER BY ct.UTCCaptureTime DESC),
+						t.SPIDCaptureTime,
+						ct.UTCCaptureTime
 					FROM AutoWho.CaptureSummary t
+						INNER JOIN AutoWho.CaptureTimes ct
+							ON t.UTCCaptureTime = ct.UTCCaptureTime
 					WHERE t.CollectionInitiatorID = @init
-					AND t.SPIDCaptureTime BETWEEN @st AND @et 
-					;
+					AND t.SPIDCaptureTime BETWEEN @st AND @et
+					AND ct.RunWasSuccessful = 1;	--We only allow the user to navigate successful capture times
 
 					SET @scratchint = @@ROWCOUNT;
 
@@ -253,7 +275,9 @@ BEGIN
 					IF @ord > 0
 					BEGIN
 						SET @codeloc = 'HCT3';
-						SELECT @hct = c.CaptureTime
+						SELECT 
+							@hct = c.CaptureTime,
+							@hctUTC = c.CaptureTimeUTC
 						FROM CoreXR.CaptureOrdinalCache c
 						WHERE c.Utility = @ut 
 						AND c.CollectionInitiatorID = @init
@@ -264,7 +288,9 @@ BEGIN
 					ELSE
 					BEGIN
 						SET @codeloc = 'HCT4';
-						SELECT @hct = c.CaptureTime
+						SELECT 
+							@hct = c.CaptureTime,
+							@hctUTC = c.CaptureTimeUTC
 						FROM CoreXR.CaptureOrdinalCache c
 						WHERE c.Utility = @ut 
 						AND c.CollectionInitiatorID = @init
@@ -336,12 +362,9 @@ BEGIN
 			'; Severity: ' + CONVERT(varchar(20),ERROR_SEVERITY()) + '; msg: ' + ERROR_MESSAGE();
 
 		--log location depends on utility
-		IF @ut IN (N'AutoWho', N'SessionViewer', N'QueryProgress')
+		IF @ut IN (N'sp_XR_SessionViewer', N'sp_XR_QueryProgress')
 		BEGIN
-			INSERT INTO AutoWho.[Log] (
-				LogDT, TraceID, ErrorCode, LocationTag, LogMessage 
-			)
-			VALUES (SYSDATETIME(), NULL, ERROR_NUMBER(), N'RetrieveOrdinalCache', @msg);
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location='RetrieveOrdinalCache', @Message=@msg; 
 		END
 		--other utility log writes go here
 

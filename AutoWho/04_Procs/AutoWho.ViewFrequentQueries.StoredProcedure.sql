@@ -67,7 +67,7 @@ To Execute
 */
 (
 	@init		TINYINT,
-	@start		DATETIME, 
+	@start		DATETIME,	--start/end are local time
 	@end		DATETIME,
 	@minocc		INT,
 	@spids		NVARCHAR(128)=N'',
@@ -181,8 +181,6 @@ BEGIN
 		@lv__NumIB				INT,
 		@lv__NumStmtStore		INT;
 
-	DECLARE @startMinus1		DATETIME;
-
 BEGIN TRY
 	/********************************************************************************************************************************
 						 SSSS    EEEE   TTTTT   U    U    PPPP  
@@ -221,11 +219,13 @@ BEGIN TRY
 		FilterName	NVARCHAR(255)
 	); --TODO: need to implement this logic.
 
-	CREATE TABLE #TimeMinus1 (
+	CREATE TABLE #CaptureTimes (
 		SPIDCaptureTime		DATETIME NOT NULL,
-		PrevCaptureTime		DATETIME,
-		diffMS				INT
+		UTCCaptureTime		DATETIME NOT NULL,
+		PrevUTCCaptureTime	DATETIME,
+		diffMS				INT		--diff in milliseconds between cap time and PrevCaptureTime
 	);
+	CREATE UNIQUE CLUSTERED INDEX CL1 ON #CaptureTimes (UTCCaptureTime);
 
 	CREATE TABLE #IBHeaders (
 		PKInputBufferStoreID	BIGINT NOT NULL,
@@ -234,8 +234,10 @@ BEGIN TRY
 
 		UniqueOccurrences		INT NOT NULL,
 		NumCaptureRows			INT NOT NULL,
-		FirstSeen				DATETIME NOT NULL,
-		LastSeen				DATETIME NOT NULL,
+		FirstSeenUTC			DATETIME NOT NULL,	--we calculate these,
+		LastSeenUTC				DATETIME NOT NULL,
+		FirstSeen				DATETIME NULL,	--but we display these to the user
+		LastSeen				DATETIME NULL,
 		DisplayOrder			INT NULL
 	);
 
@@ -246,10 +248,11 @@ BEGIN TRY
 		PKInputBufferStoreID	BIGINT NULL,
 		sess__database_id		SMALLINT NULL,		--If @context=N'N', then we leave this NULL so that it is not a differentiator
 													--If @context=N'Y', then we pull it and group by it, so that it IS a differentiator
-
 		NumCaptureRows			INT NOT NULL,
-		FirstSeen				DATETIME NOT NULL,
-		LastSeen				DATETIME NOT NULL
+		FirstSeenUTC			DATETIME NOT NULL,	--we calculate these,
+		LastSeenUTC				DATETIME NOT NULL,
+		FirstSeen				DATETIME NULL,	--but we display these to the user
+		LastSeen				DATETIME NULL
 	);
 
 	--Cache the most important data that we need
@@ -286,8 +289,10 @@ BEGIN TRY
 
 		UniqueOccurrences		INT NOT NULL,
 		NumCaptureRows			INT NOT NULL,
-		FirstSeen				DATETIME NOT NULL,
-		LastSeen				DATETIME NOT NULL,
+		FirstSeenUTC			DATETIME NOT NULL,	--we calculate these,
+		LastSeenUTC				DATETIME NOT NULL,
+		FirstSeen				DATETIME NULL,	--but we display these to the user
+		LastSeen				DATETIME NULL,
 		DisplayOrder			INT NULL,
 
 		cpu_time				BIGINT NULL
@@ -303,8 +308,10 @@ BEGIN TRY
 
 		UniqueOccurrences		INT NOT NULL,
 		NumCaptureRows			INT NOT NULL,
-		FirstSeen				DATETIME NOT NULL,
-		LastSeen				DATETIME NOT NULL,
+		FirstSeenUTC			DATETIME NOT NULL,	--we calculate these,
+		LastSeenUTC				DATETIME NOT NULL,
+		FirstSeen				DATETIME NULL,	--but we display these to the user
+		LastSeen				DATETIME NULL,
 		DisplayOrder			INT NULL,			--this is across statements within a single query_hash/DBID group
 
 		cpu_time				BIGINT NULL
@@ -315,11 +322,9 @@ BEGIN TRY
 		session_id				SMALLINT NOT NULL,
 		request_id				SMALLINT NOT NULL,
 		TimeIdentifier			DATETIME NOT NULL,
-		StatementFirstCapture	DATETIME NOT NULL,
-
-
-		StatementLastCapture	DATETIME NOT NULL,
-		PreviousCaptureTime		DATETIME NULL,		--we store this just for the first cap of a new statement. It allows us to get the final cap of the prev
+		StatementFirstCaptureUTC DATETIME NOT NULL,
+		StatementLastCaptureUTC	DATETIME NOT NULL,
+		PreviousCaptureTimeUTC	DATETIME NULL,		--we store this just for the first cap of a new statement. It allows us to get the final cap of the prev
 													--stmt (if one exists) so we can do a delta of the stats
 
 		query_hash				BINARY(8) NOT NULL,
@@ -340,8 +345,10 @@ BEGIN TRY
 
 		UniqueOccurrences		INT NOT NULL,
 		NumCaptureRows			INT NOT NULL,
-		FirstSeen				DATETIME NOT NULL,
-		LastSeen				DATETIME NOT NULL,
+		FirstSeenUTC			DATETIME NOT NULL,
+		LastSeenUTC				DATETIME NOT NULL,
+		FirstSeen				DATETIME NULL,
+		LastSeen				DATETIME NULL,
 		DisplayOrder			INT NULL,
 
 		cpu_time				BIGINT NULL
@@ -356,6 +363,8 @@ BEGIN TRY
 
 		UniqueOccurrences		INT NOT NULL,
 		NumCaptureRows			INT NOT NULL,
+		FirstSeenUTC			DATETIME NOT NULL,
+		LastSeenUTC				DATETIME NOT NULL,
 		FirstSeen				DATETIME NOT NULL,
 		LastSeen				DATETIME NOT NULL,
 		DisplayOrder			INT NULL,			--this is across statements within a single PKSQLStmtStoreID/DBID group
@@ -368,12 +377,11 @@ BEGIN TRY
 		session_id				SMALLINT NOT NULL,
 		request_id				SMALLINT NOT NULL,
 		TimeIdentifier			DATETIME NOT NULL,
-		StatementFirstCapture	DATETIME NOT NULL,
+		StatementFirstCaptureUTC DATETIME NOT NULL,
 
-
-		StatementLastCapture	DATETIME NOT NULL,
-		PreviousCaptureTime		DATETIME NULL,		--we store this just for the first cap of a new statement. It allows us to get the final cap of the prev
-													--stmt (if one exists) so we can do a delta of the stats
+		StatementLastCaptureUTC	DATETIME NOT NULL,
+		PreviousCaptureTimeUTC	DATETIME NULL,	--we store this just for the first cap of a new statement. It allows us to get the final cap of the prev
+												--stmt (if one exists) so we can do a delta of the stats												
 
 		sess__database_id		SMALLINT NULL,		--If @context=N'N', then we leave this NULL so that it is not a differentiator
 													--If @context=N'Y', then we pull it and group by it, so that it IS a differentiator
@@ -425,64 +433,79 @@ BEGIN TRY
 	SET @lv__errorloc = N'Obtain #TimeMinus1';
 	IF @init = 255
 	BEGIN
-		INSERT INTO #TimeMinus1 (
+		INSERT INTO #CaptureTimes (
+			UTCCaptureTime,
 			SPIDCaptureTime,
-			PrevCaptureTime,
+			PrevUTCCaptureTime,
 			diffMS
 		)
-		SELECT ct.SPIDCaptureTime, xapp1.SPIDCaptureTime,
-			CASE WHEN xapp1.SPIDCaptureTime IS NULL THEN NULL 
-				ELSE DATEDIFF(millisecond, xapp1.SPIDCaptureTime, ct.SPIDCaptureTime)
+		SELECT 
+			ct.UTCCaptureTime,
+			ct.SPIDCaptureTime, 
+			[PrevUTCCaptureTime] = prevCap.UTCCaptureTime,
+			[diffMS] = CASE WHEN prevCap.UTCCaptureTime IS NULL THEN NULL 
+				ELSE DATEDIFF(MILLISECOND, prevCap.UTCCaptureTime, ct.UTCCaptureTime)
 				END
 		FROM AutoWho.CaptureTimes ct
 			OUTER APPLY (
-				SELECT TOP 1 ct2.SPIDCaptureTime
+				SELECT TOP 1
+					ct2.UTCCaptureTime
 				FROM AutoWho.CaptureTimes ct2
-				WHERE ct2.SPIDCaptureTime < ct.SPIDCaptureTime
-				--Don't pull the prev time if it is much earlier than @start
-				AND ct2.SPIDCaptureTime > DATEADD(MINUTE, -60, @start)
-				ORDER BY ct2.SPIDCaptureTime DESC
-			) xapp1
-		WHERE ct.SPIDCaptureTime BETWEEN @start AND @end
-		;
+				WHERE ct2.UTCCaptureTime < ct.UTCCaptureTime
+				AND ct2.RunWasSuccessful = 1
+				--Only pull the prev time if it was fairly close to the current row
+				AND ct2.UTCCaptureTime > DATEADD(MINUTE, -2, ct.UTCCaptureTime)
+				ORDER BY ct2.UTCCaptureTime DESC
+			) prevCap
+		WHERE ct.SPIDCaptureTime BETWEEN @start AND @end	--we search by local, but our logic heavily depends on UTC
+		AND ct.RunWasSuccessful = 1;
 	END
 	ELSE
 	BEGIN
-		INSERT INTO #TimeMinus1 (
+		INSERT INTO #CaptureTimes (
+			UTCCaptureTime,
 			SPIDCaptureTime,
-			PrevCaptureTime,
+			PrevUTCCaptureTime,
 			diffMS
 		)
-		SELECT ct.SPIDCaptureTime, xapp1.SPIDCaptureTime,
-			CASE WHEN xapp1.SPIDCaptureTime IS NULL THEN NULL 
-				ELSE DATEDIFF(millisecond, xapp1.SPIDCaptureTime, ct.SPIDCaptureTime)
+		SELECT 
+			ct.UTCCaptureTime,
+			ct.SPIDCaptureTime, 
+			[PrevUTCCaptureTime] = prevCap.UTCCaptureTime,
+			[diffMS] = CASE WHEN prevCap.UTCCaptureTime IS NULL THEN NULL 
+				ELSE DATEDIFF(MILLISECOND, prevCap.UTCCaptureTime, ct.UTCCaptureTime)
 				END
 		FROM AutoWho.UserCollectionTimes ct
 			OUTER APPLY (
-				SELECT TOP 1 ct2.SPIDCaptureTime
-				FROM AutoWho.CaptureTimes ct2
-				WHERE ct2.SPIDCaptureTime < ct.SPIDCaptureTime
-				AND ct2.SPIDCaptureTime > DATEADD(MINUTE, -60, @start)
-				ORDER BY ct2.SPIDCaptureTime DESC
-			) xapp1
-		WHERE ct.SPIDCaptureTime BETWEEN @start AND @end
-		;
+				SELECT TOP 1
+					ct2.UTCCaptureTime
+				FROM AutoWho.UserCollectionTimes ct2
+				WHERE ct2.UTCCaptureTime < ct.UTCCaptureTime
+				AND ct2.UTCCaptureTime > DATEADD(MINUTE, -2, ct.UTCCaptureTime)
+				ORDER BY ct2.UTCCaptureTime DESC
+			) prevCap
+		WHERE ct.SPIDCaptureTime BETWEEN @start AND @end;	--we search by local, but our logic heavily depends on UTC
 	END
+
+	DECLARE @EffectiveStartUTC	DATETIME,
+			@EffectiveEndUTC	DATETIME;
+			--@EffectiveStart		DATETIME,
+			--@EffectiveEnd		DATETIME;
 
 	SELECT 
-		@startMinus1 = ISNULL(ss.PrevCaptureTime, ss.SPIDCaptureTime)
-	FROM (
-		SELECT TOP 1 
-			tm.SPIDCaptureTime,
-			tm.PrevCaptureTime
-		FROM #TimeMinus1 tm
-		ORDER BY tm.SPIDCaptureTime
-	) ss;
+		@EffectiveStartUTC = MIN(ct.UTCCaptureTime),
+		@EffectiveEndUTC = MAX(ct.UTCCaptureTime)
+	FROM #CaptureTimes ct;
 
-	IF @startMinus1 IS NULL
-	BEGIN
-		SET @startMinus1 = @start;
-	END
+	/*
+	SELECT @EffectiveStart = ct.SPIDCaptureTime
+	FROM #CaptureTimes ct
+	WHERE ct.UTCCaptureTime = @EffectiveStartUTC;
+
+	SELECT @EffectiveEnd = ct.SPIDCaptureTime
+	FROM #CaptureTimes ct
+	WHERE ct.UTCCaptureTime = @EffectiveEndUTC;
+	*/
 	/*******************************************************************************************************************************
 											End of setup
 	********************************************************************************************************************************/
@@ -504,8 +527,8 @@ BEGIN TRY
 		sess__database_id,
 
 		NumCaptureRows,
-		FirstSeen,
-		LastSeen
+		FirstSeenUTC,
+		LastSeenUTC
 	)
 	SELECT 
 		session_id,
@@ -515,8 +538,8 @@ BEGIN TRY
 		sess__database_id,
 
 		[NumCaptureRows] = SUM(1),
-		[FirstSeen] = MIN(SPIDCaptureTime),
-		[LastSeen] = MAX(SPIDCaptureTime)
+		[FirstSeenUTC] = MIN(UTCCaptureTime),	--Note: we'll update the local times further down,
+		[LastSeenUTC] = MAX(UTCCaptureTime)		--using the translation in #CaptureTimes
 	FROM (
 		SELECT 
 			session_id,
@@ -525,13 +548,16 @@ BEGIN TRY
 			[PKInputBufferStoreID] = sar.FKInputBufferStoreID,
 			[sess__database_id] = CASE WHEN @context = N'N' THEN NULL ELSE sar.sess__database_id END,
 
-			SPIDCaptureTime
+			ct.UTCCaptureTime
 		FROM AutoWho.SessionsAndRequests sar
+			INNER JOIN #CaptureTimes ct		--So that we don't include unsuccessful runs
+				ON ct.UTCCaptureTime = sar.UTCCaptureTime
 		WHERE sar.CollectionInitiatorID = @init
-		AND sar.SPIDCaptureTime BETWEEN @start AND @end 
+		AND sar.UTCCaptureTime BETWEEN @EffectiveStartUTC AND @EffectiveEndUTC
 		AND sar.sess__is_user_process = 1
 		AND sar.calc__threshold_ignore = 0
-		AND sar.request_id = @lv__nullsmallint AND sar.FKInputBufferStoreID IS NOT NULL
+		AND sar.request_id = @lv__nullsmallint 
+		AND sar.FKInputBufferStoreID IS NOT NULL
 		--Idle spid with an input buffer. (Idle spids w/durations shorter than our IB capture threshold won't be captured)
 	) ss
 	GROUP BY session_id, 
@@ -546,8 +572,8 @@ BEGIN TRY
 
 		UniqueOccurrences,
 		NumCaptureRows,
-		FirstSeen,
-		LastSeen,
+		FirstSeenUTC,
+		LastSeenUTC,
 		DisplayOrder
 	)
 	SELECT 
@@ -555,8 +581,8 @@ BEGIN TRY
 		sess__database_id,
 		UniqueOccurrences,
 		NumCaptureRows,
-		FirstSeen,
-		LastSeen,
+		FirstSeenUTC,
+		LastSeenUTC,
 		DisplayOrder = ROW_NUMBER() OVER (ORDER BY UniqueOccurrences DESC)
 	FROM (
 		SELECT 
@@ -565,12 +591,31 @@ BEGIN TRY
 
 			UniqueOccurrences = SUM(1),
 			NumCaptureRows = SUM(NumCaptureRows),
-			FirstSeen = MIN(FirstSeen),
-			LastSeen = MAX(LastSeen)
+			FirstSeenUTC = MIN(FirstSeenUTC),
+			LastSeenUTC = MAX(LastSeenUTC)
 		FROM #IBInstances ib
 		GROUP BY ib.PKInputBufferStoreID,
 				ib.sess__database_id
 	) ss;
+
+	--Do the UTC->local translation
+	UPDATE targ 
+	SET FirstSeen = ct1.SPIDCaptureTime,
+		LastSeen = ct2.SPIDCaptureTime
+	FROM #IBHeaders targ 
+		INNER JOIN #CaptureTimes ct1
+			ON targ.FirstSeenUTC = ct1.UTCCaptureTime
+		INNER JOIN #CaptureTimes ct2
+			ON targ.LastSeenUTC = ct2.UTCCaptureTime;
+
+	UPDATE targ 
+	SET FirstSeen = ct1.SPIDCaptureTime,
+		LastSeen = ct2.SPIDCaptureTime
+	FROM #IBInstances targ 
+		INNER JOIN #CaptureTimes ct1
+			ON targ.FirstSeenUTC = ct1.UTCCaptureTime
+		INNER JOIN #CaptureTimes ct2
+			ON targ.LastSeenUTC = ct2.UTCCaptureTime;
 
 	SET @lv__errorloc = N'Populate #IBRawStats';
 	INSERT INTO #IBRawStats (
@@ -629,10 +674,10 @@ BEGIN TRY
 		INNER JOIN AutoWho.SessionsAndRequests sar
 			ON ibi.session_id = sar.session_id
 			AND ibi.TimeIdentifier = sar.TimeIdentifier
-			AND ibi.LastSeen = sar.SPIDCaptureTime		--we want the stats of the idle spid as of the last time it was seen
+			AND ibi.LastSeenUTC = sar.UTCCaptureTime		--we want the stats of the idle spid as of the last time it was seen
 		INNER JOIN (
 			SELECT 
-				td.SPIDCaptureTime,
+				td.UTCCaptureTime,
 				td.session_id,
 				LongestTranLength_ms = MAX(DATEDIFF(MILLISECOND, td.dtat_transaction_begin_time, td.SPIDCaptureTime)),
 				NumLogRecords = SUM(ISNULL(td.dtdt_database_transaction_log_record_count,0)),
@@ -641,13 +686,13 @@ BEGIN TRY
 				HasSnapshotTran = MAX(CONVERT(TINYINT,td.dtasdt_tran_exists))
 			FROM AutoWho.TransactionDetails td
 			WHERE td.CollectionInitiatorID = @init
-			AND td.SPIDCaptureTime BETWEEN @start AND @end
-			GROUP BY td.SPIDCaptureTime, td.session_id
+			AND td.UTCCaptureTime BETWEEN @EffectiveStartUTC AND @EffectiveEndUTC
+			GROUP BY td.UTCCaptureTime, td.session_id
 		) td
-			ON sar.SPIDCaptureTime = td.SPIDCaptureTime
+			ON sar.UTCCaptureTime = td.UTCCaptureTime
 			AND sar.session_id = td.session_id
 	WHERE sar.CollectionInitiatorID = @init
-	AND sar.SPIDCaptureTime BETWEEN @start AND @end 
+	AND sar.UTCCaptureTime BETWEEN @EffectiveStartUTC AND @EffectiveEndUTC
 	AND sar.sess__is_user_process = 1
 	AND sar.calc__threshold_ignore = 0;
 
@@ -737,10 +782,10 @@ BEGIN TRY
 		session_id,
 		request_id,
 		TimeIdentifier,
-		StatementFirstCapture,
+		StatementFirstCaptureUTC,
 
-		StatementLastCapture,
-		PreviousCaptureTime,
+		StatementLastCaptureUTC,
+		PreviousCaptureTimeUTC,
 		query_hash,
 		sess__database_id,
 		PKSQLStmtStoreID,
@@ -751,10 +796,10 @@ BEGIN TRY
 		session_id,
 		request_id,
 		TimeIdentifier,
-		StatementFirstCapture,
+		StatementFirstCaptureUTC,
 
-		StatementLastCapture,
-		PreviousCaptureTime,
+		StatementLastCaptureUTC,
+		PreviousCaptureTimeUTC,
 		query_hash,
 		sess__database_id,
 		PKSQLStmtStoreID,
@@ -766,10 +811,10 @@ BEGIN TRY
 			ss.session_id,
 			ss.request_id,
 			ss.TimeIdentifier,
-			ss.StatementFirstCapture,
+			ss.StatementFirstCaptureUTC,
 
-			[StatementLastCapture] = MAX(ss.StatementLastCapture),		--only 1 row should be non-null so we obtain that
-			[PreviousCaptureTime] = MAX(ss.PreviousCaptureTime),		--ditto
+			[StatementLastCaptureUTC] = MAX(ss.StatementLastCaptureUTC),	--only 1 row should be non-null so we obtain that
+			[PreviousCaptureTimeUTC] = MAX(ss.PreviousCaptureTimeUTC),		--ditto
 			[query_hash] = MAX(ss.query_hash),
 			[sess__database_id] = MAX(sess__database_id),		--this orders a real DBID over the -1 that we have if it is NULL in SAR. This should be safe b/c
 										--while Context DBID could change within a batch, it shouldn't change within a statement.
@@ -781,11 +826,11 @@ BEGIN TRY
 				sct.session_id,
 				sct.request_id,
 				sct.TimeIdentifier,
-				sct.StatementFirstCapture,
+				sct.StatementFirstCaptureUTC,
 				--We only capture 1 non-NULL value on these 2 fields so that we can apply MAX later to obtain it when we decrease granularity
-				[StatementLastCapture] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
-											THEN sct.SPIDCaptureTime ELSE NULL END,
-				[PreviousCaptureTime] = CASE WHEN sct.IsStmtFirstCapture = 1 THEN sct.PreviousCaptureTime ELSE NULL END,
+				[StatementLastCaptureUTC] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
+											THEN sct.UTCCaptureTime ELSE NULL END,
+				[PreviousCaptureTimeUTC] = CASE WHEN sct.IsStmtFirstCapture = 1 THEN sct.PreviousCaptureTimeUTC ELSE NULL END,
 
 				[query_hash] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 THEN sct.rqst__query_hash ELSE NULL END,
 				[sess__database_id] = CASE WHEN @context=N'Y' THEN ISNULL(sct.sess__database_id,-1) ELSE -1 END,
@@ -800,15 +845,16 @@ BEGIN TRY
 				LEFT OUTER JOIN CoreXR.SQLStmtStore sss
 					ON sct.PKSQLStmtStoreID = sss.PKSQLStmtStoreID
 					AND sss.objectid = @lv__nullint
-			WHERE sct.StatementFirstCapture BETWEEN @start AND @end		--notice that we don't use SPIDCaptureTime here, because we don't want to grab partial
-																		--sets of rows for any statements.
+			WHERE sct.StatementFirstCaptureUTC BETWEEN @EffectiveStartUTC AND @EffectiveEndUTC
+				--notice that we don't use UTCCaptureTime or SPIDCaptureTime here, because we don't want to grab partial
+				--sets of rows for any statements.
 		) ss
 		GROUP BY ss.session_id,
 			ss.request_id,
 			ss.TimeIdentifier,
-			ss.StatementFirstCapture
+			ss.StatementFirstCaptureUTC
 	) ss2
-	WHERE ss2.query_hash IS NOT NULL;	--This can happen if the query hash is null for every SPIDCaptureTime of the ad-hoc SQL. WAITFOR is an example of this.
+	WHERE ss2.query_hash IS NOT NULL;	--This can happen if the query hash is null for every UTCCaptureTime of the ad-hoc SQL. WAITFOR is an example of this.
 
 	SET @lv__errorloc = N'Populate #QHHeaders';
 	INSERT INTO #QHHeaders (
@@ -816,8 +862,8 @@ BEGIN TRY
 		sess__database_id,
 		UniqueOccurrences,		--the total # of unique executed statements for this query_hash/ContextDBID combination
 		NumCaptureRows,
-		FirstSeen,
-		LastSeen,
+		FirstSeenUTC,
+		LastSeenUTC,
 		DisplayOrder
 	)
 	SELECT 
@@ -825,8 +871,8 @@ BEGIN TRY
 		sess__database_id,
 		UniqueOccurrences,
 		NumCaptureRows,
-		FirstSeen,
-		LastSeen,
+		FirstSeenUTC,
+		LastSeenUTC,
 		DisplayOrder = ROW_NUMBER() OVER (ORDER BY UniqueOccurrences DESC)
 	FROM (
 		SELECT 
@@ -834,8 +880,8 @@ BEGIN TRY
 			qhi.sess__database_id,
 			UniqueOccurrences = SUM(1),
 			NumCaptureRows = SUM(NumCaptureRows),
-			FirstSeen = MIN(qhi.StatementFirstCapture),
-			LastSeen = MAX(qhi.StatementLastCapture)
+			FirstSeenUTC = MIN(qhi.StatementFirstCaptureUTC),
+			LastSeenUTC = MAX(qhi.StatementLastCaptureUTC)
 		FROM #QHInstances qhi
 		GROUP BY qhi.query_hash,
 			qhi.sess__database_id
@@ -851,8 +897,8 @@ BEGIN TRY
 
 		UniqueOccurrences,
 		NumCaptureRows,
-		FirstSeen,
-		LastSeen,
+		FirstSeenUTC,
+		LastSeenUTC,
 		DisplayOrder
 	)
 	SELECT 
@@ -862,8 +908,8 @@ BEGIN TRY
 		ss.PKQueryPlanStmtStoreID,
 		ss.NumUniqueStatements,
 		ss.NumCaptureRows,
-		ss.FirstSeen,
-		ss.LastSeen,
+		ss.FirstSeenUTC,
+		ss.LastSeenUTC,
 		[DisplayOrder] = ROW_NUMBER() OVER (PARTITION BY ss.query_hash, ss.sess__database_id
 											ORDER BY ss.NumUniqueStatements DESC
 											)
@@ -880,8 +926,8 @@ BEGIN TRY
 				
 			[NumUniqueStatements] = SUM(1),
 			[NumCaptureRows] = SUM(qhi.NumCaptureRows),
-			[FirstSeen] = MIN(qhi.StatementFirstCapture),
-			[LastSeen] = MAX(qhi.StatementLastCapture)
+			[FirstSeenUTC] = MIN(qhi.StatementFirstCaptureUTC),
+			[LastSeenUTC] = MAX(qhi.StatementLastCaptureUTC)
 		FROM #QHInstances qhi
 		GROUP BY qhi.query_hash,
 			qhi.sess__database_id,
@@ -993,12 +1039,12 @@ BEGIN TRY
 					ON qhi.session_id = sar.session_id
 					AND qhi.request_id = sar.request_id
 					AND qhi.TimeIdentifier = sar.TimeIdentifier
-					AND qhi.StatementLastCapture = sar.SPIDCaptureTime	--the last capture will have the highest stats for things like cpu_time and reads
+					AND qhi.StatementLastCaptureUTC = sar.UTCCaptureTime	--the last capture will have the highest stats for things like cpu_time and reads
 				LEFT OUTER JOIN AutoWho.SessionsAndRequests sarprev
 					ON qhi.session_id = sarprev.session_id
 					AND qhi.request_id = sarprev.request_id
 					AND qhi.TimeIdentifier = sarprev.TimeIdentifier
-					AND qhi.PreviousCaptureTime = sarprev.SPIDCaptureTime	--the last cap of the previous stmt (if one exists) will allow us to do a delta calculation
+					AND qhi.PreviousCaptureTimeUTC = sarprev.UTCCaptureTime	--the last cap of the previous stmt (if one exists) will allow us to do a delta calculation
 																			
 			GROUP BY qhi.query_hash, 
 				qhi.sess__database_id,
@@ -1028,6 +1074,25 @@ BEGIN TRY
 		) qhs
 			ON qhs.query_hash = qhh.query_hash
 			AND qhs.sess__database_id = qhh.sess__database_id;
+
+	--Do the UTC->local translation
+	UPDATE targ 
+	SET FirstSeen = ct1.SPIDCaptureTime,
+		LastSeen = ct2.SPIDCaptureTime
+	FROM #QHHeaders targ 
+		INNER JOIN #CaptureTimes ct1
+			ON targ.FirstSeenUTC = ct1.UTCCaptureTime
+		INNER JOIN #CaptureTimes ct2
+			ON targ.LastSeenUTC = ct2.UTCCaptureTime;
+
+	UPDATE targ 
+	SET FirstSeen = ct1.SPIDCaptureTime,
+		LastSeen = ct2.SPIDCaptureTime
+	FROM #QHSubHeaders targ 
+		INNER JOIN #CaptureTimes ct1
+			ON targ.FirstSeenUTC = ct1.UTCCaptureTime
+		INNER JOIN #CaptureTimes ct2
+			ON targ.LastSeenUTC = ct2.UTCCaptureTime;
 	/*******************************************************************************************************************************
 											End of Query Hash data gathering section
 	********************************************************************************************************************************/
@@ -1054,10 +1119,10 @@ BEGIN TRY
 		session_id,
 		request_id,
 		TimeIdentifier,
-		StatementFirstCapture,
+		StatementFirstCaptureUTC,
 
-		StatementLastCapture,
-		PreviousCaptureTime,
+		StatementLastCaptureUTC,
+		PreviousCaptureTimeUTC,
 		sess__database_id,
 		PKSQLStmtStoreID,
 		PKQueryPlanStmtStoreID,
@@ -1067,10 +1132,10 @@ BEGIN TRY
 		session_id,
 		request_id,
 		TimeIdentifier,
-		StatementFirstCapture,
+		StatementFirstCaptureUTC,
 
-		StatementLastCapture,
-		PreviousCaptureTime,
+		StatementLastCaptureUTC,
+		PreviousCaptureTimeUTC,
 		sess__database_id,
 		PKSQLStmtStoreID,
 		PKQueryPlanStmtStoreID,
@@ -1081,10 +1146,10 @@ BEGIN TRY
 			ss.session_id,
 			ss.request_id,
 			ss.TimeIdentifier,
-			ss.StatementFirstCapture,
+			ss.StatementFirstCaptureUTC,
 
-			[StatementLastCapture] = MAX(ss.StatementLastCapture),		--only 1 row should be non-null so we obtain that
-			[PreviousCaptureTime] = MAX(ss.PreviousCaptureTime),		--ditto
+			[StatementLastCaptureUTC] = MAX(ss.StatementLastCaptureUTC),--only 1 row should be non-null so we obtain that
+			[PreviousCaptureTimeUTC] = MAX(ss.PreviousCaptureTimeUTC),		--ditto
 
 			[sess__database_id] = MAX(sess__database_id),		--this orders a real DBID over the -1 that we have if it is NULL in SAR. This should be safe b/c
 										--while Context DBID could change within a batch, it shouldn't change within a statement.
@@ -1096,11 +1161,11 @@ BEGIN TRY
 				sct.session_id,
 				sct.request_id,
 				sct.TimeIdentifier,
-				sct.StatementFirstCapture,
+				sct.StatementFirstCaptureUTC,
 				--We only capture 1 non-NULL value on these 2 fields so that we can apply MAX later to obtain it when we decrease granularity
-				[StatementLastCapture] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
-											THEN sct.SPIDCaptureTime ELSE NULL END,
-				[PreviousCaptureTime] = CASE WHEN sct.IsStmtFirstCapture = 1 THEN sct.PreviousCaptureTime ELSE NULL END,
+				[StatementLastCaptureUTC] = CASE WHEN sct.IsStmtLastCapture = 1 OR sct.IsCurrentLastRowOfBatch = 1 
+											THEN sct.UTCCaptureTime ELSE NULL END,
+				[PreviousCaptureTimeUTC] = CASE WHEN sct.IsStmtFirstCapture = 1 THEN sct.PreviousCaptureTimeUTC ELSE NULL END,
 
 				[sess__database_id] = CASE WHEN @context=N'Y' THEN ISNULL(sct.sess__database_id,-1) ELSE -1 END,
 
@@ -1114,13 +1179,14 @@ BEGIN TRY
 				LEFT OUTER JOIN CoreXR.SQLStmtStore sss
 					ON sct.PKSQLStmtStoreID = sss.PKSQLStmtStoreID
 					AND sss.objectid <> @lv__nullint
-			WHERE sct.StatementFirstCapture BETWEEN @start AND @end		--notice that we don't use SPIDCaptureTime here, because we don't want to grab partial
-																		--sets of rows for any statements.
+			WHERE sct.StatementFirstCaptureUTC BETWEEN @EffectiveStartUTC AND @EffectiveEndUTC	
+			--notice that we don't use UTCCaptureTime or SPIDCaptureTime here, because we don't want to grab partial
+			--sets of rows for any statements.
 		) ss
 		GROUP BY ss.session_id,
 			ss.request_id,
 			ss.TimeIdentifier,
-			ss.StatementFirstCapture
+			ss.StatementFirstCaptureUTC
 	) ss2;
 
 	SET @lv__errorloc = N'Populate #ObjStmtSubHeaders';
@@ -1131,8 +1197,8 @@ BEGIN TRY
 
 		UniqueOccurrences,
 		NumCaptureRows,
-		FirstSeen,
-		LastSeen,
+		FirstSeenUTC,
+		LastSeenUTC,
 		DisplayOrder,
 
 		cpu_time
@@ -1144,8 +1210,8 @@ BEGIN TRY
 
 		ss.UniqueOccurrences,
 		ss.NumCaptureRows,
-		ss.FirstSeen,
-		ss.LastSeen,
+		ss.FirstSeenUTC,
+		ss.LastSeenUTC,
 		[DisplayOrder] = ROW_NUMBER() OVER (PARTITION BY ss.PKSQLStmtStoreID, ss.sess__database_id ORDER BY ss.UniqueOccurrences DESC),
 		ss.cpu_time
 	FROM (
@@ -1155,8 +1221,8 @@ BEGIN TRY
 			osi.PKQueryPlanStmtStoreID,
 			[UniqueOccurrences] = SUM(1),	--the # of unique statement executions for a given StmtID/ContextDBID/PlanID 
 			[NumCaptureRows] = SUM(osi.NumCaptureRows),
-			FirstSeen = MIN(osi.StatementFirstCapture),
-			LastSeen = MAX(osi.StatementLastCapture),
+			FirstSeenUTC = MIN(osi.StatementFirstCaptureUTC),
+			LastSeenUTC = MAX(osi.StatementLastCaptureUTC),
 			[cpu_time] = SUM(sar.rqst__cpu_time - ISNULL(sarprev.rqst__cpu_time,0))
 							/* Metrics still to do (I may not do all of them)
 
@@ -1242,12 +1308,12 @@ BEGIN TRY
 				ON osi.session_id = sar.session_id
 				AND osi.request_id = sar.request_id
 				AND osi.TimeIdentifier = sar.TimeIdentifier
-				AND osi.StatementLastCapture = sar.SPIDCaptureTime
+				AND osi.StatementLastCaptureUTC = sar.UTCCaptureTime
 			LEFT OUTER JOIN AutoWho.SessionsAndRequests sarprev
 				ON osi.session_id = sarprev.session_id
 				AND osi.request_id = sarprev.request_id
 				AND osi.TimeIdentifier = sarprev.TimeIdentifier
-				AND osi.PreviousCaptureTime = sarprev.SPIDCaptureTime
+				AND osi.PreviousCaptureTimeUTC = sarprev.UTCCaptureTime
 		GROUP BY osi.PKSQLStmtStoreID,
 			osi.sess__database_id,
 			osi.PKQueryPlanStmtStoreID
@@ -1259,8 +1325,8 @@ BEGIN TRY
 		sess__database_id,
 		UniqueOccurrences,
 		NumCaptureRows,
-		FirstSeen,
-		LastSeen,
+		FirstSeenUTC,
+		LastSeenUTC,
 		DisplayOrder,
 		cpu_time
 	)
@@ -1269,8 +1335,8 @@ BEGIN TRY
 		ss.sess__database_id,
 		ss.UniqueOccurrences,
 		ss.NumCaptureRows,
-		ss.FirstSeen,
-		ss.LastSeen,
+		ss.FirstSeenUTC,
+		ss.LastSeenUTC,
 		[DisplayOrder] = ROW_NUMBER() OVER (ORDER BY ss.UniqueOccurrences DESC),
 		ss.cpu_time
 	FROM (
@@ -1279,14 +1345,32 @@ BEGIN TRY
 			osh.sess__database_id,
 			[UniqueOccurrences] = SUM(1),				--the # of unique Query Plan IDs for a given StmtID/ContextDBID
 			[NumCaptureRows] = SUM(osh.NumCaptureRows),
-			[FirstSeen] = MIN(osh.FirstSeen),
-			[LastSeen] = MIN(osh.LastSeen),
+			[FirstSeenUTC] = MIN(osh.FirstSeenUTC),
+			[LastSeenUTC] = MIN(osh.LastSeenUTC),
 			[cpu_time] = SUM(osh.cpu_time)
 		FROM #ObjStmtSubHeaders osh
 		GROUP BY osh.PKSQLStmtStoreID,
 			osh.sess__database_id
 	) ss;
 
+	--Do the UTC->local translation
+	UPDATE targ 
+	SET FirstSeen = ct1.SPIDCaptureTime,
+		LastSeen = ct2.SPIDCaptureTime
+	FROM #ObjStmtHeaders targ 
+		INNER JOIN #CaptureTimes ct1
+			ON targ.FirstSeenUTC = ct1.UTCCaptureTime
+		INNER JOIN #CaptureTimes ct2
+			ON targ.LastSeenUTC = ct2.UTCCaptureTime;
+
+	UPDATE targ 
+	SET FirstSeen = ct1.SPIDCaptureTime,
+		LastSeen = ct2.SPIDCaptureTime
+	FROM #ObjStmtSubHeaders targ 
+		INNER JOIN #CaptureTimes ct1
+			ON targ.FirstSeenUTC = ct1.UTCCaptureTime
+		INNER JOIN #CaptureTimes ct2
+			ON targ.LastSeenUTC = ct2.UTCCaptureTime;
 	/*******************************************************************************************************************************
 											End of Obj Stmt section
 	********************************************************************************************************************************/

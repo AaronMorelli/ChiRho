@@ -37,6 +37,7 @@ SET QUOTED_IDENTIFIER ON
 GO
 CREATE TABLE [AutoWho].[SessionsAndRequests] (
 	[CollectionInitiatorID] [tinyint] NOT NULL,
+	[UTCCaptureTime] [datetime] NOT NULL,
 	[SPIDCaptureTime] [datetime] NOT NULL,
 	[session_id] [smallint] NOT NULL,
 	[request_id] [smallint] NOT NULL,
@@ -129,7 +130,7 @@ GO
 CREATE CLUSTERED INDEX [CL_CapTime_Sess_Rqst] ON [AutoWho].[SessionsAndRequests]
 (
 	[CollectionInitiatorID] ASC,
-	[SPIDCaptureTime] ASC,
+	[UTCCaptureTime] ASC,
 	[session_id] ASC,
 	[request_id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]

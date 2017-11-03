@@ -37,14 +37,16 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 CREATE TABLE [CoreXR].[DBIDNameMapping](
-	[DBID] [int] NOT NULL,
-	[DBName] [nvarchar](256) NOT NULL,
-	[EffectiveStartTime] [datetime] NOT NULL,
-	[EffectiveEndTime] [datetime] NULL,
+	[DBID]					[int] NOT NULL,
+	[DBName]				[nvarchar](256) NOT NULL,
+	[EffectiveStartTimeUTC] [datetime] NOT NULL,
+	[EffectiveEndTimeUTC]	[datetime] NULL,
+	[EffectiveStartTime]	[datetime] NOT NULL,
+	[EffectiveEndTime]		[datetime] NULL,
  CONSTRAINT [PKDBIDNameMapping] PRIMARY KEY CLUSTERED 
 (
 	[DBName] ASC,
-	[EffectiveStartTime] ASC
+	[EffectiveStartTimeUTC] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 
@@ -55,8 +57,10 @@ GO
 CREATE UNIQUE NONCLUSTERED INDEX [AKDBIDNameMapping] ON [CoreXR].[DBIDNameMapping]
 (
 	[DBID] ASC,
-	[EffectiveStartTime] ASC
+	[EffectiveStartTimeUTC] ASC
 )
 INCLUDE ( 	[DBName],
+	[EffectiveEndTimeUTC],
+	[EffectiveStartTime],
 	[EffectiveEndTime]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 GO

@@ -38,7 +38,9 @@ GO
 CREATE TABLE [CoreXR].[Version_History](
 	[Version] [nvarchar](30) NOT NULL,
 	[EffectiveDate] [datetime] NOT NULL,
+	[EffectiveDateUTC] [datetime] NOT NULL,
 	[HistoryInsertDate] [datetime] NOT NULL,
+	[HistoryInsertDateUTC] [datetime] NOT NULL,
 	[TriggerAction] [nvarchar](20) NOT NULL
 ) ON [PRIMARY]
 

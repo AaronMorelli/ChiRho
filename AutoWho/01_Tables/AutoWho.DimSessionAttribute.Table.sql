@@ -46,15 +46,14 @@ CREATE TABLE [AutoWho].[DimSessionAttribute](
 	[deadlock_priority] [smallint] NOT NULL,
 	[group_id] [int] NOT NULL,
 	[TimeAdded] [datetime] NOT NULL,
+	[TimeAddedUTC] [datetime] NOT NULL,
  CONSTRAINT [PK_AutoWho_DimSessionAttributes] PRIMARY KEY CLUSTERED 
 (
 	[DimSessionAttributeID] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
-
 GO
 SET ANSI_PADDING ON
-
 GO
 CREATE UNIQUE NONCLUSTERED INDEX [AK_AutoWho_DimSessionAttribute] ON [AutoWho].[DimSessionAttribute]
 (
@@ -68,7 +67,11 @@ CREATE UNIQUE NONCLUSTERED INDEX [AK_AutoWho_DimSessionAttribute] ON [AutoWho].[
 	[group_id] ASC
 )
 INCLUDE ( 	[DimSessionAttributeID],
-	[TimeAdded]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+	[TimeAdded],
+	[TimeAddedUTC]
+) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 GO
-ALTER TABLE [AutoWho].[DimSessionAttribute] ADD  CONSTRAINT [DF_AutoWho_DimSessionAttributes_TimeAdded]  DEFAULT (getdate()) FOR [TimeAdded]
+ALTER TABLE [AutoWho].[DimSessionAttribute] ADD  CONSTRAINT [DF_AutoWho_DimSessionAttributes_TimeAdded]  DEFAULT (GETDATE()) FOR [TimeAdded]
+GO
+ALTER TABLE [AutoWho].[DimSessionAttribute] ADD  CONSTRAINT [DF_AutoWho_DimSessionAttributes_TimeAddedUTC]  DEFAULT (GETUTCDATE()) FOR [TimeAddedUTC]
 GO
