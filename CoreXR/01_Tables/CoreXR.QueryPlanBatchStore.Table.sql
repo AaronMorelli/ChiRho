@@ -38,15 +38,15 @@ GO
 SET ANSI_PADDING ON
 GO
 CREATE TABLE [CoreXR].[QueryPlanBatchStore](
-	[PKQueryPlanBatchStoreID] [bigint] IDENTITY(1,1) NOT NULL,
-	[AWBatchPlanHash] [varbinary](64) NOT NULL,
-	[plan_handle] [varbinary](64) NOT NULL,
-	[dbid] [smallint] NOT NULL,
-	[objectid] [int] NOT NULL,
-	[fail_to_obtain] [bit] NOT NULL,
-	[query_plan] [nvarchar](max) NOT NULL,
-	[Insertedby_SPIDCaptureTime] [datetime] NOT NULL,
-	[LastTouchedBy_SPIDCaptureTime] [datetime] NOT NULL,
+	[PKQueryPlanBatchStoreID]	[bigint] IDENTITY(1,1) NOT NULL,
+	[AWBatchPlanHash]			[varbinary](64) NOT NULL,
+	[plan_handle]				[varbinary](64) NOT NULL,
+	[dbid]						[smallint] NOT NULL,
+	[objectid]					[int] NOT NULL,
+	[fail_to_obtain]			[bit] NOT NULL,
+	[query_plan]				[nvarchar](max) NOT NULL,
+	[InsertedBy_UTCCaptureTime]	[datetime] NOT NULL,	--In AutoWho, these 2 fields map to UTCCaptureTime in AutoWho.CaptureTimes,
+	[LastTouchedBy_UTCCaptureTime] [datetime] NOT NULL,
  CONSTRAINT [PKQueryPlanBatchStore] PRIMARY KEY CLUSTERED 
 (
 	[PKQueryPlanBatchStoreID] ASC
@@ -72,7 +72,7 @@ SET ANSI_PADDING ON
 GO
 CREATE NONCLUSTERED INDEX [NCL_LastTouched] ON [CoreXR].[QueryPlanBatchStore]
 (
-	[LastTouchedBy_SPIDCaptureTime] ASC
+	[LastTouchedBy_UTCCaptureTime] ASC
 )
 INCLUDE ( 	[AWBatchPlanHash],
 	[plan_handle],

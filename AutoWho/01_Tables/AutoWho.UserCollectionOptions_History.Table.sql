@@ -36,6 +36,8 @@ SET QUOTED_IDENTIFIER ON
 GO
 CREATE TABLE [AutoWho].[UserCollectionOptions_History](
 	[HistoryInsertDate] [datetime] NOT NULL,
+	[HistoryInsertDateUTC] [datetime] NOT NULL,
+	[LastModifiedUser] [nvarchar](128) NOT NULL,
 	[TriggerAction] [nvarchar](40) NOT NULL,
 	[OptionSet] [nvarchar](50) NOT NULL,
 	[IncludeIdleWithTran] [nchar](1) NOT NULL,
@@ -63,7 +65,6 @@ CREATE TABLE [AutoWho].[UserCollectionOptions_History](
 	[ResolvePageLatches] [nchar](1) NOT NULL,
 	[ResolveLockWaits] [nchar](1) NOT NULL,
 	[UseBackgroundThresholdIgnore] [nchar](1),
-	[LastModifiedUser] [nvarchar](128) NOT NULL,
  CONSTRAINT [PKUserCollectionOptions_History] PRIMARY KEY CLUSTERED 
 (
 	[HistoryInsertDate] ASC,

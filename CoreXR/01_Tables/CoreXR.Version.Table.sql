@@ -36,11 +36,14 @@ SET QUOTED_IDENTIFIER ON
 GO
 CREATE TABLE [CoreXR].[Version](
 	[Version] [nvarchar](30) NOT NULL,
-	[EffectiveDate] [datetime] NOT NULL
+	[EffectiveDate] [datetime] NOT NULL,
+	[EffectiveDateUTC] [datetime] NOT NULL
 ) ON [PRIMARY]
 
 GO
-ALTER TABLE [CoreXR].[Version] ADD  CONSTRAINT [DF_Version_InsertedDate]  DEFAULT (getdate()) FOR [EffectiveDate]
+ALTER TABLE [CoreXR].[Version] ADD  CONSTRAINT [DF_Version_EffectiveDate]  DEFAULT (GETDATE()) FOR [EffectiveDate]
+GO
+ALTER TABLE [CoreXR].[Version] ADD  CONSTRAINT [DF_Version_EffectiveDateUTC]  DEFAULT (GETUTCDATE()) FOR [EffectiveDateUTC]
 GO
 SET ANSI_NULLS ON
 GO

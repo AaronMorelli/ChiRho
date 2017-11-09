@@ -47,12 +47,14 @@ EXEC AutoWho.LightWeightCollector
 AS
 BEGIN
 	DECLARE @SPIDCaptureTime DATETIME,
+		@UTCCaptureTime DATETIME,
 		@lv__ErrorLoc NVARCHAR(40), 
 		@lv__ErrorMessage NVARCHAR(4000),
 		@lv__ErrorState INT,
 		@lv__ErrorSeverity INT;
 
 	SET @SPIDCaptureTime = GETDATE();
+	SET @UTCCaptureTime = GETUTCDATE();
 
 	BEGIN TRY
 
@@ -62,7 +64,7 @@ BEGIN
 		SET @lv__ErrorLoc = N'sess';
 		INSERT INTO AutoWho.LightweightSessions
 		(
-			SPIDCaptureTime, sess__session_id, sess__login_time, sess__host_name, sess__program_name, 
+			SPIDCaptureTime, UTCCaptureTime, sess__session_id, sess__login_time, sess__host_name, sess__program_name, 
 			sess__host_process_id, sess__client_version, sess__client_interface_name, sess__security_id, 
 			sess__login_name, sess__nt_domain, sess__nt_user_name, sess__status, sess__context_info, 
 			sess__cpu_time, sess__memory_usage, sess__total_scheduled_time, sess__total_elapsed_time, 
@@ -94,7 +96,8 @@ BEGIN
 			mgrant__plan_handle, mgrant__sql_handle, mgrant__group_id, mgrant__pool_id, mgrant__is_small, mgrant__ideal_memory_kb
 		)
 		SELECT 
-			SPIDCaptureTime = @SPIDCaptureTime
+			[SPIDCaptureTime] = @SPIDCaptureTime
+			,[UTCCaptureTime] = @UTCCaptureTime
 			,sess__session_id = s.session_id
 			,sess__login_time = s.login_time
 			,sess__host_name = s.host_name
@@ -266,7 +269,7 @@ BEGIN
 		SET @lv__ErrorLoc = N'tasks';
 		INSERT INTO AutoWho.LightweightTasks
 		(
-			SPIDCaptureTime, task__task_address, task__task_state, task__context_switches_count, 
+			SPIDCaptureTime, UTCCaptureTime, task__task_address, task__task_state, task__context_switches_count, 
 			task__pending_io_count, task__pending_io_byte_count, task__pending_io_byte_average, 
 			task__scheduler_id, task__session_id, task__exec_context_id, task__request_id, 
 			task__worker_address, task__host_address, task__parent_task_address, taskusage__is_remote_task, 
@@ -276,7 +279,8 @@ BEGIN
 			blocking_exec_context_id, resource_description
 		)
 		SELECT
-			SPIDCaptureTime = @SPIDCaptureTime
+			[SPIDCaptureTime] = @SPIDCaptureTime
+			,[UTCCaptureTime] = @UTCCaptureTime
 			,task__task_address = t.task_address	
 			,task__task_state = t.task_state	
 			,task__context_switches_count = t.context_switches_count
@@ -316,7 +320,7 @@ BEGIN
 		SET @lv__ErrorLoc = N'trans';
 		INSERT INTO AutoWho.LightweightTrans
 		(
-			SPIDCaptureTime, dtat__transaction_id, dtat__transaction_name, dtat__transaction_begin_time, dtat__transaction_type, 
+			SPIDCaptureTime, UTCCaptureTime, dtat__transaction_id, dtat__transaction_name, dtat__transaction_begin_time, dtat__transaction_type, 
 			dtat__transaction_uow, dtat__transaction_state, dtat__transaction_status, dtat__transaction_status2, dtat__dtc_state, 
 			dtat__dtc_status, dtat__dtc_isolation_level, dtat__filestream_transaction_id, dtst__session_id, dtst__transaction_descriptor, 
 			dtst__enlist_count, dtst__is_user_transaction, dtst__is_local, dtst__is_enlisted, dtst__is_bound, dtst__open_transaction_count, 
@@ -329,7 +333,8 @@ BEGIN
 			dtdt__database_transaction_next_undo_lsn
 		)
 		SELECT 
-			SPIDCaptureTime = @SPIDCaptureTime
+			[SPIDCaptureTime] = @SPIDCaptureTime
+			,[UTCCaptureTime] = @UTCCaptureTime
 			,dtat__transaction_id = dtat.transaction_id	
 			,dtat__transaction_name = dtat.name	
 			,dtat__transaction_begin_time = dtat.transaction_begin_time	

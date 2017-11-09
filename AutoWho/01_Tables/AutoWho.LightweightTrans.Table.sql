@@ -41,7 +41,8 @@ GO
 SET ANSI_PADDING OFF
 GO
 CREATE TABLE [AutoWho].[LightweightTrans](
-	[SPIDCaptureTime] [datetime] NULL,
+	[SPIDCaptureTime] [datetime] NOT NULL,
+	[UTCCaptureTime] [datetime] NOT NULL,		--unlike SAR, we need a UTC field because lightweight captures are not recorded in AutoWho.CaptureTime
 	[dtat__transaction_id] [bigint] NOT NULL,
 	[dtat__transaction_name] [nvarchar](32) NOT NULL,
 	[dtat__transaction_begin_time] [datetime] NOT NULL,

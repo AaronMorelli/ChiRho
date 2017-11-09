@@ -37,8 +37,9 @@ GO
 CREATE TABLE [AutoWho].[Options](
 	[RowID] [int] NOT NULL CONSTRAINT [DF_Options_RowID]  DEFAULT ((1)),
 	[AutoWhoEnabled] [nchar](1) NOT NULL CONSTRAINT [DF_Options_AutoWhoEnabled]  DEFAULT (N'Y'),
-	[BeginTime] [smallint] NOT NULL CONSTRAINT [DF_Options_BeginTime]  DEFAULT ((0)),
-	[EndTime] [smallint] NOT NULL CONSTRAINT [DF_Options_EndTime]  DEFAULT ((2359)),
+	[BeginTime] [time](0) NOT NULL CONSTRAINT [DF_Options_BeginTime]  DEFAULT (('00:00:59')),
+	[EndTime] [time](0) NOT NULL CONSTRAINT [DF_Options_EndTime]  DEFAULT (('23:59:30')),
+	[BeginEndIsUTC] [nchar](1) NOT NULL CONSTRAINT [DF_Options_BeginEndIsUTC]  DEFAULT (N'N'),
 	[IntervalLength] [smallint] NOT NULL CONSTRAINT [DF_Options_IntervalLength]  DEFAULT ((15)),
 	[IncludeIdleWithTran] [nchar](1) NOT NULL CONSTRAINT [DF_Options_IncludeIdleWithTran]  DEFAULT (N'Y'),
 	[IncludeIdleWithoutTran] [nchar](1) NOT NULL CONSTRAINT [DF_Options_IncludeIdleWithoutTran]  DEFAULT (N'N'),
@@ -94,9 +95,11 @@ ALTER TABLE [AutoWho].[Options]  WITH CHECK ADD  CONSTRAINT [CK_OptionsBatchDura
 GO
 ALTER TABLE [AutoWho].[Options] CHECK CONSTRAINT [CK_OptionsBatchDurationThreshold]
 GO
-ALTER TABLE [AutoWho].[Options]  WITH CHECK ADD  CONSTRAINT [CK_OptionsBeginTime] CHECK  (([BeginTime]>=(0) AND [BeginTime]<=(2400) AND [BeginTime]%(100)<=(59)))
+ALTER TABLE [AutoWho].[Options]  WITH CHECK ADD  CONSTRAINT [CK_OptionsBeginEndTime] CHECK  ([BeginTime]<>[EndTime])
 GO
-ALTER TABLE [AutoWho].[Options] CHECK CONSTRAINT [CK_OptionsBeginTime]
+ALTER TABLE [AutoWho].[Options] CHECK CONSTRAINT [CK_OptionsBeginEndTime]
+GO
+ALTER TABLE [AutoWho].[Options]  WITH CHECK ADD  CONSTRAINT [CK_OptionsBeginEndIsUTC] CHECK  (([BeginEndIsUTC]=N'Y' OR [BeginEndIsUTC]=N'N'))
 GO
 ALTER TABLE [AutoWho].[Options]  WITH CHECK ADD  CONSTRAINT [CK_OptionsBlockingChainDepth] CHECK  (([BlockingChainDepth]>=(0) AND [BlockingChainDepth]<=(10)))
 GO
@@ -125,10 +128,6 @@ GO
 ALTER TABLE [AutoWho].[Options]  WITH CHECK ADD  CONSTRAINT [CK_OptionsEnable8666] CHECK  (([Enable8666]=N'Y' OR [Enable8666]=N'N'))
 GO
 ALTER TABLE [AutoWho].[Options] CHECK CONSTRAINT [CK_OptionsEnable8666]
-GO
-ALTER TABLE [AutoWho].[Options]  WITH CHECK ADD  CONSTRAINT [CK_OptionsEndTime] CHECK  (([EndTime]>=(0) AND [EndTime]<=(2400) AND [EndTime]%(100)<=(59)))
-GO
-ALTER TABLE [AutoWho].[Options] CHECK CONSTRAINT [CK_OptionsEndTime]
 GO
 ALTER TABLE [AutoWho].[Options]  WITH CHECK ADD  CONSTRAINT [CK_OptionsForce1Row] CHECK  (([RowID]=(1)))
 GO
@@ -267,9 +266,11 @@ EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Enforces just 
 GO
 EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Master on/off switch for the AutoWho tracing portion of DMViewer. Takes "Y" or "N"' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'AutoWhoEnabled'
 GO
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'The time (in military, with minute granularity, from 0 to 2400 [0 and 2400 are synonymous]) at which to start running the AutoWho trace.' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'BeginTime'
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'The time at which to start running the AutoWho trace.' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'BeginTime'
 GO
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'The time (in military, with minute granularity, from 0 to 2400 [0 and 2400 are synonymous]) at which to stop running the AutoWho trace.' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'EndTime'
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'The time at which to stop running the AutoWho trace.' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'EndTime'
+GO
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Whether BeginTime and EndTime are specified in UTC or not.' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'BeginEndIsUTC'
 GO
 EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'The length, in seconds, of each interval. If AutoWho collects its data almost instantaneously, this is the time between AutoWho executions. However, if AutoWho runs several seconds, the idle duration is adjusted so that the next AutoWho execution falls roughly on a 15-second boundary point' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'IntervalLength'
 GO

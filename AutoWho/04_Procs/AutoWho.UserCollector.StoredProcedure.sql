@@ -74,11 +74,11 @@ BEGIN
 		 @lv__ScratchDateTime			DATETIME,
 		 @lv__CalcEndTime				DATETIME,
 		 @lv__RunTimeMinutes			BIGINT,
-		 @lv__LoopStartTime				DATETIME,
+		 @lv__LoopStartTimeUTC			DATETIME,
 		 @lv__AutoWhoCallCompleteTime	DATETIME,
-		 @lv__LoopEndTime				DATETIME,
-		 @lv__LoopNextStart				DATETIME,
-		 @lv__LoopNextStartSecondDifferential INT,
+		 @lv__LoopEndTimeUTC				DATETIME,
+		 @lv__LoopNextStartUTC				DATETIME,
+		 @lv__LoopNextStartUTCSecondDifferential INT,
 		 @lv__WaitForMinutes			INT,
 		 @lv__WaitForSeconds			INT,
 		 @lv__WaitForString				VARCHAR(20),
@@ -89,7 +89,8 @@ BEGIN
 		 @lv__DBInclusionsExist			BIT,
 		 @lv__TempDBCreateTime			DATETIME,
 		 @lv__NumSPIDsCaptured			INT,
-		 @lv__SPIDCaptureTime			DATETIME
+		 @lv__SPIDCaptureTime			DATETIME,
+		 @lv__UTCCaptureTime			DATETIME
 		 ;
 
 	--variables to hold option table contents
@@ -306,12 +307,13 @@ BEGIN
 				@DebugSpeed = N'N',
 				@SaveBadDims = @opt__SaveBadDims,
 				@NumSPIDs = @lv__NumSPIDsCaptured OUTPUT,
-				@SPIDCaptureTime = @lv__SPIDCaptureTime OUTPUT
+				@SPIDCaptureTime = @lv__SPIDCaptureTime OUTPUT,
+				@UTCCaptureTime = @lv__UTCCaptureTime OUTPUT
 			;
 
 			INSERT INTO AutoWho.UserCollectionTimes 
-			(CollectionInitiatorID, session_id, SPIDCaptureTime)
-			SELECT @init, @@SPID, @lv__SPIDCaptureTime;
+			(CollectionInitiatorID, session_id, SPIDCaptureTime, UTCCaptureTime)
+			SELECT @init, @@SPID, @lv__SPIDCaptureTime, @lv__UTCCaptureTime;
 		END TRY
 		BEGIN CATCH
 			SET @omsg = 'User Collection: AutoWho Collector procedure generated an exception: Error Number: ' + 
@@ -334,18 +336,18 @@ BEGIN
 
 	SET @lv__LoopCounter = 0;
 
-	DECLARE @lv__AutoWhoStartTime DATETIME, 
-			@lv__AutoWhoEndTime DATETIME;
+	DECLARE @lv__AutoWhoStartTimeUTC	DATETIME, 
+			@lv__AutoWhoEndTimeUTC		DATETIME;
 
-	SET @lv__AutoWhoStartTime = GETDATE();
-	SET @lv__AutoWhoEndTime = DATEADD(SECOND, @camstop, @lv__AutoWhoStartTime);
+	SET @lv__AutoWhoStartTimeUTC = GETUTCDATE();
+	SET @lv__AutoWhoEndTimeUTC = DATEADD(SECOND, @camstop, @lv__AutoWhoStartTimeUTC);
 	SET @opt__IntervalLength = @camrate;
 
 
-	WHILE (GETDATE() < @lv__AutoWhoEndTime)
+	WHILE (GETUTCDATE() < @lv__AutoWhoEndTimeUTC)
 	BEGIN
 		--reset certain vars every iteration
-		SET @lv__LoopStartTime = GETDATE();
+		SET @lv__LoopStartTimeUTC = GETUTCDATE();
 		SET @lv__LoopCounter = @lv__LoopCounter + 1;
 		SET @lv__NumSPIDsCaptured = -1;
 		SET @lv__SPIDCaptureTime = NULL;
@@ -378,12 +380,13 @@ BEGIN
 				@DebugSpeed = @opt__DebugSpeed,
 				@SaveBadDims = @opt__SaveBadDims,
 				@NumSPIDs = @lv__NumSPIDsCaptured OUTPUT,
-				@SPIDCaptureTime = @lv__SPIDCaptureTime OUTPUT
+				@SPIDCaptureTime = @lv__SPIDCaptureTime OUTPUT,
+				@UTCCaptureTime = @lv__UTCCaptureTime OUTPUT
 			;
 
 			INSERT INTO AutoWho.UserCollectionTimes 
-			(CollectionInitiatorID, session_id, SPIDCaptureTime)
-			SELECT @init, @@SPID, @lv__SPIDCaptureTime;
+			(CollectionInitiatorID, session_id, SPIDCaptureTime, UTCCaptureTime)
+			SELECT @init, @@SPID, @lv__SPIDCaptureTime, @lv__UTCCaptureTime;
 		END TRY
 		BEGIN CATCH
 			SET @omsg = 'User Collection: AutoWho Collector procedure generated an exception: Error Number: ' + 
@@ -396,36 +399,36 @@ BEGIN
 		END CATCH
 
 		--Calculate how long to WAITFOR DELAY
-		--@lv__LoopStartTime holds the time this iteration of the loop began. i.e. SET @lv__LoopStartTime = GETDATE()
-		SET @lv__LoopEndTime = GETDATE();
-		SET @lv__LoopNextStart = DATEADD(SECOND, @opt__IntervalLength, @lv__LoopStartTime); 
+		--@lv__LoopStartTimeUTC holds the time this iteration of the loop began. i.e. SET @lv__LoopStartTimeUTC = GETDATE()
+		SET @lv__LoopEndTimeUTC = GETUTCDATE();
+		SET @lv__LoopNextStartUTC = DATEADD(SECOND, @opt__IntervalLength, @lv__LoopStartTimeUTC); 
 
-		--If the Collector proc ran so long that the current time is actually >= @lv__LoopNextStart, we 
+		--If the Collector proc ran so long that the current time is actually >= @lv__LoopNextStartUTC, we 
 		-- increment the target time by the interval until the target is in the future.
-		WHILE @lv__LoopNextStart <= @lv__LoopEndTime
+		WHILE @lv__LoopNextStartUTC <= @lv__LoopEndTimeUTC
 		BEGIN
-			SET @lv__LoopNextStart = DATEADD(SECOND, @opt__IntervalLength, @lv__LoopNextStart);
+			SET @lv__LoopNextStartUTC = DATEADD(SECOND, @opt__IntervalLength, @lv__LoopNextStartUTC);
 		END
 
-		SET @lv__LoopNextStartSecondDifferential = DATEDIFF(SECOND, @lv__LoopEndTime, @lv__LoopNextStart);
+		SET @lv__LoopNextStartUTCSecondDifferential = DATEDIFF(SECOND, @lv__LoopEndTimeUTC, @lv__LoopNextStartUTC);
 
-		SET @lv__WaitForMinutes = @lv__LoopNextStartSecondDifferential / 60;
-		SET @lv__LoopNextStartSecondDifferential = @lv__LoopNextStartSecondDifferential % 60;
+		SET @lv__WaitForMinutes = @lv__LoopNextStartUTCSecondDifferential / 60;
+		SET @lv__LoopNextStartUTCSecondDifferential = @lv__LoopNextStartUTCSecondDifferential % 60;
 
-		SET @lv__WaitForSeconds = @lv__LoopNextStartSecondDifferential;
+		SET @lv__WaitForSeconds = @lv__LoopNextStartUTCSecondDifferential;
 		
 		SET @lv__WaitForString = '00:' + 
 								CASE WHEN @lv__WaitForMinutes BETWEEN 10 AND 59
-									THEN CONVERT(varchar(10), @lv__WaitForMinutes)
-									ELSE '0' + CONVERT(varchar(10), @lv__WaitForMinutes)
+									THEN CONVERT(VARCHAR(10), @lv__WaitForMinutes)
+									ELSE '0' + CONVERT(VARCHAR(10), @lv__WaitForMinutes)
 									END + ':' + 
 								CASE WHEN @lv__WaitForSeconds BETWEEN 10 AND 59 
-									THEN CONVERT(varchar(10), @lv__WaitForSeconds)
-									ELSE '0' + CONVERT(varchar(10), @lv__WaitForSeconds)
+									THEN CONVERT(VARCHAR(10), @lv__WaitForSeconds)
+									ELSE '0' + CONVERT(VARCHAR(10), @lv__WaitForSeconds)
 									END;
 		
 		WAITFOR DELAY @lv__WaitForString;
-	END		--WHILE (GETDATE() < @lv__EndTime)
+	END		--WHILE (GETUTCDATE() < @lv__AutoWhoEndTimeUTC)
 
 	EXEC sp_releaseapplock @Resource = @lv__AppLockResource, @LockOwner = 'Session';
 

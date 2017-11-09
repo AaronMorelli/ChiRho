@@ -37,11 +37,14 @@ SET QUOTED_IDENTIFIER ON
 GO
 CREATE TABLE [AutoWho].[Options_History](
 	[HistoryInsertDate] [datetime] NOT NULL,
+	[HistoryInsertDateUTC] [datetime] NOT NULL,
+	[LastModifiedUser] [nvarchar](128) NOT NULL,
 	[TriggerAction] [nvarchar](40) NOT NULL,
 	[RowID] [int] NOT NULL,
 	[AutoWhoEnabled] [nchar](1) NOT NULL,
-	[BeginTime] [smallint] NOT NULL,
-	[EndTime] [smallint] NOT NULL,
+	[BeginTime] [time](0) NOT NULL,
+	[EndTime] [time](0) NOT NULL,
+	[BeginEndIsUTC] [nchar](1) NOT NULL,
 	[IntervalLength] [smallint] NOT NULL,
 	[IncludeIdleWithTran] [nchar](1) NOT NULL,
 	[IncludeIdleWithoutTran] [nchar](1) NOT NULL,
@@ -82,7 +85,6 @@ CREATE TABLE [AutoWho].[Options_History](
 	[ResolvePageLatches] [nchar](1) NOT NULL,
 	[ResolveLockWaits] [nchar](1) NOT NULL,
 	[PurgeUnextractedData] [nchar](1) NOT NULL,
-	[LastModifiedUser] [nvarchar](128) NOT NULL,
  CONSTRAINT [PKAutoWhoOptions_History] PRIMARY KEY CLUSTERED 
 (
 	[HistoryInsertDate] ASC,

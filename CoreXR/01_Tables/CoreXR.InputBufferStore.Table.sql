@@ -29,7 +29,7 @@
 					sqlcrossjoin.wordpress.com
 
 	PURPOSE: A central store for all input buffers captured by any component
-	in the ChiRho system. (AutoWho is the only consumer at this point)
+	in the ChiRho system. (AutoWho is the only populator/consumer at this point)
 */
 SET ANSI_NULLS ON
 GO
@@ -38,11 +38,11 @@ GO
 SET ANSI_PADDING ON
 GO
 CREATE TABLE [CoreXR].[InputBufferStore](
-	[PKInputBufferStoreID] [bigint] IDENTITY(1,1) NOT NULL,
-	[AWBufferHash] [varbinary](64) NOT NULL,
-	[InputBuffer] [nvarchar](4000) NOT NULL,
-	[Insertedby_SPIDCaptureTime] [datetime] NOT NULL,
-	[LastTouchedBy_SPIDCaptureTime] [datetime] NOT NULL,
+	[PKInputBufferStoreID]		[bigint] IDENTITY(1,1) NOT NULL,
+	[AWBufferHash]				[varbinary](64) NOT NULL,
+	[InputBuffer]				[nvarchar](4000) NOT NULL,
+	[InsertedBy_UTCCaptureTime]	[datetime] NOT NULL,	--In AutoWho, these 2 fields map to UTCCaptureTime in AutoWho.CaptureTimes,
+	[LastTouchedBy_UTCCaptureTime] [datetime] NOT NULL,
  CONSTRAINT [PKInputBufferStore] PRIMARY KEY CLUSTERED 
 (
 	[PKInputBufferStoreID] ASC
@@ -67,7 +67,7 @@ SET ANSI_PADDING ON
 GO
 CREATE NONCLUSTERED INDEX [NCL_LastTouched] ON [CoreXR].[InputBufferStore]
 (
-	[LastTouchedBy_SPIDCaptureTime] ASC
+	[LastTouchedBy_UTCCaptureTime] ASC
 )
 INCLUDE ( 	[PKInputBufferStoreID],
 	[AWBufferHash],

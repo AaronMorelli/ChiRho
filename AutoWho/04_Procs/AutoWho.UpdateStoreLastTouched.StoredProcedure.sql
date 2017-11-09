@@ -34,7 +34,7 @@ CREATE PROCEDURE [AutoWho].[UpdateStoreLastTouched]
 					sqlcrossjoin.wordpress.com
 
 	PURPOSE: Each "store" table (e.g. CoreXR.SQLStmtStore, CoreXR.QueryPlanStmtStore) has a
-		LastTouchedBy_SPIDCaptureTime that holds a datetime of when that entry was last referenced.
+		LastTouchedBy_UTCCaptureTime field that holds a UTC datetime of when that entry was last referenced.
 		By updating reference times, we prevent the purge routine from deleting query plans or SQL statements
 		that are frequently referenced, and thus avoid the cost of re-inserting them again the next time 
 		they are seen. 
@@ -51,8 +51,11 @@ CREATE PROCEDURE [AutoWho].[UpdateStoreLastTouched]
 					Every time an IB or a QP is identified as being needed for a SPID (i.e. the SPID's duration
 					is >= the IB or QP thresholds), it is pulled and compared to the store. If missing, it is
 					inserted into the store but if already present, the store's "LastTouchedBy" field is updated
-					with the @SPIDCaptureTime of that collection run.
-					This logic is primarily due to the fact that we need to hash the IB and QP to compare to the store.
+					with the @UTCCaptureTime of that collection run.
+					This logic is primarily due to the fact that we need to hash the IB and QP to compare to the store,
+					so we need to access that table a bit more heavily anyways, so we might as well incur the hit of 
+					touching the LastTouchedBy field.
+					The bottom line is that this proc doesn't need to touch those tables.
 
 				- SQL Stmt and Batch stores
 					Because we don't use a hash value that we calculate for the key for these stores, we can compare
@@ -60,7 +63,7 @@ CREATE PROCEDURE [AutoWho].[UpdateStoreLastTouched]
 					from the cache and hash it to see if it is already in the store. Thus, instead we have a very lightweight
 					statement that joins the SQL stmt/batch stores and compares to the #SAR table and updates the FK columns
 					with the store entries (if already present). To keep things lightweight, we don't update the store entries
-					with that @SPIDCaptureTime. However, to make sure that the LastTouchedBy field is updated and things
+					with that @UTCCaptureTime. However, to make sure that the LastTouchedBy field is ultimately updated and things
 					aren't wastefully purged, this procedure is called every X minutes by the AutoWho Executor and 
 					updates LastTouchedBy appropriately. 
 
@@ -78,75 +81,123 @@ BEGIN
 	SET NOCOUNT ON;
 	SET XACT_ABORT ON;
 
-	DECLARE @lv__errormsg NVARCHAR(4000),
-			@lv__errorsev INT,
-			@lv__errorstate INT,
-			@lv__erroroccurred INT,
-			@lv__AutoWhoStoreLastTouched DATETIME2(7),
-			@lv__CurrentExecTime DATETIME2(7),
-			@lv__RC BIGINT,
-			@lv__DurationStart DATETIME,
-			@lv__DurationEnd DATETIME,
-			@lv__MinFKSQLStmtStoreID BIGINT,
-			@lv__MaxFKSQLStmtStoreID BIGINT,
-			@lv__MinFKSQLBatchStoreID BIGINT,
-			@lv__MaxFKSQLBatchStoreID BIGINT;
+	DECLARE @lv__errormsg					NVARCHAR(4000),
+			@lv__errorsev					INT,
+			@lv__errorstate					INT,
+			@lv__erroroccurred				INT,
+			@lv__AutoWhoStoreLastTouched	DATETIME2(7),
+			@lv__AutoWhoStoreLastTouchedUTC DATETIME2(7),
+			@lv__CurrentExecTime			DATETIME2(7),
+			@lv__CurrentExecTimeUTC			DATETIME2(7),
+			@lv__MinUTCCaptureTime			DATETIME,
+			@lv__MaxUTCCaptureTime			DATETIME,
+			@lv__RC							BIGINT,
+			@lv__DurationStartUTC			DATETIME,
+			@lv__DurationEndUTC				DATETIME,
+			@lv__MinFKSQLStmtStoreID		BIGINT,
+			@lv__MaxFKSQLStmtStoreID		BIGINT,
+			@lv__MinFKSQLBatchStoreID		BIGINT,
+			@lv__MaxFKSQLBatchStoreID		BIGINT;
 
-	SET @lv__CurrentExecTime = DATEADD(SECOND, -10, SYSDATETIME());	--a fudge factor to avoid race conditions
-	SET @lv__DurationStart = SYSDATETIME();
+	--SET @lv__CurrentExecTime = DATEADD(SECOND, -10, SYSDATETIME());	--a fudge factor to avoid race conditions
+	SET @lv__CurrentExecTimeUTC = DATEADD(SECOND, -10, SYSUTCDATETIME()); --a fudge factor to avoid race conditions
+	SET @lv__DurationStartUTC = SYSUTCDATETIME();
 	SET @lv__erroroccurred = 0;
 
-	SELECT @lv__AutoWhoStoreLastTouched = p.LastProcessedTime
+	SELECT 
+		@lv__AutoWhoStoreLastTouched = p.LastProcessedTime,
+		@lv__AutoWhoStoreLastTouchedUTC = p.LastProcessedTimeUTC
 	FROM CoreXR.ProcessingTimes p WITH (FORCESEEK)
-	WHERE p.Label = N'AutoWhoStoreLastTouched'
-	;
+	WHERE p.Label = N'AutoWhoStoreLastTouched';
 
 	IF @lv__AutoWhoStoreLastTouched IS NULL
 	BEGIN
-		SELECT @lv__AutoWhoStoreLastTouched = SPIDCaptureTime
+		--Set to the very first capture time in SAR that we have
+		SELECT 
+			@lv__AutoWhoStoreLastTouched = ss.SPIDCaptureTime,
+			@lv__AutoWhoStoreLastTouchedUTC = ss.UTCCaptureTime
 		FROM (
-			SELECT TOP 1 SPIDCaptureTime
+			SELECT TOP 1 
+				UTCCaptureTime,
+				SPIDCaptureTime
 			FROM AutoWho.SessionsAndRequests sar
-			ORDER BY sar.SPIDCaptureTime ASC
+			ORDER BY sar.UTCCaptureTime ASC
 		) ss;
 
-		--No records, just return
+		--No records, just return, and leave the CoreXR.ProcessingTimes tag with NULL time values
 		IF @lv__AutoWhoStoreLastTouched IS NULL
 		BEGIN
 			RETURN 0;
 		END
 	END
 
+	--If we get here, we have a last-touched value that is the most recent AutoWho.CaptureTimes.UTCCaptureTime value
+	--that has been processed by this procedure previously. We want to grab SAR rows for all capture times after that watermark 
+	-- up to about 10 seconds ago.
+	IF OBJECT_ID('tempdb..#StoreCaptureTimeList') IS NOT NULL DROP TABLE #StoreCaptureTimeList;
+	CREATE TABLE #StoreCaptureTimeList (
+		SPIDCaptureTime	DATETIME NOT NULL,
+		UTCCaptureTime  DATETIME NOT NULL
+	);
+	CREATE UNIQUE CLUSTERED INDEX CL1 ON #StoreCaptureTimeList(UTCCaptureTime);
+
+	INSERT INTO #StoreCaptureTimeList (
+		SPIDCaptureTime,
+		UTCCaptureTime
+	)
+	SELECT 
+		ct.SPIDCaptureTime,
+		ct.UTCCaptureTime
+	FROM AutoWho.CaptureTimes ct
+	WHERE ct.UTCCaptureTime > @lv__AutoWhoStoreLastTouchedUTC
+	AND ct.UTCCaptureTime <= @lv__CurrentExecTimeUTC;
+
+	SET @lv__RC = ROWCOUNT_BIG();
+
+	IF @lv__RC = 0
+	BEGIN
+		--This scenario occurs when the Collector isn't running but the ChiRho master job IS running.
+		--We leave the high watermark where it is and exit.
+		RETURN 0;
+	END
+
+	--Ok, we have new capture times to process. Get the time range that we'll filter SAR by.
+	SELECT 
+		   @lv__MinUTCCaptureTime = MIN(t.UTCCaptureTime),
+		   @lv__MaxUTCCaptureTime = MAX(t.UTCCaptureTime)
+	FROM #StoreCaptureTimeList t;
+
 	--use an intermediate table to calculate the distinct values, so we don't have to scan SAR once for each store.
 	CREATE TABLE #DistinctStoreFKsWithMaxCaptureTime (
-		FKSQLStmtStoreID BIGINT, 
-		FKSQLBatchStoreID BIGINT,
-		MaxSPIDCaptureTime DATETIME
+		FKSQLStmtStoreID	BIGINT, 
+		FKSQLBatchStoreID	BIGINT,
+		MaxUTCCaptureTime	DATETIME
 	);
 
 	INSERT INTO #DistinctStoreFKsWithMaxCaptureTime (
 		FKSQLStmtStoreID,
 		FKSQLBatchStoreID,
-		MaxSPIDCaptureTime
+		MaxUTCCaptureTime
 	)
 	SELECT 
 		sar.FKSQLStmtStoreID,
 		sar.FKSQLBatchStoreID,
-		MAX(sar.SPIDCaptureTime)
+		MAX(sar.UTCCaptureTime)
 	FROM AutoWho.SessionsAndRequests sar WITH (NOLOCK)
-	WHERE sar.SPIDCaptureTime BETWEEN CONVERT(DATETIME,@lv__AutoWhoStoreLastTouched) AND CONVERT(DATETIME,@lv__CurrentExecTime)
+	WHERE sar.UTCCaptureTime BETWEEN @lv__MinUTCCaptureTime AND @lv__MaxUTCCaptureTime
 	AND (sar.FKSQLStmtStoreID IS NOT NULL OR sar.FKSQLBatchStoreID IS NOT NULL)
 	GROUP BY sar.FKSQLStmtStoreID,
 		sar.FKSQLBatchStoreID
 	OPTION(RECOMPILE);
 
+	--Since the store tables are clustered on their StoreID, find the min/max Store IDs
+	--so we can seek on that clustered index
 	SELECT 
 		@lv__MinFKSQLStmtStoreID = MIN(d.FKSQLStmtStoreID),
 		@lv__MaxFKSQLStmtStoreID = MAX(d.FKSQLStmtStoreID),
 		@lv__MinFKSQLBatchStoreID = MIN(d.FKSQLBatchStoreID),
 		@lv__MaxFKSQLBatchStoreID = MAX(d.FKSQLBatchStoreID)
-	FROM #DistinctStoreFKsWithMaxCaptureTime d
-	;
+	FROM #DistinctStoreFKsWithMaxCaptureTime d;
 
 	IF @lv__MinFKSQLStmtStoreID IS NOT NULL
 	BEGIN
@@ -154,27 +205,27 @@ BEGIN
 			SET @lv__RC = 0;
 
 			UPDATE targ 
-			SET targ.LastTouchedBy_SPIDCaptureTime = ss.LastTouched 
+			SET targ.LastTouchedBy_UTCCaptureTime = ss.LastTouched 
 			FROM CoreXR.SQLStmtStore targ
 				INNER JOIN (
-				SELECT t.FKSQLStmtStoreID, MAX(t.MaxSPIDCaptureTime) as LastTouched
+				SELECT t.FKSQLStmtStoreID, MAX(t.MaxUTCCaptureTime) as LastTouched
 				FROM #DistinctStoreFKsWithMaxCaptureTime t
 				WHERE t.FKSQLStmtStoreID IS NOT NULL
 				GROUP BY t.FKSQLStmtStoreID
 				) ss
 					ON targ.PKSQLStmtStoreID = ss.FKSQLStmtStoreID
 			WHERE targ.PKSQLStmtStoreID BETWEEN @lv__MinFKSQLStmtStoreID AND @lv__MaxFKSQLStmtStoreID
-			AND ss.LastTouched > targ.LastTouchedBy_SPIDCaptureTime
+			AND ss.LastTouched > targ.LastTouchedBy_UTCCaptureTime
 			OPTION(RECOMPILE);
 
 			SET @lv__RC = ROWCOUNT_BIG();
-			SET @lv__DurationEnd = SYSDATETIME();
+			SET @lv__DurationEndUTC = SYSUTCDATETIME();
 
 			IF @lv__RC > 0
 			BEGIN
 				SET @lv__errormsg = N'Updated LastTouched for ' + CONVERT(NVARCHAR(20),@lv__RC) + 
 					' SQL stmt entries in ' + 
-					CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__DurationStart, @lv__DurationEnd)) + 
+					CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__DurationStartUTC, @lv__DurationEndUTC)) + 
 					N' milliseconds.';
 
 				EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='SQLStmtLastTouch', @Message=@lv__errormsg; 
@@ -189,16 +240,15 @@ BEGIN
 
 			SET @lv__errormsg = N'Update of SQL Stmt Store LastTouched field failed with error # ' + 
 				CONVERT(NVARCHAR(20),ERROR_NUMBER()) + N'; severity: ' + CONVERT(NVARCHAR(20),ERROR_SEVERITY()) + 
-				N'; state: ' + CONVERT(NVARCHAR(20),ERROR_STATE()) + N'; message: ' + ERROR_MESSAGE()
-			;
+				N'; state: ' + CONVERT(NVARCHAR(20),ERROR_STATE()) + N'; message: ' + ERROR_MESSAGE();
 
 			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=-999, @TraceID=NULL, @Location='CATCH block', @Message=@lv__errormsg;
 		END CATCH
 	END 
 
-	SET @lv__DurationStart = SYSDATETIME();
+	SET @lv__DurationStartUTC = SYSUTCDATETIME();
 
-	IF @lv__MinFKSQLBatchStoreID IS NOT NULL 
+	IF @lv__erroroccurred = 0 AND @lv__MinFKSQLBatchStoreID IS NOT NULL 
 	BEGIN
 		BEGIN TRY
 			IF EXISTS (SELECT * FROM #DistinctStoreFKsWithMaxCaptureTime d WHERE d.FKSQLBatchStoreID IS NOT NULL)
@@ -206,26 +256,26 @@ BEGIN
 				SET @lv__RC = 0;
 
 				UPDATE targ 
-				SET targ.LastTouchedBy_SPIDCaptureTime = ss.LastTouched
+				SET targ.LastTouchedBy_UTCCaptureTime = ss.LastTouched
 				FROM CoreXR.SQLBatchStore targ
 					INNER JOIN (
-					SELECT t.FKSQLBatchStoreID, MAX(t.MaxSPIDCaptureTime) as LastTouched
+					SELECT t.FKSQLBatchStoreID, MAX(t.MaxUTCCaptureTime) as LastTouched
 					FROM #DistinctStoreFKsWithMaxCaptureTime t
 					WHERE t.FKSQLBatchStoreID IS NOT NULL
 					GROUP BY t.FKSQLBatchStoreID
 					) ss
 						ON targ.PKSQLBatchStoreID = ss.FKSQLBatchStoreID
 				WHERE targ.PKSQLBatchStoreID BETWEEN @lv__MinFKSQLBatchStoreID AND @lv__MaxFKSQLBatchStoreID
-				AND ss.LastTouched > targ.LastTouchedBy_SPIDCaptureTime;
+				AND ss.LastTouched > targ.LastTouchedBy_UTCCaptureTime;
 
 				SET @lv__RC = ROWCOUNT_BIG();
-				SET @lv__DurationEnd = SYSDATETIME(); 
+				SET @lv__DurationEndUTC = SYSUTCDATETIME();
 
 				IF @lv__RC > 0
 				BEGIN
 					SET @lv__errormsg = N'Updated LastTouched for ' + CONVERT(NVARCHAR(20),@lv__RC) + 
 						' SQL batch entries in ' + 
-						CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__DurationStart, @lv__DurationEnd)) + 
+						CONVERT(NVARCHAR(20),DATEDIFF(MILLISECOND, @lv__DurationStartUTC, @lv__DurationEndUTC)) + 
 						N' milliseconds.';
 
 					EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='SQLBatchLastTouch', @Message=@lv__errormsg; 
@@ -249,21 +299,47 @@ BEGIN
 
 	IF @lv__erroroccurred = 1
 	BEGIN
-		IF @lv__AutoWhoStoreLastTouched < DATEADD(MINUTE, -45, @lv__CurrentExecTime)
+		--If we have multiple failures of this procedure, we don't want it to fail to move the high watermark forward.
+		--If there are any capture times in #StoreCaptureTimeList that are older than 45 minutes ago, then we've
+		--probably been failing multiple times in a row (the default interval should be about 15 minutes), so we 
+		--set the high watermark to the most recent capture time older than 45 minutes ago. If there AREN'T any 
+		-- capture times that old in #StoreCaptureTimeList, then we probably haven't been failing for very long,
+		-- and perhaps it is transient. So we simply don't update the watermark at all.
+		IF EXISTS (SELECT * FROM #StoreCaptureTimeList l
+					WHERE l.UTCCaptureTime < DATEADD(MINUTE, -45, @lv__CurrentExecTimeUTC))
 		BEGIN
-			SET @lv__AutoWhoStoreLastTouched = DATEADD(MINUTE, -45, @lv__CurrentExecTime);
+			UPDATE targ 
+			SET LastProcessedTime = ss.SPIDCaptureTime,
+				LastProcessedTimeUTC = ss.UTCCaptureTime
+			FROM CoreXR.ProcessingTimes targ WITH (FORCESEEK)
+				CROSS JOIN (
+					SELECT TOP 1
+						l.UTCCaptureTime,
+						l.SPIDCaptureTime
+					FROM #StoreCaptureTimeList l
+					WHERE l.UTCCaptureTime < DATEADD(MINUTE, -45, @lv__CurrentExecTimeUTC)
+					ORDER BY l.UTCCaptureTime DESC
+				) ss
+			WHERE targ.Label = N'AutoWhoStoreLastTouched';
 		END
 	END
 	ELSE
 	BEGIN
-		SET @lv__AutoWhoStoreLastTouched = @lv__CurrentExecTime;
+		--When no error occurs, we set the last-touched values to 
+		-- the maximum capture times that we processed in this run
+		UPDATE targ 
+		SET LastProcessedTime = ss.SPIDCaptureTime,
+			LastProcessedTimeUTC = ss.UTCCaptureTime
+		FROM CoreXR.ProcessingTimes targ WITH (FORCESEEK)
+			CROSS JOIN (
+				SELECT TOP 1
+					l.UTCCaptureTime,
+					l.SPIDCaptureTime
+				FROM #StoreCaptureTimeList l
+				ORDER BY l.UTCCaptureTime DESC
+			) ss
+		WHERE targ.Label = N'AutoWhoStoreLastTouched';
 	END
-
-	UPDATE targ 
-	SET LastProcessedTime = @lv__AutoWhoStoreLastTouched
-	FROM CoreXR.ProcessingTimes targ WITH (FORCESEEK)
-	WHERE targ.Label = N'AutoWhoStoreLastTouched'		
-	;
 
 	RETURN 0;
 END

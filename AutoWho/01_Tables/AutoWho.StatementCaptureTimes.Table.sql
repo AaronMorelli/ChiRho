@@ -41,12 +41,13 @@ CREATE TABLE [AutoWho].[StatementCaptureTimes] (
 	[session_id]			[smallint] NOT NULL,
 	[request_id]			[smallint] NOT NULL,
 	[TimeIdentifier]		[datetime] NOT NULL,
+	[UTCCaptureTime]		[datetime] NOT NULL,
 	[SPIDCaptureTime]		[datetime] NOT NULL,
 
 	--attribute cols
-	[StatementFirstCapture] [datetime] NOT NULL,	--The first SPIDCaptureTime for the statement that this row belongs to. This acts as a grouping
+	[StatementFirstCaptureUTC] [datetime] NOT NULL,	--The first UTCCaptureTime for the statement that this row belongs to. This acts as a grouping
 													--field (that is also ascending as statements run for the batch! a nice property)
-	[PreviousCaptureTime]	[datetime] NULL,
+	[PreviousCaptureTimeUTC]	[datetime] NULL,
 	[StatementSequenceNumber] [int] NOT NULL,		--statement # within the batch. We use this instead of PKSQLStmtStoreID b/c that could be revisited
 
 	[PKSQLStmtStoreID]		[bigint] NOT NULL,		--TODO: still need to implement TMR wait logic. Note that for TMR waits, the current plan is to 
@@ -73,7 +74,7 @@ CREATE TABLE [AutoWho].[StatementCaptureTimes] (
 	[session_id] ASC,
 	[request_id] ASC,
 	[TimeIdentifier] ASC,
-	[SPIDCaptureTime] ASC
+	[UTCCaptureTime] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 GO
@@ -84,20 +85,21 @@ CREATE NONCLUSTERED INDEX [NCL_ActiveBatchFinalRow] ON [AutoWho].[StatementCaptu
 	[session_id] ASC,
 	[request_id] ASC,
 	[TimeIdentifier] ASC,
-	[SPIDCaptureTime] ASC
+	[UTCCaptureTime] ASC
 )
 WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 GO
-CREATE NONCLUSTERED INDEX [NCL_StatementFirstCapture] ON [AutoWho].[StatementCaptureTimes]
+CREATE NONCLUSTERED INDEX [NCL_StatementFirstCaptureUTC] ON [AutoWho].[StatementCaptureTimes]
 (
-	[StatementFirstCapture] ASC
+	[StatementFirstCaptureUTC] ASC
 )
 INCLUDE (
 	session_id,
 	request_id,
 	TimeIdentifier,
+	UTCCaptureTime,
 	SPIDCaptureTime,
-	PreviousCaptureTime,
+	PreviousCaptureTimeUTC,
 	StatementSequenceNumber,
 	PKSQLStmtStoreID,
 	PKQueryPlanStmtStoreID,

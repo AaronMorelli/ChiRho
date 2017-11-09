@@ -33,19 +33,155 @@ CREATE PROCEDURE [AutoWho].[CalcBatchStmtCaptureTimes]
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Updates aggregation tables for tracking stmt and batch statistics from the AutoWho sar table
+	PURPOSE: Updates tracking tables for tracking stmt and batch statistics from the AutoWho sar table.
+		Normally, this should only be called by the AutoWho.PostProcessor when the post-processor is running 
+		to operate on captures collected by the background Collector. (As opposed to the various user collectors)
 
 To Execute
 ------------------------
-EXEC AutoWho.CalcBatchStmtCaptureTimes @FirstCaptureTime='2017-07-24 04:00', @LastCaptureTime='2017-07-24 06:00'
+EXEC AutoWho.CalcBatchStmtCaptureTimes @FirstCaptureTimeUTC='2017-07-24 04:00', @LastCaptureTimeUTC='2017-07-24 06:00'
 */
 (
-	@FirstCaptureTime		DATETIME,
-	@LastCaptureTime		DATETIME
+	@FirstCaptureTimeUTC	DATETIME,	--This proc ASSUMES that these are valid capture times in AutoWho.CaptureTimes
+	@LastCaptureTimeUTC		DATETIME	--Bad things may occur if the values passed in are not specific UTCCaptureTime entries
 )
 AS
 BEGIN
 	SET NOCOUNT ON;
+
+	/*
+		This proc and the data it collects and creates relies heavily on processing capture times in order. Thus,
+		if somehow this proc misses a capture time, it could corrupt the results. Also, if a capture time
+		in AutoWho.CaptureTimes in the time window from @FirstCaptureTimeUTC to @LastCaptureTimeUTC has 
+		already been processed, then we don't need to process it again.
+
+		So this first section takes the time range passed in, ensures that previous AutoWho.CaptureTimes have
+		been processed appropriately, and then determines the actual set of capture times that will be handled
+		by this run of the procedure.
+
+	*/
+	DECLARE 
+		@MaxAlreadyProcessedCaptureTimeUTC	DATETIME,
+		@EffectiveFirstCaptureTimeUTC		DATETIME,
+		@EffectiveLastCaptureTimeUTC		DATETIME,
+		@EffectiveFirstCaptureTime			DATETIME,
+		@EffectiveLastCaptureTime			DATETIME,
+		@EffectiveLastCaptureTimeUTC_Minus1	DATETIME,
+		@EffectiveLastCaptureTime_Minus1	DATETIME,
+		@EffectiveLastCaptureTimeUTC_Minus2	DATETIME,
+		@EffectiveLastCaptureTime_Minus2	DATETIME;
+
+	DECLARE 
+			@lv__nullsmallint			SMALLINT,
+			@errorloc					NVARCHAR(50),
+			@errormsg					NVARCHAR(4000),
+			@errorsev					INT,
+			@errorstate					INT;
+
+	SET @lv__nullsmallint = -929;
+
+	IF EXISTS (
+		SELECT * 
+		FROM AutoWho.CaptureTimes ct
+		WHERE ct.CollectionInitiatorID = 255
+		AND ct.UTCCaptureTime < @FirstCaptureTimeUTC
+		AND ct.PostProcessed_StmtStats <> 255
+		)
+	BEGIN
+		RAISERROR('Found unprocessed capture times before @FirstCaptureTimeUTC. Unable to proceed without corrupting the results.', 16, 1);
+		RETURN 0;
+	END
+
+	--It's ok for some or even most of the capture times in the time window to have already been processed. We just can't have
+	-- "holes", i.e. a processed code of 255 more recent than processing codes of <> 255.
+
+	SELECT 
+		@MaxAlreadyProcessedCaptureTimeUTC = MAX(ct.UTCCaptureTime)
+	FROM AutoWho.CaptureTimes ct
+	WHERE ct.CollectionInitiatorID = 255
+	AND ct.UTCCaptureTime >= @FirstCaptureTimeUTC
+	AND ct.UTCCaptureTime <= @LastCaptureTimeUTC
+	AND ct.PostProcessed_StmtStats = 255;
+
+	IF @MaxAlreadyProcessedCaptureTimeUTC IS NOT NULL
+		AND EXISTS (
+		SELECT * 
+		FROM AutoWho.CaptureTimes ct
+		WHERE ct.CollectionInitiatorID = 255
+		AND ct.UTCCaptureTime >= @FirstCaptureTimeUTC 
+		AND ct.UTCCaptureTime < @MaxAlreadyProcessedCaptureTimeUTC
+		AND ct.PostProcessed_StmtStats <> 255
+		)
+	BEGIN
+		RAISERROR('Found gaps in the PostProcessed_StmtStats field (successful processing following unsuccessful processing). Unable to proceed without corrupting the results.', 16, 1);
+		RETURN 0;
+	END
+
+	--Ok, if we get here, we know that we have a clean history of processing. Now determine which captures actually need to be processed
+	IF OBJECT_ID('tempdb..#BatchStmtProcessCaptureTimes') IS NOT NULL DROP TABLE #BatchStmtProcessCaptureTimes;
+	CREATE TABLE #BatchStmtProcessCaptureTimes (
+		UTCCaptureTime DATETIME NOT NULL,
+		SPIDCaptureTime DATETIME NOT NULL
+	);
+	CREATE UNIQUE CLUSTERED INDEX CL1 ON #BatchStmtProcessCaptureTimes(UTCCaptureTime);
+
+	IF @MaxAlreadyProcessedCaptureTimeUTC IS NULL
+	BEGIN
+		--Nothing in this time window has already been processed. Grab it all
+		INSERT INTO #BatchStmtProcessCaptureTimes (
+			UTCCaptureTime,
+			SPIDCaptureTime
+		)
+		SELECT 
+			ct.UTCCaptureTime,
+			ct.SPIDCaptureTime
+		FROM AutoWho.CaptureTimes ct
+		WHERE ct.CollectionInitiatorID = 255
+		AND ct.UTCCaptureTime >= @FirstCaptureTimeUTC
+		AND ct.UTCCaptureTime <= @LastCaptureTimeUTC;
+	END
+	ELSE
+	BEGIN
+		--We've already processed some of the captures. Only grab new ones
+		--We expect this to be the normal case since the ChiRho master job runs every 15 min by default
+		--but looks back 45 minutes
+		INSERT INTO #BatchStmtProcessCaptureTimes (
+			UTCCaptureTime,
+			SPIDCaptureTime
+		)
+		SELECT 
+			ct.UTCCaptureTime,
+			ct.SPIDCaptureTime
+		FROM AutoWho.CaptureTimes ct
+		WHERE ct.CollectionInitiatorID = 255
+		AND ct.UTCCaptureTime > @MaxAlreadyProcessedCaptureTimeUTC
+		AND ct.UTCCaptureTime <= @LastCaptureTimeUTC;
+	END
+
+	--Now grab our effective start/end range:
+	SELECT 
+		@EffectiveFirstCaptureTimeUTC = ss.UTCCaptureTime,
+		@EffectiveFirstCaptureTime = ss.SPIDCaptureTime
+	FROM (
+		SELECT TOP 1
+			mn.UTCCaptureTime,
+			mn.SPIDCaptureTime
+		FROM #BatchStmtProcessCaptureTimes mn
+		ORDER BY mn.UTCCaptureTime ASC
+	) ss;
+
+	SELECT 
+		@EffectiveLastCaptureTimeUTC = ss.UTCCaptureTime,
+		@EffectiveLastCaptureTime = ss.SPIDCaptureTime
+	FROM (
+		SELECT TOP 1
+			mx.UTCCaptureTime,
+			mx.SPIDCaptureTime
+		FROM #BatchStmtProcessCaptureTimes mx
+		ORDER BY mx.UTCCaptureTime DESC
+	) ss;
+
+	
 
 	/* Scope is limited to 
 
@@ -60,33 +196,24 @@ BEGIN
 
 	*/
 
-	DECLARE @LastCaptureTimeMinus1	DATETIME,
-			@LastCaptureTimeMinus2	DATETIME,
-			@lv__nullsmallint		SMALLINT,
-			@errorloc				NVARCHAR(50),
-			@errormsg				NVARCHAR(4000),
-			@errorsev				INT,
-			@errorstate				INT;
-
-	SET @lv__nullsmallint = -929;
-
 BEGIN TRY
 
 	SET @errorloc = 'Create TT';
-	--This is a list of rows from SAR between @FirstCaptureTime and @LastCaptureTime
+	--This is a list of rows from SAR between @EffectiveFirstCaptureTimeUTC and @EffectiveLastCaptureTimeUTC
 	CREATE TABLE #WorkingSet (
 		[session_id]			[smallint] NOT NULL,
 		[request_id]			[smallint] NOT NULL,
 		[TimeIdentifier]		[datetime] NOT NULL,
+		[UTCCaptureTime]		[datetime] NOT NULL,
 		[SPIDCaptureTime]		[datetime] NOT NULL,
 
-		[StatementFirstCapture] [datetime] NULL,	--The first SPIDCaptureTime for the statement that this row belongs to. This acts as a grouping field (that is also ascending as statements 
+		[StatementFirstCaptureUTC] [datetime] NULL,	--The first UTCCaptureTime for the statement that this row belongs to. This acts as a grouping field (that is also ascending as statements 
 													--run for the batch! a nice property)
-		[PreviousCaptureTime]	[datetime] NULL,	--The cap time immediately previous to this row (for the same batch of course)
+		[PreviousCaptureTimeUTC]	[datetime] NULL,	--The cap time immediately previous to this row (for the same batch of course)
 		[StatementSequenceNumber] [int] NOT NULL,	 --statement # within the batch. We use this instead of PKSQLStmtStoreID b/c that could be revisited
 
 		[PKSQLStmtStoreID]		[bigint] NOT NULL,	--TODO: still need to implement TMR wait logic. Note that for TMR waits, the current plan is to *always* assume it is a new statement even if 
-													--the calc__tmr_wait value matches between the most recent SPIDCaptureTime in this table and the "current" statement.
+													--the calc__tmr_wait value matches between the most recent UTCCaptureTime in this table and the "current" statement.
 		[PKQueryPlanStmtStoreID] [bigint] NULL,
 
 		[rqst__query_hash]		[binary](8) NULL,	--storing this makes some presentation procs more quickly able to find high-frequency queries.
@@ -117,8 +244,8 @@ BEGIN TRY
 		[request_id]			[smallint] NOT NULL,
 		[TimeIdentifier]		[datetime] NOT NULL,
 		[NumCaptures]			[int] NOT NULL,
-		[FirstCapture]			[datetime] NOT NULL,
-		[LastCapture]			[datetime] NOT NULL,
+		[FirstCaptureUTC]		[datetime] NOT NULL,
+		[LastCaptureUTC]		[datetime] NOT NULL,
 		[IsInLast3Captures]		[bit] NOT NULL,
 		[IsInPermTable]			[bit] NOT NULL
 	);
@@ -130,26 +257,53 @@ BEGIN TRY
 		or @LastCaptureTimeMinus2. So let's get those variable values.
 	*/
 	SELECT 
-		@LastCaptureTimeMinus1 = ss.SPIDCaptureTime
+		@EffectiveLastCaptureTimeUTC_Minus1 = ss.UTCCaptureTime,
+		@EffectiveLastCaptureTime_Minus1 = ss.SPIDCaptureTime
 	FROM (
 		SELECT TOP 1
+			ct.UTCCaptureTime,
 			ct.SPIDCaptureTime
 		FROM AutoWho.CaptureTimes ct
 		WHERE ct.CollectionInitiatorID = 255		--background trace only
-		AND ct.SPIDCaptureTime < @LastCaptureTime
-		ORDER BY ct.SPIDCaptureTime DESC
+		AND ct.UTCCaptureTime > @EffectiveFirstCaptureTimeUTC	--not ok for Minus1 to be the same as our effective first
+		AND ct.UTCCaptureTime < @EffectiveLastCaptureTimeUTC
+		ORDER BY ct.UTCCaptureTime DESC
 	) ss;
 
-	SELECT 
-		@LastCaptureTimeMinus2 = ss.SPIDCaptureTime
-	FROM (
-		SELECT TOP 1
-			ct.SPIDCaptureTime
-		FROM AutoWho.CaptureTimes ct
-		WHERE ct.CollectionInitiatorID = 255		--background trace only
-		AND ct.SPIDCaptureTime < @LastCaptureTimeMinus1
-		ORDER BY ct.SPIDCaptureTime DESC
-	) ss;
+	IF @EffectiveLastCaptureTimeUTC_Minus1 IS NOT NULL
+	BEGIN
+		SELECT 
+			@EffectiveLastCaptureTimeUTC_Minus2 = ss.UTCCaptureTime,
+			@EffectiveLastCaptureTime_Minus2 = ss.SPIDCaptureTime
+		FROM (
+			SELECT TOP 1
+				ct.UTCCaptureTime,
+				ct.SPIDCaptureTime
+			FROM AutoWho.CaptureTimes ct
+			WHERE ct.CollectionInitiatorID = 255		--background trace only
+			AND ct.UTCCaptureTime >= @EffectiveFirstCaptureTimeUTC		--its ok for Minus2 to be the same as our effective first
+			AND ct.UTCCaptureTime < @EffectiveLastCaptureTimeUTC_Minus1
+			ORDER BY ct.UTCCaptureTime DESC
+		) ss;
+	END
+
+	IF @EffectiveLastCaptureTimeUTC_Minus1 IS NULL 
+		OR @EffectiveLastCaptureTimeUTC_Minus2 IS NULL
+	BEGIN
+		--We really want to have our "last 3" times populated so that we can confidantly close out statements and batches.
+		--Without that, we don't proceed.
+		--This should be a rare occurrence, but would occur if the ChiRho master was run quickly multiple times in a row
+		-- (so there isn't much time for new captures to collect), or if the background Collector was disabled at just
+		-- the right time. Either way, we just exit quietly here, and we'll pick this up again at a later date.
+		-- (But not TOO much later, because if > 45 minutes go by, the ChiRho Master will send a time range down 
+		-- that may not include all of the unprocessed capture times, and so the above logic looking for gaps (<> 255) will fail!
+		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = 0, @TraceID = NULL, @Location = N'Lack Minus1 and Minus2', @Message = N'The BatchStmt postprocessing proc needs more unprocessed capture times.';
+		RETURN 0;
+	END
+
+	--Ok, if we get here, all of the setup work has been completed. We do things in a transaction so that we don't
+	-- corrupt the contents of AutoWho.StatementCaptureTimes if we encounter an exception in the middle of the work below.
+	BEGIN TRANSACTION
 
 	SET @errorloc = ' Initial pop #WorkingSet';
 	--TODO: need to add logic to handle PKSQLStmtStoreID when we have a TMR wait value
@@ -157,10 +311,11 @@ BEGIN TRY
 		session_id,
 		request_id,
 		TimeIdentifier,
+		UTCCaptureTime,
 		SPIDCaptureTime,
 
-		StatementFirstCapture,
-		PreviousCaptureTime,
+		StatementFirstCaptureUTC,
+		PreviousCaptureTimeUTC,
 		StatementSequenceNumber,
 		PKSQLStmtStoreID,
 		PKQueryPlanStmtStoreID,
@@ -179,10 +334,11 @@ BEGIN TRY
 		sar.session_id,
 		sar.request_id,
 		sar.TimeIdentifier,
+		sar.UTCCaptureTime,
 		sar.SPIDCaptureTime,
 		
-		[StatementFirstCapture] = NULL,
-		[PreviousCaptureTime] = NULL,
+		[StatementFirstCaptureUTC] = NULL,
+		[PreviousCaptureTimeUTC] = NULL,
 		[StatementSequenceNumber] = 0,
 		ISNULL(sar.FKSQLStmtStoreID,-1),	-- Sometimes this can be NULL, so -1 is our special value for Not Available. 
 		sar.FKQueryPlanStmtStoreID,
@@ -194,7 +350,7 @@ BEGIN TRY
 		[IsBatchLastCapture] = 0,
 		[IsCurrentLastRowOfBatch] = 0,
 		[IsFromPermTable] = 0,
-		[IsInLast3Captures] = CASE WHEN sar.SPIDCaptureTime IN (@LastCaptureTime, @LastCaptureTimeMinus1, @LastCaptureTimeMinus2) 
+		[IsInLast3Captures] = CASE WHEN sar.UTCCaptureTime IN (@EffectiveLastCaptureTimeUTC, @EffectiveLastCaptureTimeUTC_Minus1, @EffectiveLastCaptureTimeUTC_Minus2) 
 								THEN 1 ELSE 0 END,
 		[ProcessingState] = 0
 	FROM AutoWho.SessionsAndRequests sar
@@ -202,9 +358,7 @@ BEGIN TRY
 	AND sar.request_id <> @lv__nullsmallint
 	AND sar.sess__is_user_process = 1
 	AND sar.calc__threshold_ignore = 0
-	AND sar.SPIDCaptureTime BETWEEN @FirstCaptureTime AND @LastCaptureTime;		
-		--Note: we don't expect @FirstCaptureTime to ever be AFTER @LastCaptureMinus1 or 2.
-		--If that assumption could be false, we need to rethink our logic to see if there are bugs.
+	AND sar.UTCCaptureTime BETWEEN @EffectiveFirstCaptureTimeUTC AND @EffectiveLastCaptureTimeUTC;
 
 	SET @errorloc = 'Populate #WorkingSetBatches';
 	--Grab some basic batch stats
@@ -213,8 +367,8 @@ BEGIN TRY
 		request_id,
 		TimeIdentifier,
 		NumCaptures,
-		FirstCapture,
-		LastCapture,
+		FirstCaptureUTC,
+		LastCaptureUTC,
 		IsInLast3Captures,
 		IsInPermTable
 	)
@@ -223,8 +377,8 @@ BEGIN TRY
 		ss.request_id,
 		ss.TimeIdentifier,
 		ss.NumCaptures,
-		ss.FirstCapture,
-		ss.LastCapture,
+		ss.FirstCaptureUTC,
+		ss.LastCaptureUTC,
 		[IsInLast3Captures] = ss.IsInLast3Captures,
 		[IsInPermTable] = CASE WHEN p.session_id IS NOT NULL THEN 1 ELSE 0 END
 	FROM (
@@ -234,8 +388,8 @@ BEGIN TRY
 			ws.TimeIdentifier,
 			[IsInLast3Captures] = CONVERT(BIT,MAX(CONVERT(INT,ws.IsInLast3Captures))),
 			NumCaptures = COUNT(*),
-			FirstCapture = MIN(ws.SPIDCaptureTime),
-			LastCapture = MAX(ws.SPIDCaptureTime)
+			FirstCaptureUTC = MIN(ws.UTCCaptureTime),
+			LastCaptureUTC = MAX(ws.UTCCaptureTime)
 		FROM #WorkingSet ws
 		GROUP BY ws.session_id,
 			ws.request_id,
@@ -281,8 +435,8 @@ BEGIN TRY
 	*/
 	UPDATE ws 
 	SET 
-		StatementFirstCapture = ws.SPIDCaptureTime,	--the grouping value is its own capture time, of course.
-		--we leave this NULL, obviously: PreviousCaptureTime
+		StatementFirstCaptureUTC = ws.UTCCaptureTime,	--the grouping value is its own capture time, of course.
+		--we leave this NULL, obviously: PreviousCaptureTimeUTC
 		--We don't need to set this b/c this field is initialized to 0 above: IsCurrentLastRowOfBatch = 0
 		StatementSequenceNumber = 1,
 		IsStmtFirstCapture = 1,
@@ -306,10 +460,11 @@ BEGIN TRY
 		session_id,
 		request_id,
 		TimeIdentifier,
+		UTCCaptureTime,
 		SPIDCaptureTime,
 
-		StatementFirstCapture,
-		PreviousCaptureTime,
+		StatementFirstCaptureUTC,
+		PreviousCaptureTimeUTC,
 		StatementSequenceNumber,
 		PKSQLStmtStoreID,
 		PKQueryPlanStmtStoreID,
@@ -328,10 +483,11 @@ BEGIN TRY
 		p.session_id,
 		p.request_id,
 		p.TimeIdentifier,
+		p.UTCCaptureTime,
 		p.SPIDCaptureTime,
 
-		p.StatementFirstCapture,
-		p.PreviousCaptureTime,
+		p.StatementFirstCaptureUTC,
+		p.PreviousCaptureTimeUTC,
 		p.StatementSequenceNumber,
 		p.PKSQLStmtStoreID,
 		p.PKQueryPlanStmtStoreID,
@@ -363,7 +519,7 @@ BEGIN TRY
 	SET	
 		IsBatchFirstCapture = CASE WHEN ws.IsFromPermTable = 1 THEN ws.IsBatchFirstCapture	--For this field, we leave rows from the perm table alone
 									WHEN wsb.IsInPermTable = 0		--If the batch already is in the perm table, we already have the Batch first capture there
-										AND wsb.FirstCapture = ws.SPIDCaptureTime THEN 1   --otherwise, we know this is the first-ever row of our batch!
+										AND wsb.FirstCaptureUTC = ws.UTCCaptureTime THEN 1   --otherwise, we know this is the first-ever row of our batch!
 								ELSE 0 END,
 
 		IsBatchLastCapture = CASE WHEN ws.IsFromPermTable = 1 THEN 0	--For perm rows, we DO update this field. If a perm row is in this table, we know that it has later WS rows.
@@ -371,14 +527,14 @@ BEGIN TRY
 																		--we don't see it in the last 3 caps (and having 3 SPIDCaptureTimes in a row w/o a batch should mean the SPID/Request/TimeIdentifier
 																		-- will never be seen again)
 									WHEN wsb.IsInLast3Captures = 0	--If the batch has a row in our last 3 caps, we don't consider closing the batch
-									AND wsb.LastCapture = ws.SPIDCaptureTime THEN 1 
+									AND wsb.LastCaptureUTC = ws.UTCCaptureTime THEN 1 
 								ELSE 0 END,
 
 		--This field is mutually exclusive w/IsBatchLastCapture. They both can't be 1. So we only set this to 1 
 		-- if this row is the last working set capture for the batch and the batch DOES exist in the last 3 caps
 		IsCurrentLastRowOfBatch = CASE WHEN ws.IsFromPermTable = 1 THEN 0	-- a perm row in #WS must have later WS rows, so we know we can set it to 0.
 										WHEN wsb.IsInLast3Captures = 1
-										AND wsb.LastCapture = ws.SPIDCaptureTime THEN 1 
+										AND wsb.LastCaptureUTC = ws.UTCCaptureTime THEN 1 
 									ELSE 0 END,
 
 		--TODO: need to add logic for when PKSQLStmtStoreID is null and there is a TMR wait.
@@ -389,8 +545,8 @@ BEGIN TRY
 									WHEN ws.PKSQLStmtStoreID <> ISNULL(prevCap.PKSQLStmtStoreID,-99) THEN 1
 									ELSE 0
 									END,
-		PreviousCaptureTime = CASE WHEN ws.IsFromPermTable = 1 THEN ws.PreviousCaptureTime
-										ELSE prevCap.SPIDCaptureTime
+		PreviousCaptureTimeUTC = CASE WHEN ws.IsFromPermTable = 1 THEN ws.PreviousCaptureTimeUTC
+										ELSE prevCap.UTCCaptureTime
 								END,
 		ProcessingState = 2
 	FROM #WorkingSetBatches wsb
@@ -402,15 +558,15 @@ BEGIN TRY
 			--Find the prev cap time, so we can compare SQL Stmt IDs
 			SELECT TOP 1 
 				prev.session_id,
-				prev.SPIDCaptureTime,
+				prev.UTCCaptureTime,
 				prev.IsFromPermTable,
 				prev.PKSQLStmtStoreID
 			FROM #WorkingSet prev
 			WHERE prev.session_id = ws.session_id
 			AND prev.request_id = ws.request_id
 			AND prev.TimeIdentifier = ws.TimeIdentifier
-			AND prev.SPIDCaptureTime < ws.SPIDCaptureTime
-			ORDER BY prev.SPIDCaptureTime DESC
+			AND prev.UTCCaptureTime < ws.UTCCaptureTime
+			ORDER BY prev.UTCCaptureTime DESC
 		) prevCap
 	WHERE ws.ProcessingState = 0;		--This includes IsFromPermTable=1 rows.
 
@@ -421,7 +577,7 @@ BEGIN TRY
 			then find the last capture before "next start", which should be the last capture/statement end ("last cap") for this statement.
 	*/
 	UPDATE ws
-	SET StatementFirstCapture = ss.StatementFirstCapture,	--StatementFirstCapture acts as a grouping field. The logic in this statement
+	SET StatementFirstCaptureUTC = ss.StatementFirstCaptureUTC,	--StatementFirstCaptureUTC acts as a grouping field. The logic in this statement
 															--ensures that it is the same for every row between IsStmtFirstCapture=1 and IsStmtLastCapture=1
 															--Having a grouping key that is also ascending lets us easily set the StatementSequenceNumber next.
 
@@ -433,7 +589,7 @@ BEGIN TRY
 		--more rows will arrive, and whether they will be for this statement.
 		IsStmtLastCapture = CASE WHEN ws.IsCurrentLastRowOfBatch = 1 THEN 0
 								WHEN ws.IsBatchLastCapture = 1 THEN 1
-								WHEN ws.SPIDCaptureTime = ss.StatementLastCapture THEN 1 
+								WHEN ws.UTCCaptureTime = ss.StatementLastCaptureUTC THEN 1 
 								ELSE 0
 								END,
 		ProcessingState = 3
@@ -450,30 +606,30 @@ BEGIN TRY
 				ws.request_id,
 				ws.TimeIdentifier,
 
-				[StatementFirstCapture] = CASE WHEN ws.IsFromPermTable = 1 THEN ws.StatementFirstCapture	--for perm rows, always keep the first cap that we calculated previously
+				[StatementFirstCaptureUTC] = CASE WHEN ws.IsFromPermTable = 1 THEN ws.StatementFirstCaptureUTC	--for perm rows, always keep the first cap that we calculated previously
 											ELSE --based on the OR in the below WHERE clause, this must be ws.IsStmtFirstCapture = 1
-												--therefore, this row's stmt first cap is its own SPIDCaptureTime
-												ws.SPIDCaptureTime 
+												--therefore, this row's stmt first cap is its own UTCCaptureTime
+												ws.UTCCaptureTime 
 											END,
 
-				[StatementLastCapture] = CASE WHEN lastCap.session_id IS NULL --not able to find a "last cap time", so there are no later
-																				--cap times for this statement. Thus, "last cap" is this SPIDCaptureTime
-												THEN ws.SPIDCaptureTime 
-											ELSE lastCap.SPIDCaptureTime
+				[StatementLastCaptureUTC] = CASE WHEN lastCap.session_id IS NULL --not able to find a "last cap time", so there are no later
+																				--cap times for this statement. Thus, "last cap" is this UTCCaptureTime
+												THEN ws.UTCCaptureTime 
+											ELSE lastCap.UTCCaptureTime
 											END
 			FROM #WorkingSet ws
 				OUTER APPLY (
 					--Get the next statement start. Remember that it may not exist!
 					SELECT TOP 1
 						nxt.session_id,
-						nxt.SPIDCaptureTime
+						nxt.UTCCaptureTime
 					FROM #WorkingSet nxt
 					WHERE nxt.session_id = ws.session_id
 					AND nxt.request_id = ws.request_id
 					AND nxt.TimeIdentifier = ws.TimeIdentifier
-					AND nxt.SPIDCaptureTime > ws.SPIDCaptureTime
+					AND nxt.UTCCaptureTime > ws.UTCCaptureTime
 					AND nxt.IsStmtFirstCapture = 1
-					ORDER BY nxt.SPIDCaptureTime ASC
+					ORDER BY nxt.UTCCaptureTime ASC
 				) nextStmt
 				OUTER APPLY (
 					--once we have the next statement start, get the cap time immediately before that.
@@ -481,14 +637,14 @@ BEGIN TRY
 					--If there is no "next", we trust that our last cap will have occurred before the year 3000.
 					SELECT TOP 1
 						l.session_id,
-						l.SPIDCaptureTime
+						l.UTCCaptureTime
 					FROM #WorkingSet l
 					WHERE l.session_id = ws.session_id
 					AND l.request_id = ws.request_id
 					AND l.TimeIdentifier = ws.TimeIdentifier
-					AND l.SPIDCaptureTime > ws.SPIDCaptureTime
-					AND l.SPIDCaptureTime < ISNULL(nextStmt.SPIDCaptureTime,'3000-01-01')
-					ORDER BY l.SPIDCaptureTime DESC
+					AND l.UTCCaptureTime > ws.UTCCaptureTime
+					AND l.UTCCaptureTime < ISNULL(nextStmt.UTCCaptureTime,'3000-01-01')
+					ORDER BY l.UTCCaptureTime DESC
 				) lastCap
 			WHERE ws.ProcessingState = 2
 			AND (ws.IsStmtFirstCapture = 1
@@ -500,7 +656,7 @@ BEGIN TRY
 			ON ws.session_id = ss.session_id
 			AND ws.request_id = ss.request_id
 			AND ws.TimeIdentifier = ss.TimeIdentifier
-			AND ws.SPIDCaptureTime BETWEEN ss.StatementFirstCapture AND ss.StatementLastCapture;
+			AND ws.UTCCaptureTime BETWEEN ss.StatementFirstCaptureUTC AND ss.StatementLastCaptureUTC;
 
 
 	SET @errorloc = 'Handle query hashes';
@@ -519,11 +675,11 @@ BEGIN TRY
 			WHERE p.session_id = ws.session_id
 			AND p.request_id = ws.request_id
 			AND p.TimeIdentifier = ws.TimeIdentifier
-			AND p.StatementFirstCapture = ws.StatementFirstCapture
+			AND p.StatementFirstCaptureUTC = ws.StatementFirstCaptureUTC
 			AND p.rqst__query_hash IS NOT NULL
 			AND p.rqst__query_hash <> 0x0
-			AND p.SPIDCaptureTime < ws.SPIDCaptureTime
-			ORDER BY p.SPIDCaptureTime DESC
+			AND p.UTCCaptureTime < ws.UTCCaptureTime
+			ORDER BY p.UTCCaptureTime DESC
 		) prev
 	WHERE ws.IsFromPermTable = 0
 	AND (ws.IsStmtLastCapture = 1 OR IsCurrentLastRowOfBatch = 1)
@@ -542,10 +698,10 @@ BEGIN TRY
 			WHERE p.session_id = ws.session_id
 			AND p.request_id = ws.request_id
 			AND p.TimeIdentifier = ws.TimeIdentifier
-			AND p.StatementFirstCapture = ws.StatementFirstCapture
+			AND p.StatementFirstCaptureUTC = ws.StatementFirstCaptureUTC
 			AND p.PKQueryPlanStmtStoreID IS NOT NULL
-			AND p.SPIDCaptureTime < ws.SPIDCaptureTime
-			ORDER BY p.SPIDCaptureTime DESC
+			AND p.UTCCaptureTime < ws.UTCCaptureTime
+			ORDER BY p.UTCCaptureTime DESC
 		) prev
 	WHERE ws.IsFromPermTable = 0
 	AND (ws.IsStmtLastCapture = 1 OR IsCurrentLastRowOfBatch = 1)
@@ -560,7 +716,7 @@ BEGIN TRY
 			ON ws.session_id = targ.session_id
 			AND ws.request_id = targ.request_id
 			AND ws.TimeIdentifier = targ.TimeIdentifier
-			AND ws.SPIDCaptureTime = targ.SPIDCaptureTime
+			AND ws.UTCCaptureTime = targ.UTCCaptureTime
 	WHERE targ.IsCurrentLastRowOfBatch = 1
 	AND ws.IsFromPermTable = 1;
 
@@ -571,11 +727,12 @@ BEGIN TRY
 		[session_id],
 		[request_id],
 		[TimeIdentifier],
+		[UTCCaptureTime],
 		[SPIDCaptureTime],
 
 		--attribute cols
-		[StatementFirstCapture],
-		[PreviousCaptureTime],
+		[StatementFirstCaptureUTC],
+		[PreviousCaptureTimeUTC],
 		[StatementSequenceNumber],
 		[PKSQLStmtStoreID],
 		[rqst__query_hash],
@@ -590,10 +747,11 @@ BEGIN TRY
 		ws.session_id,
 		ws.request_id,
 		ws.TimeIdentifier,
+		ws.UTCCaptureTime,
 		ws.SPIDCaptureTime,
 
-		ws.StatementFirstCapture,
-		ws.PreviousCaptureTime,
+		ws.StatementFirstCaptureUTC,
+		ws.PreviousCaptureTimeUTC,
 		ws.StatementSequenceNumber,
 		ws.PKSQLStmtStoreID,
 		ws.rqst__query_hash,
@@ -619,16 +777,28 @@ BEGIN TRY
 				request_id,
 				TimeIdentifier,
 				SPIDCaptureTime,
-				StatementSequenceNumber = DENSE_RANK() OVER (PARTITION BY session_id, request_id, TimeIdentifier ORDER BY StatementFirstCapture)
+				StatementSequenceNumber = DENSE_RANK() OVER (PARTITION BY session_id, request_id, TimeIdentifier ORDER BY StatementFirstCaptureUTC)
 			FROM #WorkingSet ws
 			WHERE ws.ProcessingState = 3
 		) ss
 			ON ws.session_id = ss.session_id
 			AND ws.request_id = ss.request_id
 			AND ws.TimeIdentifier = ss.TimeIdentifier
-			AND ws.SPIDCaptureTime = ss.SPIDCaptureTime
+			AND ws.UTCCaptureTime = ss.UTCCaptureTime
 	WHERE ws.ProcessingState = 3;
 	*/
+
+	--Mark our processing complete!
+	UPDATE targ 
+	SET PostProcessed_StmtStats = 255
+	FROM AutoWho.CaptureTimes targ
+		INNER JOIN #BatchStmtProcessCaptureTimes t
+			ON t.UTCCaptureTime = targ.UTCCaptureTime
+	WHERE targ.CollectionInitiatorID = 255
+	AND t.UTCCaptureTime >= @EffectiveFirstCaptureTimeUTC
+	AND t.UTCCaptureTime <= @EffectiveLastCaptureTimeUTC;
+
+	COMMIT TRANSACTION;
 
 	RETURN 0;
 END TRY

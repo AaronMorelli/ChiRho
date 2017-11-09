@@ -38,6 +38,7 @@ CREATE TABLE [AutoWho].[UserCollectionTimes](
 	[CollectionInitiatorID] [tinyint] NOT NULL,
 	[session_id] [int] NOT NULL, 
 	[SPIDCaptureTime] [datetime] NOT NULL,
+	[UTCCaptureTime] [datetime] NOT NULL,
  CONSTRAINT [PK_AutoWho_UserCollectionTimes] PRIMARY KEY CLUSTERED 
 (
 	[CollectionInitiatorID] ASC,

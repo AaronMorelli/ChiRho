@@ -172,20 +172,17 @@ BEGIN TRY
 		 @lv__ProcRC					INT, 
 		 @lv__tmpStr					NVARCHAR(4000),
 		 @lv__ScratchInt				INT,
-		 @lv__ScratchDateTime			DATETIME,
 		 @lv__EarlyAbort				NCHAR(1),
-		 @lv__CalcEndTime				DATETIME,
-		 @lv__RunTimeMinutes			BIGINT,
-		 @lv__LoopStartTime				DATETIME,
-		 @lv__AutoWhoCallCompleteTime	DATETIME,
-		 @lv__LoopEndTime				DATETIME,
-		 @lv__LoopNextStart				DATETIME,
+		 @lv__RunTimeSeconds			BIGINT,
+		 @lv__LoopStartTimeUTC			DATETIME,
+		 @lv__AutoWhoCallCompleteTimeUTC	DATETIME,
+		 @lv__LoopEndTimeUTC			DATETIME,
+		 @lv__LoopNextStartUTC			DATETIME,
 		 @lv__LoopNextStartSecondDifferential INT,
 		 @lv__WaitForMinutes			INT,
 		 @lv__WaitForSeconds			INT,
 		 @lv__WaitForString				VARCHAR(20),
 		 @lv__IntervalRemainder			INT,
-		 @lv__LoopDurationSeconds		INT,
 		 @lv__LoopCounter				INT,
 		 @lv__SuccessiveExceptions		INT,
 		 @lv__IntervalFrequency			INT,
@@ -201,9 +198,9 @@ BEGIN TRY
 		 @lv__SPIDsCaptured1Ago			INT,
 		 @lv__SPIDCaptureHistAvg		INT,
 		 @lv__RecompileAutoWho			BIT,
-		 @lv__LastThresholdFilterTime	DATETIME,
-		 @lv__LastStoreLastTouchedTime	DATETIME,
-		 @lv__SPIDCaptureTime			DATETIME
+		 @lv__LastThresholdFilterTimeUTC DATETIME,
+		 @lv__SPIDCaptureTime			DATETIME,
+		 @lv__UTCCaptureTime			DATETIME
 		 ;
 
 	--variables to hold option table contents
@@ -250,7 +247,7 @@ BEGIN TRY
 		RETURN @lv__ThisRC;
 	END
 
-	IF has_perms_by_name(null, null, 'VIEW SERVER STATE') <> 1
+	IF HAS_PERMS_BY_NAME(null, null, 'VIEW SERVER STATE') <> 1
 	BEGIN
 		SET @ErrorMessage = N'The VIEW SERVER STATE permission (or permissions/role membership that include VIEW SERVER STATE) is required to execute AutoWho. Exiting...';
 		SET @lv__ThisRC = -5;
@@ -260,26 +257,9 @@ BEGIN TRY
 		RETURN @lv__ThisRC;
 	END
 
-	/* Moving page latch resolution to the Every 15 minutes Master job
-	--If we are going to try to resolve Page IDs (for PAGE%LATCH waits) or enable TF 8666, then we need sysadmin
-	IF @opt__ResolvePageLatches = N'Y'
-	BEGIN
-		IF IS_SRVROLEMEMBER ('sysadmin') <> 1
-		BEGIN
-			SET @ErrorMessage = N'PageLatch resolution has been requested but the account running AutoWho does not have sysadmin permissions. Exiting...';
-			SET @lv__ThisRC = -7;
-
-			INSERT INTO AutoWho.[Log]
-			(LogDT, ErrorCode, LocationTag, LogMessage)
-			SELECT SYSDATETIME(), @lv__ThisRC, N'PageResSecurity', @ErrorMessage;
-
-			EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
-			RETURN @lv__ThisRC;
-		END
-	END
-	*/
 
 	--If we have an N'AllDay' AbortTrace flag entry for this day, then exit the procedure
+	--Note that this logic should NOT be based on UTC time.
 	IF EXISTS (SELECT * FROM AutoWho.SignalTable WITH (ROWLOCK) 
 				WHERE LOWER(SignalName) = N'aborttrace' 
 				AND LOWER(SignalValue) = N'allday'
@@ -303,12 +283,12 @@ BEGIN TRY
 		);
 
 	--Obtain the next start/end times... Note that TraceTimeInfo calls the ValidateOption procedure
-	DECLARE @lv__AutoWhoStartTime DATETIME, 
-			@lv__AutoWhoEndTime DATETIME, 
+	DECLARE @lv__AutoWhoStartTimeUTC DATETIME, 
+			@lv__AutoWhoEndTimeUTC DATETIME, 
 			@lv__AutoWhoEnabled NCHAR(1);
 
-	EXEC CoreXR.TraceTimeInfo @Utility=N'AutoWho', @PointInTime = NULL, @UtilityIsEnabled = @lv__AutoWhoEnabled OUTPUT,
-		@UtilityStartTime = @lv__AutoWhoStartTime OUTPUT, @UtilityEndTime = @lv__AutoWhoEndTime OUTPUT;
+	EXEC CoreXR.TraceTimeInfo @Utility=N'AutoWho', @PointInTimeUTC = NULL, @UtilityIsEnabled = @lv__AutoWhoEnabled OUTPUT,
+		@UtilityStartTimeUTC = @lv__AutoWhoStartTimeUTC OUTPUT, @UtilityEndTimeUTC = @lv__AutoWhoEndTimeUTC OUTPUT;
 
 	IF @lv__AutoWhoEnabled = N'N'
 	BEGIN
@@ -320,9 +300,12 @@ BEGIN TRY
 		RETURN @lv__ThisRC;
 	END
 
-	IF NOT (GETDATE() BETWEEN @lv__AutoWhoStartTime AND @lv__AutoWhoEndTime)
+	IF NOT (GETUTCDATE() BETWEEN @lv__AutoWhoStartTimeUTC AND @lv__AutoWhoEndTimeUTC)
 	BEGIN
-		SET @ErrorMessage = 'The Current time is not within the window specified by BeginTime and EndTime options';
+		SET @ErrorMessage = 'The Current time is not within the window specified by BeginTime and EndTime options.';
+		SET @ErrorMessage = @ErrorMessage + ' Current time: ' + CONVERT(NVARCHAR(20),GETDATE()) + '; UTC time: ' + CONVERT(NVARCHAR(20),GETUTCDATE()) + 
+			'; Next AutoWho Start time (UTC): ' + CONVERT(NVARCHAR(20),@lv__AutoWhoStartTimeUTC) + 
+			'; Next AutoWho End time (UTC): ' + CONVERT(NVARCHAR(20),@lv__AutoWhoEndTimeUTC);
 		SET @lv__ThisRC = -13;
 		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='Outside Begin/End', @Message=@ErrorMessage;
 	
@@ -457,7 +440,7 @@ BEGIN TRY
 	SELECT DISTINCT 128, f.ThresholdFilterSpid
 	FROM AutoWho.ThresholdFilterSpids f; 
 
-	SET @lv__LastThresholdFilterTime = GETDATE();
+	SET @lv__LastThresholdFilterTimeUTC = GETUTCDATE();
 
 	IF EXISTS (SELECT * FROM @FilterTVP t1 INNER JOIN @FilterTVP t2 ON t1.FilterID = t2.FilterID AND t1.FilterType = 0 AND t2.FilterType = 1)
 	BEGIN
@@ -474,9 +457,9 @@ BEGIN TRY
 	-- have to be inserted
 	EXEC AutoWho.PrePopulateDimensions;
 
-	SET @lv__RunTimeMinutes = DATEDIFF(SECOND, GETDATE(), @lv__AutoWhoEndTime);
+	SET @lv__RunTimeSeconds = DATEDIFF(SECOND, GETUTCDATE(), @lv__AutoWhoEndTimeUTC);
 
-	IF @lv__RunTimeMinutes < 60
+	IF @lv__RunTimeSeconds < 60
 	BEGIN
 		SET @ErrorMessage = N'The current time, combined with the BeginTime and EndTime options, have resulted in a trace that will run for < 60 seconds. This is not allowed, and the trace will not be started.';
 		SET @lv__ThisRC = -21;
@@ -489,7 +472,7 @@ BEGIN TRY
 
 	--Ok, let's get a valid TraceID value and then start the loop!
 	BEGIN TRY
-		EXEC @lv__TraceID = CoreXR.CreateTrace @Utility=N'AutoWho', @Type=N'Background', @IntendedStopTime = @lv__AutoWhoEndTime;
+		EXEC @lv__TraceID = CoreXR.CreateTrace @Utility=N'AutoWho', @Type=N'Background', @IntendedStopTimeUTC = @lv__AutoWhoEndTimeUTC;
 
 		IF ISNULL(@lv__TraceID,-1) < 0
 		BEGIN
@@ -513,7 +496,7 @@ BEGIN TRY
 	SET @ErrorMessage = N'Starting AutoWho trace using TraceID ''' + CONVERT(varchar(20),@lv__TraceID) + '''.';
 	EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=@lv__TraceID, @Location='Print TraceID', @Message=@ErrorMessage;
 
-	SET @ErrorMessage = N'The AutoWho trace is going to run for ''' + convert(varchar(20),@lv__RunTimeMinutes) + ''' seconds.';
+	SET @ErrorMessage = N'The AutoWho trace is going to run for ''' + convert(varchar(20),@lv__RunTimeSeconds) + ''' seconds.';
 	EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=@lv__TraceID, @Location='Runtime calc', @Message=@ErrorMessage;
 
 	--We get the startup time for this SQL instance b/c we will start hitting situations where our datetime values could be NULL or even 1900-01-01, and
@@ -523,26 +506,6 @@ BEGIN TRY
 
 	IF @opt__ResolvePageLatches = N'Y' OR @opt__Enable8666 = N'Y'
 	BEGIN
-		/* Moving the resolution logic to the Every 15 minute Master job
-		IF @opt__ResolvePageLatches = N'Y'
-		BEGIN
-			BEGIN TRY
-				DBCC TRACEON(3604) WITH NO_INFOMSGS;
-			END TRY
-			BEGIN CATCH
-				SET @ErrorMessage = N'PageLatch Resolution was requested but cannot enable TF 3604. Message: ' + ERROR_MESSAGE();
-				SET @lv__ThisRC = -29;
-	
-				INSERT INTO AutoWho.[Log]
-				(LogDT, ErrorCode, LocationTag, LogMessage)
-				SELECT SYSDATETIME(), @lv__ThisRC, N'TF3604Enable', @ErrorMessage;
-
-				EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
-				RETURN @lv__ThisRC;
-			END CATCH
-		END
-		*/
-
 		IF @opt__Enable8666 = N'Y'
 		BEGIN
 			BEGIN TRY
@@ -571,10 +534,10 @@ BEGIN TRY
 	SET @lv__SPIDsCaptured2Ago = -1;
 	SET @lv__SPIDsCaptured1Ago = -1;
 
-	WHILE (GETDATE() < @lv__AutoWhoEndTime AND @lv__EarlyAbort = N'N')
+	WHILE (GETUTCDATE() < @lv__AutoWhoEndTimeUTC AND @lv__EarlyAbort = N'N')
 	BEGIN
 		--reset certain vars every iteration
-		SET @lv__LoopStartTime = GETDATE();
+		SET @lv__LoopStartTimeUTC = GETUTCDATE();
 		SET @lv__LoopCounter = @lv__LoopCounter + 1;
 		SET @lv__NumSPIDsCaptured = -1;
 		SET @lv__SPIDCaptureTime = NULL;
@@ -609,7 +572,8 @@ BEGIN TRY
 					@DebugSpeed = @opt__DebugSpeed,
 					@SaveBadDims = @opt__SaveBadDims,
 					@NumSPIDs = @lv__NumSPIDsCaptured OUTPUT,
-					@SPIDCaptureTime = @lv__SPIDCaptureTime OUTPUT
+					@SPIDCaptureTime = @lv__SPIDCaptureTime OUTPUT,
+					@UTCCaptureTime = @lv__UTCCaptureTime OUTPUT
 				WITH RECOMPILE;
 
 				SET @lv__NumSPIDsAtLastRecompile = @lv__NumSPIDsCaptured;
@@ -643,7 +607,8 @@ BEGIN TRY
 					@DebugSpeed = @opt__DebugSpeed,
 					@SaveBadDims = @opt__SaveBadDims,
 					@NumSPIDs = @lv__NumSPIDsCaptured OUTPUT,
-					@SPIDCaptureTime = @lv__SPIDCaptureTime OUTPUT
+					@SPIDCaptureTime = @lv__SPIDCaptureTime OUTPUT,
+					@UTCCaptureTime = @lv__UTCCaptureTime OUTPUT
 				;
 			END
 	
@@ -675,9 +640,9 @@ BEGIN TRY
 		--Note that we put this outside the TRY/CATCH, so that even if we encounter an exception, we can 
 		-- still evaluate how long it took to hit that exception, and (if it was a long time), gather info
 		-- about the system in a more lightweight way.
-		SET @lv__AutoWhoCallCompleteTime = GETDATE();
+		SET @lv__AutoWhoCallCompleteTimeUTC = GETUTCDATE();
 
-		IF DATEDIFF(MILLISECOND, @lv__LoopStartTime, @lv__AutoWhoCallCompleteTime) > 30000
+		IF DATEDIFF(MILLISECOND, @lv__LoopStartTimeUTC, @lv__AutoWhoCallCompleteTimeUTC) > 30000
 		BEGIN
 			--the system must be really loaded. Sometimes when things are really bad, AutoWho's results
 			-- are a little more suspect (since it can take a long time for the data to be captured and thus the results
@@ -687,7 +652,7 @@ BEGIN TRY
 			EXEC AutoWho.LightWeightCollector;
 
 			SET @ErrorMessage = N'Lightweight Collector running due to AutoWho duration of ''' + 
-					CONVERT(VARCHAR(20),DATEDIFF(MILLISECOND, @lv__LoopStartTime, @lv__AutoWhoCallCompleteTime)) + ''' ms.';
+					CONVERT(VARCHAR(20),DATEDIFF(MILLISECOND, @lv__LoopStartTimeUTC, @lv__AutoWhoCallCompleteTimeUTC)) + ''' ms.';
 			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=@lv__TraceID, @Location='LightColl', @Message=@ErrorMessage;
 		END
 
@@ -748,7 +713,7 @@ BEGIN TRY
 		END		--IF ISNULL(@lv__RecompileAutoWho,0) = 1
 
 		--Every @opt__ThresholdFilterRefresh minutes, we need to recalculate our list of SPIDs to omit from threshold calculations
-		IF DATEDIFF(MINUTE, @lv__LastThresholdFilterTime, GETDATE()) > @opt__ThresholdFilterRefresh
+		IF DATEDIFF(MINUTE, @lv__LastThresholdFilterTimeUTC, GETUTCDATE()) >= @opt__ThresholdFilterRefresh
 		BEGIN
 			DELETE FROM @FilterTVP WHERE FilterType = 128;
 			TRUNCATE TABLE [AutoWho].[ThresholdFilterSpids];
@@ -758,7 +723,7 @@ BEGIN TRY
 			SELECT DISTINCT 128, f.ThresholdFilterSpid
 			FROM AutoWho.ThresholdFilterSpids f;
 
-			SET @lv__LastThresholdFilterTime = GETDATE();
+			SET @lv__LastThresholdFilterTimeUTC = GETUTCDATE();
 		END
 
 		--now we check to see if someone has asked that we stop the trace (or we've hit our 10-exceptions-in-a-row condition)
@@ -795,18 +760,18 @@ BEGIN TRY
 		--Note that our Options check constraint on the IntervalLength column allows intervals ranging from 5 seconds to 300 seconds
 		IF @lv__EarlyAbort = N'N'
 		BEGIN
-			--@lv__LoopStartTime holds the time this iteration of the loop began. i.e. SET @lv__LoopStartTime = GETDATE()
-			SET @lv__LoopEndTime = GETDATE();
-			SET @lv__LoopNextStart = DATEADD(SECOND, @opt__IntervalLength, @lv__LoopStartTime); 
+			--@lv__LoopStartTimeUTC holds the time this iteration of the loop began. i.e. SET @lv__LoopStartTimeUTC = GETUTCDATE()
+			SET @lv__LoopEndTimeUTC = GETUTCDATE();
+			SET @lv__LoopNextStartUTC = DATEADD(SECOND, @opt__IntervalLength, @lv__LoopStartTimeUTC); 
 
-			--If the Collector proc ran so long that the current time is actually >= @lv__LoopNextStart, we 
+			--If the Collector proc ran so long that the current time is actually >= @lv__LoopNextStartUTC, we 
 			-- increment the target time by the interval until the target is in the future.
-			WHILE @lv__LoopNextStart <= @lv__LoopEndTime
+			WHILE @lv__LoopNextStartUTC <= @lv__LoopEndTimeUTC
 			BEGIN
-				SET @lv__LoopNextStart = DATEADD(SECOND, @opt__IntervalLength, @lv__LoopNextStart);
+				SET @lv__LoopNextStartUTC = DATEADD(SECOND, @opt__IntervalLength, @lv__LoopNextStartUTC);
 			END
 
-			SET @lv__LoopNextStartSecondDifferential = DATEDIFF(SECOND, @lv__LoopEndTime, @lv__LoopNextStart);
+			SET @lv__LoopNextStartSecondDifferential = DATEDIFF(SECOND, @lv__LoopEndTimeUTC, @lv__LoopNextStartUTC);
 
 			SET @lv__WaitForMinutes = @lv__LoopNextStartSecondDifferential / 60;
 			SET @lv__LoopNextStartSecondDifferential = @lv__LoopNextStartSecondDifferential % 60;
@@ -815,17 +780,17 @@ BEGIN TRY
 		
 			SET @lv__WaitForString = '00:' + 
 									CASE WHEN @lv__WaitForMinutes BETWEEN 10 AND 59
-										THEN CONVERT(varchar(10), @lv__WaitForMinutes)
-										ELSE '0' + CONVERT(varchar(10), @lv__WaitForMinutes)
+										THEN CONVERT(VARCHAR(10), @lv__WaitForMinutes)
+										ELSE '0' + CONVERT(VARCHAR(10), @lv__WaitForMinutes)
 										END + ':' + 
 									CASE WHEN @lv__WaitForSeconds BETWEEN 10 AND 59 
-										THEN CONVERT(varchar(10), @lv__WaitForSeconds)
-										ELSE '0' + CONVERT(varchar(10), @lv__WaitForSeconds)
+										THEN CONVERT(VARCHAR(10), @lv__WaitForSeconds)
+										ELSE '0' + CONVERT(VARCHAR(10), @lv__WaitForSeconds)
 										END;
 		
 			WAITFOR DELAY @lv__WaitForString;
 		END -- check @lv__EarlyAbort to see if we should construct/execute WAITFOR
-	END		--WHILE (GETDATE() < @lv__EndTime OR @lv__EarlyAbort = N'N')
+	END		--WHILE (GETUTCDATE() < @lv__AutoWhoEndTimeUTC AND @lv__EarlyAbort = N'N')
 
 	--clean up any signals that are now irrelevant. (Remember, OneTime signals get deleted immediately after their use
 	DELETE FROM AutoWho.SignalTable 
@@ -859,26 +824,6 @@ BEGIN TRY
 
 	IF @opt__ResolvePageLatches = N'Y' OR @opt__Enable8666 = N'Y'
 	BEGIN
-		/* Moving the page resolution logic to the Every 15 minute Master
-		IF @opt__ResolvePageLatches = N'Y'
-		BEGIN
-			BEGIN TRY
-				DBCC TRACEOFF(3604) WITH NO_INFOMSGS;
-			END TRY
-			BEGIN CATCH
-				SET @ErrorMessage = N'PageLatch Resolution was requested but cannot disable TF 3604. Message: ' + ERROR_MESSAGE();
-				SET @lv__ThisRC = -41;
-	
-				INSERT INTO AutoWho.[Log]
-				(LogDT, ErrorCode, LocationTag, LogMessage)
-				SELECT SYSDATETIME(), @lv__ThisRC, N'TF3604Disable', @ErrorMessage;
-
-				EXEC sp_releaseapplock @Resource = 'AutoWhoBackgroundTrace', @LockOwner = 'Session';
-				RETURN @lv__ThisRC;
-			END CATCH
-		END
-		*/
-
 		IF @opt__Enable8666 = N'Y'
 		BEGIN
 			BEGIN TRY

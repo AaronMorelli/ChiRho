@@ -38,20 +38,25 @@ GO
 SET ANSI_PADDING ON
 GO
 CREATE TABLE [AutoWho].[CaptureTimes] (
-	[CollectionInitiatorID] [tinyint] NOT NULL,
-	[SPIDCaptureTime] [datetime] NOT NULL,
-	[UTCCaptureTime] [datetime] NOT NULL,
-	[RunWasSuccessful] [tinyint] NOT NULL,
-	[PostProcessed] [tinyint] NOT NULL,
-	[CaptureSummaryPopulated] [tinyint] NOT NULL,
-	[AutoWhoDuration_ms] [int] NOT NULL,
-	[SpidsCaptured] [int] NULL,
-	[DurationBreakdown] [varchar](1000) NULL,
-	[ExtractedForDW] [tinyint] NOT NULL,
+	[CollectionInitiatorID]			[tinyint] NOT NULL,
+	[UTCCaptureTime]				[datetime] NOT NULL,
+	[SPIDCaptureTime]				[datetime] NOT NULL,
+	[RunWasSuccessful]				[tinyint] NOT NULL,
+	[SpidsCaptured]					[int] NULL,
+	[PostProcessed_StmtStats]		[tinyint] NOT NULL,
+	[PostProcessed_Latch]			[tinyint] NOT NULL,
+	[PostProcessed_Lock]			[tinyint] NOT NULL,
+	[PostProcessed_NodeStatus]		[tinyint] NOT NULL,
+	[ExtractedForDW]				[tinyint] NOT NULL,
+	[CaptureSummaryPopulated]		[tinyint] NOT NULL,
+	[CaptureSummaryDeltaPopulated]	[tinyint] NOT NULL,
+	[AutoWhoDuration_ms]			[int] NOT NULL,
+	[DurationBreakdown]				[varchar](1000) NULL,
+	
  CONSTRAINT [PKAutoWhoCaptureTimes] PRIMARY KEY CLUSTERED 
 (
 	[CollectionInitiatorID] ASC,
-	[SPIDCaptureTime] ASC
+	[UTCCaptureTime] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 
@@ -66,4 +71,24 @@ CREATE UNIQUE NONCLUSTERED INDEX [UNCL_RunWasSuccessful_OTHERS] ON [AutoWho].[Ca
 	[SPIDCaptureTime] ASC
 )
 INCLUDE ( 	[AutoWhoDuration_ms]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+CREATE UNIQUE NONCLUSTERED INDEX [UNCL_SPIDCaptureTime_OTHERS] ON [AutoWho].[CaptureTimes]
+(
+	[CollectionInitiatorID] ASC,
+	[SPIDCaptureTime] ASC
+)
+INCLUDE ( 	
+	[UTCCaptureTime],
+	[RunWasSuccessful],
+	[SpidsCaptured],
+	[PostProcessed_StmtStats],
+	[PostProcessed_Latch],
+	[PostProcessed_Lock],
+	[PostProcessed_NodeStatus],
+	[ExtractedForDW],
+	[CaptureSummaryPopulated],
+	[CaptureSummaryDeltaPopulated],
+	[AutoWhoDuration_ms],
+	[DurationBreakdown]
+) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 GO

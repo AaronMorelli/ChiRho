@@ -47,11 +47,12 @@ EXEC CoreXR.ChiRhoMaster @ErrorMessage=@lmsg OUTPUT
 PRINT ISNULL(@lmsg, '<null>')
 */
 (
-	@AutoWhoJobName NVARCHAR(255)		= NULL,
-	@ServerEyeJobName NVARCHAR(255)		= NULL,
-	@PurgeDOW NVARCHAR(21)				= 'Sun',	-- to do every day of the week: 'SunMonTueWedThuFriSat'
-	@PurgeHour TINYINT					= 3,		-- 3am
-	@ErrorMessage VARCHAR(MAX)			= NULL OUTPUT
+	@AutoWhoJobName		NVARCHAR(255) = NULL,
+	@ServerEyeJobName	NVARCHAR(255) = NULL,
+	@PurgeDOW			NVARCHAR(21) = 'Sun',	-- to do every day of the week: 'SunMonTueWedThuFriSat'
+	@PurgeHour			TINYINT	= 3,			-- 3am
+	@PurgeDOWHourIsUTC	NCHAR(1) = N'N',		-- If purge should be run at a time when DST can interfere (i.e. 1 or 2 am local), specify the hour in UTC to avoid problems.
+	@ErrorMessage		VARCHAR(MAX) = NULL OUTPUT
 )
 AS
 BEGIN
@@ -69,13 +70,18 @@ BEGIN
 
 	BEGIN TRY
 		--General variables
-		DECLARE @lv__masterErrorString NVARCHAR(MAX),
-				@lv__curError NVARCHAR(MAX),
-				@lv__ProcRC INT,
-				@lv__PostProcessingStart DATETIME,
-				@lv__PostProcessingEnd DATETIME
-			;
-
+		DECLARE @lv__masterErrorString		NVARCHAR(MAX),
+				@lv__curError				NVARCHAR(MAX),
+				@lv__ProcRC					INT,
+				@lv__PostProcRawStartUTC	DATETIME,
+				@lv__PostProcRawEndUTC		DATETIME,
+				@lv__PostProcStartUTC		DATETIME,
+				@lv__PostProcEndUTC			DATETIME,
+				@lv__ShouldRunPurge			NCHAR(1) = N'N',
+				@lv__TodayDOW				NVARCHAR(10),
+				@lv__TodayDOWInUTC			NVARCHAR(10),
+				@lv__ThisHour				INT,
+				@lv__ThisHourInUTC			INT;
 
 		SET @PurgeDOW = LOWER(@PurgeDOW);
 
@@ -99,6 +105,19 @@ BEGIN
 			RAISERROR('Parameter @PurgeHour must be between 0 and 24 inclusive',16,1);
 			RETURN -7;
 		END
+
+		SET @PurgeDOWHourIsUTC = ISNULL(@PurgeDOWHourIsUTC,N'N');
+
+		IF @PurgeDOWHourIsUTC NOT IN (N'N', N'Y')
+		BEGIN
+			RAISERROR('Parameter @PurgeDOWHourIsUTC must be either Y or N.',16,1);
+			RETURN -7;
+		END
+
+		SET @lv__TodayDOW = LOWER(SUBSTRING(LTRIM(RTRIM(DATENAME(dw,GETDATE()))),1,3));
+		SET @lv__TodayDOWInUTC = LOWER(SUBSTRING(LTRIM(RTRIM(DATENAME(dw,GETUTCDATE()))),1,3));
+		SET @lv__ThisHour = DATEPART(HOUR, GETDATE());
+		SET @lv__ThisHourInUTC = DATEPART(HOUR, GETUTCDATE());
 
 		--Update our DBID mapping table
 		EXEC [CoreXR].[UpdateDBMapping];
@@ -134,11 +153,10 @@ BEGIN
 		--	4. Run ServerEye purge and maint if it is the appropriate time
 
 		/*************************************** AutoWho Job stuff ***************************/
-		DECLARE @AutoWho__IsEnabled NCHAR(1), 
-				@AutoWho__NextStartTime DATETIME, 
-				@AutoWho__NextEndTime DATETIME,
-				@lv__tmptime DATETIME
-				;
+		DECLARE @AutoWho__IsEnabled		NCHAR(1), 
+				@AutoWho__StartTimeUTC	DATETIME, 
+				@AutoWho__EndTimeUTC	DATETIME,
+				@lv__CurTimeUTC			DATETIME;
 
 		IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs where name = @AutoWhoJobName)
 		BEGIN
@@ -147,12 +165,13 @@ BEGIN
 		END
 		ELSE
 		BEGIN
-			SET @lv__tmptime = GETDATE();
-			EXEC @lv__ProcRC = CoreXR.TraceTimeInfo @Utility=N'AutoWho', @PointInTime = @lv__tmptime, @UtilityIsEnabled = @AutoWho__IsEnabled OUTPUT,
-					@UtilityStartTime = @AutoWho__NextStartTime OUTPUT, @UtilityEndTime = @AutoWho__NextEndTime OUTPUT
-				;
+			SET @lv__CurTimeUTC = GETUTCDATE();
+			--This proc gives us the next time range when the AutoWho trace should be running. If @lv__CurTimeUTC is within a time range when AutoWho
+			--should be running, we'll get the start/end of the time range that AutoWho should be running for right now.
+			EXEC @lv__ProcRC = CoreXR.TraceTimeInfo @Utility=N'AutoWho', @PointInTimeUTC = @lv__CurTimeUTC, @UtilityIsEnabled = @AutoWho__IsEnabled OUTPUT,
+					@UtilityStartTimeUTC = @AutoWho__StartTimeUTC OUTPUT, @UtilityEndTimeUTC = @AutoWho__EndTimeUTC OUTPUT;
 
-			IF @lv__tmptime BETWEEN @AutoWho__NextStartTime AND @AutoWho__NextEndTime 
+			IF @lv__CurTimeUTC BETWEEN @AutoWho__StartTimeUTC AND @AutoWho__EndTimeUTC 
 				AND @AutoWho__IsEnabled = N'Y'
 			BEGIN
 				--the trace SHOULD be running. check to see if it is already.
@@ -168,7 +187,8 @@ BEGIN
 					IF NOT EXISTS (SELECT * FROM AutoWho.SignalTable t WITH (NOLOCK) 
 									WHERE LOWER(SignalName) = N'aborttrace' 
 									AND LOWER(t.SignalValue) = N'allday'
-									AND DATEDIFF(DAY, InsertTime, GETDATE()) = 0)
+									AND DATEDIFF(DAY, InsertTime, GETDATE()) = 0)	--we use local instead of UTC because the DST 1am-2am issue doesn't affect this logic 
+																					--and everything thinks in local time anyway (so there's no value in aborting for the full UTC day)
 					--any abort requests will, by default, continue their effect the rest of the day.
 					BEGIN
 						EXEC msdb.dbo.sp_start_job @job_name = @AutoWhoJobName;
@@ -179,7 +199,7 @@ BEGIN
 						EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = -1, @TraceID = NULL, @Location = N'XRMaster AutoWho Signal', @Message = N'An AbortTrace signal exists for today. This procedure has been told not to run the rest of the day.';
 					END
 				END	 
-			END		--IF @lv__tmptime BETWEEN @AutoWho__NextStartTime AND @AutoWho__NextEndTime
+			END		--IF @lv__CurTimeUTC BETWEEN @AutoWho__StartTimeUTC AND @AutoWho__EndTimeUTC 
 					-- that is, "IF trace should be running"
 		END		--IF job exists/doesn't exist
 
@@ -194,10 +214,26 @@ BEGIN
 		END CATCH
 
 		BEGIN TRY
-			SET @lv__ProcRC = 0;
-			SET @lv__PostProcessingEnd = DATEADD(SECOND, -30, GETDATE());		--so we steer clear of the tail of the table where data is being inserted regularly.
-			SET @lv__PostProcessingStart = DATEADD(MINUTE, -30, @lv__PostProcessingEnd);
-			EXEC @lv__ProcRC = AutoWho.PostProcessor @optionset=N'BackgroundTrace', @init=255, @start=@lv__PostProcessingStart, @end=@lv__PostProcessingEnd;
+			/*
+				We need to pass in valid AutoWho.CaptureTime.UTCCaptureTime values into the post-processor. We go back 45 minutes,
+				though the various sub-procs inside the PostProcessor keep track of what they have already processed in that range.
+			*/
+			SET @lv__PostProcRawEndUTC = DATEADD(SECOND, -30, GETUTCDATE());		--we steer clear of the tail of the table where data is being inserted regularly.
+			SET @lv__PostProcRawStartUTC = DATEADD(MINUTE, -45, @lv__PostProcRawEndUTC);
+
+			SELECT 
+				@lv__PostProcStartUTC = MIN(ct.UTCCaptureTime),
+				@lv__PostProcEndUTC = MAX(ct.UTCCaptureTime)
+			FROM AutoWho.CaptureTimes ct
+			WHERE ct.CollectionInitiatorID = 255
+			AND ct.UTCCaptureTime >= @lv__PostProcRawStartUTC
+			AND ct.UTCCaptureTime <= @lv__PostProcRawEndUTC;
+
+			IF @lv__PostProcStartUTC IS NOT NULL	--Only post-process if we have background captures in the last 45 minutes
+			BEGIN
+				SET @lv__ProcRC = 0;
+				EXEC @lv__ProcRC = AutoWho.PostProcessor @optionset=N'BackgroundTrace', @init=255, @startUTC=@lv__PostProcStartUTC, @endUTC=@lv__PostProcEndUTC;
+			END
 		END TRY
 		BEGIN CATCH
 			--inside the loop, we swallow the error and just log it
@@ -207,28 +243,50 @@ BEGIN
 
 
 		--Evaluate whether we should run AutoWho purge
-		IF @PurgeDOW LIKE '%' + LOWER(SUBSTRING(LTRIM(RTRIM(DATENAME(dw,GETDATE()))),1,3)) + '%'
-		BEGIN
-			IF DATEPART(HOUR, GETDATE()) = @PurgeHour
-				OR (DATEPART(HOUR, GETDATE()) = 0 AND @PurgeHour = 24)
-			BEGIN
-				IF NOT EXISTS (
-					SELECT *
-					FROM AutoWho.[Log] l
-					WHERE l.LogDT > DATEADD(HOUR, -1, GETDATE())
-					AND l.LocationTag = 'XRMaster AutoWho Purge'
-					AND l.LogMessage = 'Purge procedure completed'
+		IF @PurgeDOWHourIsUTC = N'N'
+			AND @PurgeDOW LIKE '%' + @lv__TodayDOW + '%'
+			AND (
+				@lv__ThisHour = @PurgeHour
+					OR (@lv__ThisHour = 0 AND @PurgeHour = 24)
 				)
-				BEGIN
-					EXEC AutoWho.ApplyRetentionPolicies;
+			--AND the log doesn't show any purge as having run in the last 75 minutes (use UTC time to avoid weirdness on DST-change days)
+			AND NOT EXISTS (
+				SELECT *
+				FROM AutoWho.[Log] l
+				WHERE l.LocationTag = 'XRMaster AutoWho Purge'
+				AND l.LogMessage = 'Purge procedure completed'
+				AND l.LogDTUTC > DATEADD(MINUTE, -75, GETUTCDATE())
+			)
+		BEGIN
+			SET @lv__ShouldRunPurge = N'Y';
+		END
+		ELSE IF @PurgeDOWHourIsUTC = N'Y'
+			AND @PurgeDOW LIKE '%' + @lv__TodayDOWInUTC + '%'
+			AND (
+				@lv__ThisHourInUTC = @PurgeHour
+					OR (@lv__ThisHourInUTC = 0 AND @PurgeHour = 24)
+				)
+			--AND the log doesn't show any purge as having run in the last 75 minutes (use UTC time to avoid weirdness on DST-change days)
+			AND NOT EXISTS (
+				SELECT *
+				FROM AutoWho.[Log] l
+				WHERE l.LocationTag = 'XRMaster AutoWho Purge'
+				AND l.LogMessage = 'Purge procedure completed'
+				AND l.LogDTUTC > DATEADD(MINUTE, -75, GETUTCDATE())
+			)
+		BEGIN
+			SET @lv__ShouldRunPurge = N'Y';
+		END
 
-					EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = 0, @TraceID = NULL, @Location = N'XRMaster AutoWho Purge', @Message = N'Purge procedure completed';
+		IF @lv__ShouldRunPurge = N'Y'
+		BEGIN
+			EXEC AutoWho.ApplyRetentionPolicies;
 
-					--Now that we have (potentially) deleted a bunch of rows, do some index maint
-					EXEC AutoWho.MaintainIndexes;
-				END	--If purge hasn't yet been run 
-			END	--If hour is a purge hour
-		END	--If DOW is a purge day
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = 0, @TraceID = NULL, @Location = N'XRMaster AutoWho Purge', @Message = N'Purge procedure completed';
+
+			--Now that we have (potentially) deleted a bunch of rows, do some index maint
+			EXEC AutoWho.MaintainIndexes;
+		END
 		/*************************************** AutoWho Job stuff ***************************/
 
 --SE is still in development
@@ -248,12 +306,12 @@ RETURN 0;
 		END
 		ELSE
 		BEGIN
-			SET @lv__tmptime = GETDATE();
-			EXEC @lv__ProcRC = CoreXR.TraceTimeInfo @Utility=N'ServerEye', @PointInTime = @lv__tmptime, @UtilityIsEnabled = @ServerEye__IsEnabled OUTPUT,
+			SET @lv__CurTimeUTC = GETDATE();
+			EXEC @lv__ProcRC = CoreXR.TraceTimeInfo @Utility=N'ServerEye', @PointInTime = @lv__CurTimeUTC, @UtilityIsEnabled = @ServerEye__IsEnabled OUTPUT,
 					@UtilityStartTime = @ServerEye__NextStartTime OUTPUT, @UtilityEndTime = @ServerEye__NextEndTime OUTPUT
 				;
 
-			IF @lv__tmptime BETWEEN @ServerEye__NextStartTime AND @ServerEye__NextEndTime
+			IF @lv__CurTimeUTC BETWEEN @ServerEye__NextStartTime AND @ServerEye__NextEndTime
 				AND @ServerEye__IsEnabled = N'Y'
 			BEGIN
 				--the trace SHOULD be running. check to see if it is already.

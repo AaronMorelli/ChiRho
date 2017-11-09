@@ -59,10 +59,13 @@ EXEC CoreXR.CreateTrace @Utility=N'', @Type=N'', @IntendedStopTime='2016-04-24 2
 (
 	@Utility			NVARCHAR(20),
 	@Type				NVARCHAR(20),
-	@IntendedStopTime	DATETIME=NULL,
+	@IntendedStopTime	DATETIME=NULL,	--If both are specified, UTC takes precedence
+	@IntendedStopTimeUTC	DATETIME=NULL, 
 	@Payload_int		INT=NULL,
 	@Payload_bigint		BIGINT=NULL,
 	@Payload_decimal	DECIMAL(28,9)=NULL,
+	@Payload_datetime	DATETIME=NULL,
+	@Payload_datetimeUTC	DATETIME=NULL,
 	@Payload_nvarchar	NVARCHAR(MAX)=NULL
 )
 AS
@@ -84,22 +87,49 @@ BEGIN
 		RETURN -1;
 	END
 
-	IF @IntendedStopTime IS NULL
+	
+	IF @IntendedStopTime IS NULL AND @IntendedStopTimeUTC IS NULL
 	BEGIN
-		RAISERROR('Parameter @IntendedStopTime cannot be null',16,1);
+		RAISERROR('Either @IntendedStopTime or @IntendedStopTimeUTC must be non-NULL.',16,1);
 		RETURN -1;
 	END
-	
+	ELSE
+	BEGIN
+		--At least 1 of these is non-null.
+		--UTC takes precedence, if specified
+		IF @IntendedStopTimeUTC IS NOT NULL
+		BEGIN
+			SET @IntendedStopTime = DATEADD(MINUTE, DATEDIFF(MINUTE, GETUTCDATE(), GETDATE()), @IntendedStopTimeUTC);
+		END
+		ELSE
+		BEGIN
+			SET @IntendedStopTimeUTC = DATEADD(MINUTE, DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()), @IntendedStopTime);
+		END
+	END
+
+	--We do the same thing with the datetime payloads, though both can be null
+	IF @Payload_datetimeUTC IS NOT NULL
+	BEGIN
+		SET @Payload_datetime = DATEADD(MINUTE, DATEDIFF(MINUTE, GETUTCDATE(), GETDATE()), @Payload_datetimeUTC);
+	END
+	ELSE --UTC payload is NULL
+		IF @Payload_datetime IS NOT NULL
+	BEGIN
+		SET @Payload_datetimeUTC = DATEADD(MINUTE, DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()), @Payload_datetime);
+	END
+
 	BEGIN TRY
 	
 		INSERT INTO CoreXR.[Traces]
-			([Utility], [Type],  --Take default: CreateTime
-				IntendedStopTime, StopTime, AbortCode,
-				Payload_int, Payload_bigint, Payload_decimal, Payload_nvarchar
+			([Utility], [Type],  --Take defaults for CreateTime, CreateTimeUTC
+				IntendedStopTime, IntendedStopTimeUTC,
+				StopTime, StopTimeUTC, AbortCode,
+				Payload_int, Payload_bigint, Payload_decimal, Payload_datetime, Payload_datetimeUTC, Payload_nvarchar
 			)
 		SELECT @Utility,@Type, 
-				@IntendedStopTime, NULL, NULL,
-				@Payload_int, @Payload_bigint, @Payload_decimal, @Payload_nvarchar;
+				@IntendedStopTime, @IntendedStopTimeUTC,
+				NULL, NULL, NULL,
+				@Payload_int, @Payload_bigint, @Payload_decimal, @Payload_datetime, @Payload_datetimeUTC, @Payload_nvarchar;
 
 		SET @LastIdentity = SCOPE_IDENTITY();
 

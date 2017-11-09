@@ -42,12 +42,16 @@ AS 	BEGIN
 INSERT INTO CoreXR.Version_History
 ([Version], 
 EffectiveDate, 
+EffectiveDateUTC,
 HistoryInsertDate,
+historyInsertDateUTC,
 TriggerAction)
 SELECT 
 [Version], 
 EffectiveDate, 
+EffectiveDateUTC,
 GETDATE(),
+GETUTCDATE(),
 'Insert'
 FROM inserted
 END

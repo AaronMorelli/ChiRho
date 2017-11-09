@@ -117,11 +117,15 @@ BEGIN
 
 	DECLARE @lv__ViewCurrent						BIT,
 			@lv__HistoricalSPIDCaptureTime			DATETIME,
+			@lv__HistoricalSPIDCaptureTimeUTC		DATETIME,
 			@lv__MinUserCaptureTime					DATETIME,
 			@lv__MaxUserCaptureTime					DATETIME,
-			@lv__UserTraceStartTime					DATETIME,
+			@lv__MinUserCaptureTimeUTC				DATETIME,
+			@lv__MaxUserCaptureTimeUTC				DATETIME,
 			@lv__effectiveordinal					INT,
 			@scratch__int							INT,
+			@lv__StartUTC							DATETIME,
+			@lv__EndUTC								DATETIME,
 			@helpstr								NVARCHAR(MAX),
 			@helpexec								NVARCHAR(4000),
 			@scratch__nvarchar						NVARCHAR(MAX),
@@ -252,7 +256,12 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 															RIGHT(CONVERT(NVARCHAR(20),N'000') + CONVERT(NVARCHAR(20),DATEPART(MILLISECOND, @end)),3)
 							);
 
-		IF @start >= GETDATE() OR @end >= GETDATE()
+		SET @lv__StartUTC = DATEADD(MINUTE, DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()), @start);
+		SET @lv__EndUTC = DATEADD(MINUTE, DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()), @end);
+
+		--We use UTC for this check b/c of the DST "fall-back" scenario. We don't want to prevent a user from calling this proc for a timerange 
+		--that already occurred (e.g. 1:30am-1:45am) at the second occurrence of 1:15am that day.
+		IF @lv__StartUTC > GETUTCDATE() OR @lv__EndUTC > GETUTCDATE()
 		BEGIN
 			RAISERROR(@helpexec,10,1);
 			RAISERROR('Neither of the parameters @start or @end can be in the future.',16,1);
@@ -446,7 +455,8 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 	IF @lv__ViewCurrent = CONVERT(BIT,0)
 	BEGIN
 		CREATE TABLE #HistoricalCaptureTimes (
-			hct		DATETIME NOT NULL	PRIMARY KEY CLUSTERED
+			hctUTC	DATETIME NOT NULL		PRIMARY KEY CLUSTERED,
+			hct		DATETIME NOT NULL
 		);
 
 		/* 	
@@ -456,15 +466,15 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 				user running sp_XR_SessionViewer). As the user repeatedly presses F5, the position increments by 1 each time (or decrements, if @offset = -99999 
 				instead of the default 99999), and the position is stored in the OrdinalCachePosition table.
 
-			CoreXR.CaptureOrdinalCache --> When a sp_XR_* proc first supplies a Utility/CollectionInitiatorID/Start Time/End Time (for this case, Utility="SessionViewer"), 
+			CoreXR.CaptureOrdinalCache --> When a sp_XR_* proc first supplies a Utility/CollectionInitiatorID/Start Time/End Time (for this case, Utility="sp_XR_SessionViewer"), 
 				the CaptureOrdinalCache is populated with all of the SPID Capture Time values between Start Time and End Time, for that CollectionInitiatorID. 
 				That is, the CoreXR.CaptureOrdinalCache will hold every run of the AutoWho.Collector between @start and @end inclusive. All of those capture 
 				times are numbered from 1 to X and -1 to -X, in time order ascending and descending. Thus, given a number (e.g. 5), the table can be used to find 
-				the SPID Capture Time that is the 5th one in the series of captures starting with the first one >= @Start time, and ending with the last 
-				one <= @End time. Or if the number is -5, the table can be used to obtain the SPID Capture Time that is 5th from @End, going backwards towards @Start.
+				the Capture Time that is the 5th one in the series of captures starting with the first one >= @Start time, and ending with the last 
+				one <= @End time. Or if the number is -5, the table can be used to obtain the Capture Time that is 5th from @End, going backwards towards @Start.
 			
 				As mentioned above, each time the user hits F5 to execute the proc, the position in CoreXR.OrdinalCachePosition is incremented and returned/stored 
-				in @lv__effectiveordinal, and then this position is used to probe into CoreXR.CaptureOrdinalCache to find the SPID Capture Time that corresponds to 
+				in @lv__effectiveordinal, and then this position is used to probe into CoreXR.CaptureOrdinalCache to find the Capture Time that corresponds to 
 				the @lv__effectiveordinal in the @start/@end time series that has been specified. 
 
 			This complicated design behind the scenes is to give the user a relatively simple experience in moving through time when examining AutoWho data.
@@ -614,14 +624,14 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 		-- is populated differs slightly based on the value in @offset/@lv__effectiveordinal. 
 		--If @offset=0, the user isn't using the position marker cache, so we don't need to interact at all with CoreXR.OrdinalCachePosition.
 		-- In fact, we don't need to interact at all with CoreXR.CaptureOrdinalCache either, as we just need a list of all the 
-		-- SPIDCaptureTime values between @start and @end. So, for @offset=0, we just check that CaptureSummary is up-to-date 
+		-- Capture Times between @start and @end. So, for @offset=0, we just check that CaptureSummary is up-to-date 
 		-- based on AutoWho.CaptureTimes rows, and then we pull a list of datetime values.
 		IF @lv__effectiveordinal = 0
 		BEGIN
 			IF EXISTS (SELECT * FROM @@XRDATABASENAME@@.AutoWho.CaptureTimes ct
 						WHERE ct.RunWasSuccessful = 1
 						AND CollectionInitiatorID = @lv__CollectionInitiatorID
-						AND ct.CaptureSummaryPopulated = 0
+						AND (ct.CaptureSummaryPopulated = 0 OR ct.CaptureSummaryDeltaPopulated=1)
 						AND ct.SPIDCaptureTime BETWEEN @start AND @end)
 			BEGIN
 				EXEC @scratch__int = @@XRDATABASENAME@@.AutoWho.PopulateCaptureSummary @CollectionInitiatorID = @lv__CollectionInitiatorID, 
@@ -632,7 +642,7 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 
 				IF @scratch__int = 1
 				BEGIN
-					--no rows for this range. Return special code 2 and let the caller decide what to do
+					--no rows for this range. Return a special code and let the caller decide what to do
 					RAISERROR(@helpexec,10,1);
 					RAISERROR('
 			There is no AutoWho data for the time range specified.',10,1);
@@ -648,25 +658,31 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 			END
 
 			INSERT INTO #HistoricalCaptureTimes (
+				hctUTC,
 				hct
 			)
-			SELECT DISTINCT cs.SPIDCaptureTime
-			FROM @@XRDATABASENAME@@.AutoWho.CaptureSummary cs
-			WHERE cs.CollectionInitiatorID = @lv__CollectionInitiatorID
-			AND cs.SPIDCaptureTime BETWEEN @start AND @end;
+			SELECT 
+				ct.UTCCaptureTime,
+				ct.SPIDCaptureTime
+			FROM @@XRDATABASENAME@@.AutoWho.CaptureTimes ct
+			WHERE ct.CollectionInitiatorID = @lv__CollectionInitiatorID
+			AND ct.SPIDCaptureTime BETWEEN @start AND @end;
 
 			DECLARE iterateHCTs CURSOR FOR
-			SELECT hct 
+			SELECT 
+				hctUTC,
+				hct 
 			FROM #HistoricalCaptureTimes
-			ORDER BY hct ASC;
+			ORDER BY hctUTC ASC;
 
 			OPEN iterateHCTs;
-			FETCH iterateHCTs INTO @lv__HistoricalSPIDCaptureTime;
+			FETCH iterateHCTs INTO @lv__HistoricalSPIDCaptureTimeUTC, @lv__HistoricalSPIDCaptureTime;
 
 			WHILE @@FETCH_STATUS = 0
 			BEGIN
 				EXEC @@XRDATABASENAME@@.AutoWho.PresentSessionViewer @init=@lv__CollectionInitiatorID,
 					@currentmode=0,
+					@hctUTC = @lv__HistoricalSPIDCaptureTimeUTC, 
 					@hct = @lv__HistoricalSPIDCaptureTime, 
 					@activity = @activity,
 					@dur = @dur,
@@ -687,7 +703,7 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 					@effectiveordinal = @lv__effectiveordinal,
 					@dir = @directives;
 
-				FETCH iterateHCTs INTO @lv__HistoricalSPIDCaptureTime;
+				FETCH iterateHCTs INTO @lv__HistoricalSPIDCaptureTimeUTC, @lv__HistoricalSPIDCaptureTime;
 			END
 
 			CLOSE iterateHCTs;
@@ -702,11 +718,14 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 			-- and the CaptureOrdinalCache if those are not yet populated. 
 
 			SET @lv__HistoricalSPIDCaptureTime = NULL;
+			SET @lv__HistoricalSPIDCaptureTimeUTC = NULL;
 
 			--First, optimistically assume that the cache already exists, and grab the ordinal's HCT
 			IF @lv__effectiveordinal < 0 
 			BEGIN
-				SELECT @lv__HistoricalSPIDCaptureTime = c.CaptureTime
+				SELECT 
+					@lv__HistoricalSPIDCaptureTimeUTC = c.CaptureTimeUTC,
+					@lv__HistoricalSPIDCaptureTime = c.CaptureTime
 				FROM @@XRDATABASENAME@@.CoreXR.CaptureOrdinalCache c
 				WHERE c.Utility = @lv__UtilityName
 				AND c.CollectionInitiatorID = @lv__CollectionInitiatorID
@@ -716,7 +735,9 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 			END
 			ELSE IF @lv__effectiveordinal > 0
 			BEGIN
-				SELECT @lv__HistoricalSPIDCaptureTime = c.CaptureTime
+				SELECT 
+					@lv__HistoricalSPIDCaptureTimeUTC = c.CaptureTimeUTC,
+					@lv__HistoricalSPIDCaptureTime = c.CaptureTime
 				FROM @@XRDATABASENAME@@.CoreXR.CaptureOrdinalCache c
 				WHERE c.Utility = @lv__UtilityName
 				AND c.CollectionInitiatorID = @lv__CollectionInitiatorID
@@ -731,7 +752,8 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 				SET @scratch__int = NULL;
 				SET @scratch__nvarchar = NULL;
 				EXEC @scratch__int = @@XRDATABASENAME@@.CoreXR.RetrieveOrdinalCacheEntry @ut = @lv__UtilityName, @init = @lv__CollectionInitiatorID,
-					@st=@start, @et=@end, @ord=@lv__effectiveordinal, @hct=@lv__HistoricalSPIDCaptureTime OUTPUT, @msg=@scratch__nvarchar OUTPUT;
+					@st=@start, @et=@end, @ord=@lv__effectiveordinal, @hct=@lv__HistoricalSPIDCaptureTime OUTPUT, @hctUTC=@lv__HistoricalSPIDCaptureTimeUTC OUTPUT,
+					@msg=@scratch__nvarchar OUTPUT;
 
 					--returns 0 if successful,
 					-- -1 if exception occurred
@@ -775,6 +797,7 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 			--Just executing for 1 SPID Capture time
 			EXEC @@XRDATABASENAME@@.AutoWho.PresentSessionViewer @init=@lv__CollectionInitiatorID,
 				@currentmode=0,
+				@hctUTC = @lv__HistoricalSPIDCaptureTimeUTC,
 				@hct = @lv__HistoricalSPIDCaptureTime, 
 				@activity = @activity,
 				@dur = @dur,
@@ -865,8 +888,6 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 				END
 			END
 
-			SET @lv__UserTraceStartTime = GETDATE();
-
 			EXEC @scratch__int = @@XRDATABASENAME@@.AutoWho.UserCollector @init=@lv__CollectionInitiatorID,
 				@optionset=@lv__OptionSet,
 				@camrate=@camrate,
@@ -889,9 +910,12 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 				-- this "UserCollectionTimes" table for the InitiatorID/our SPID key every time
 				-- it runs.
 				SELECT 
-					@lv__HistoricalSPIDCaptureTime = ss.SPIDCaptureTime 
+					@lv__HistoricalSPIDCaptureTimeUTC = ss.UTCCaptureTime,
+					@lv__HistoricalSPIDCaptureTime = ss.SPIDCaptureTime
 				FROM (
-					SELECT TOP 1 t.SPIDCaptureTime
+					SELECT TOP 1 
+						t.SPIDCaptureTime,
+						t.UTCCaptureTime
 					FROM @@XRDATABASENAME@@.AutoWho.UserCollectionTimes t
 					WHERE t.CollectionInitiatorID = @lv__CollectionInitiatorID
 					AND t.session_id = @@SPID 
@@ -901,12 +925,21 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 
 				IF @waits >= 2 OR @resources=N'Y'
 				BEGIN
-					EXEC @@XRDATABASENAME@@.AutoWho.PostProcessor @optionset=@lv__OptionSet, @init=@lv__CollectionInitiatorID, @singletime=@lv__HistoricalSPIDCaptureTime;
+					BEGIN TRY
+						EXEC @@XRDATABASENAME@@.AutoWho.PostProcessor @optionset=@lv__OptionSet, @init=@lv__CollectionInitiatorID, @singletimeUTC=@lv__HistoricalSPIDCaptureTimeUTC;
+					END TRY
+					BEGIN CATCH
+						IF @@TRANCOUNT > 0 ROLLBACK;
+
+						RAISERROR('An error occurred in processing the collected data. Please consult the AutoWho log.', 16, 1);
+						RETURN -1;
+					END CATCH
 				END
 
 				--Just executing for 1 SPID Capture time
 				EXEC @@XRDATABASENAME@@.AutoWho.PresentSessionViewer @init=@lv__CollectionInitiatorID,
 					@currentmode=1,
+					@hctUTC = @lv__HistoricalSPIDCaptureTimeUTC,
 					@hct = @lv__HistoricalSPIDCaptureTime, 
 					@activity = @activity,
 					@dur = @dur,
@@ -932,20 +965,33 @@ EXEC dbo.sp_XR_SessionViewer @start=''<start datetime>'',@end=''<end datetime>''
 				--we created a short one-off trace with a series of captures.
 
 				SELECT 
-					@lv__MinUserCaptureTime = MinTime, 
-					@lv__MaxUserCaptureTime = MaxTime 
+					@lv__MinUserCaptureTimeUTC = MinTime, 
+					@lv__MaxUserCaptureTimeUTC = MaxTime 
 				FROM (
-					SELECT MinTime = MIN(t.SPIDCaptureTime),
-							MaxTime = MAX(t.SPIDCaptureTime)
+					SELECT MinTime = MIN(t.UTCCaptureTime),
+							MaxTime = MAX(t.UTCCaptureTime)
 					FROM @@XRDATABASENAME@@.AutoWho.UserCollectionTimes t
 					WHERE t.CollectionInitiatorID = @lv__CollectionInitiatorID
 					AND t.session_id = @@SPID
-				) ss
-				;
+				) ss;
+
+				SELECT 
+					@lv__MinUserCaptureTime = t.SPIDCaptureTime
+				FROM @@XRDATABASENAME@@.AutoWho.UserCollectionTimes t
+				WHERE t.CollectionInitiatorID = @lv__CollectionInitiatorID
+				AND t.session_id = @@SPID
+				AND t.UTCCaptureTime = @lv__MinUserCaptureTimeUTC;
+
+				SELECT 
+					@lv__MaxUserCaptureTime = t.SPIDCaptureTime
+				FROM @@XRDATABASENAME@@.AutoWho.UserCollectionTimes t
+				WHERE t.CollectionInitiatorID = @lv__CollectionInitiatorID
+				AND t.session_id = @@SPID
+				AND t.UTCCaptureTime = @lv__MaxUserCaptureTimeUTC;
 
 				IF @waits >= 2 OR @resources=N'Y'
 				BEGIN
-					EXEC @@XRDATABASENAME@@.AutoWho.PostProcessor @optionset=@lv__OptionSet, @init=@lv__CollectionInitiatorID, @start=@lv__MinUserCaptureTime, @end=@lv__MaxUserCaptureTime;
+					EXEC @@XRDATABASENAME@@.AutoWho.PostProcessor @optionset=@lv__OptionSet, @init=@lv__CollectionInitiatorID, @startUTC=@lv__MinUserCaptureTimeUTC, @endUTC=@lv__MaxUserCaptureTimeUTC;
 				END
 
 				--Tell the user how to review the data just captured.

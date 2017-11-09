@@ -77,14 +77,14 @@ BEGIN
 			@RatioBadRows FLOAT;
 
 	--Variables relevant to the rebuild section
-	DECLARE @DynSQL VARCHAR(8000),
-		@OriginalRebuildStartTime DATETIME,
-		@RebuildStartTime DATETIME,
-		@RebuildEndTime DATETIME, 
-		@FinalRebuildEndTime DATETIME,
-		@LastSleepTime DATETIME,
-		@LogMessage NVARCHAR(4000),
-		@ErrorNumber INT;
+	DECLARE @DynSQL						VARCHAR(8000),
+		@OriginalRebuildStartTimeUTC	DATETIME,
+		@RebuildStartTimeUTC			DATETIME,
+		@RebuildEndTimeUTC				DATETIME, 
+		@FinalRebuildEndTimeUTC			DATETIME,
+		@LastSleepTimeUTC				DATETIME,
+		@LogMessage						NVARCHAR(4000),
+		@ErrorNumber					INT;
 
 BEGIN TRY
 	SET @lv__ErrorLoc = N'Create TT';
@@ -453,8 +453,8 @@ BEGIN TRY
 	OPEN iterateScores
 	FETCH iterateScores INTO @SchemaName, @TableName, @IndexName;
 
-	SET @OriginalRebuildStartTime = GETDATE();
-	SET @LastSleepTime = GETDATE();
+	SET @OriginalRebuildStartTimeUTC = GETUTCDATE();
+	SET @LastSleepTimeUTC = GETUTCDATE();
 
 	WHILE @@FETCH_STATUS = 0
 	BEGIN
@@ -463,7 +463,7 @@ BEGIN TRY
 
 		--PRINT @DynSQL
 
-		SET @RebuildStartTime = GETDATE();
+		SET @RebuildStartTimeUTC = GETUTCDATE();
 		BEGIN TRY
 			SET @lv__ErrorLoc = N'Execute DynSQL';
 			EXEC (@DynSQL);
@@ -471,36 +471,36 @@ BEGIN TRY
 			SET @LogMessage = N'Successfully rebuilt index ' + QUOTENAME(@IndexName) + ' on table ' + 
 				QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName);
 
-			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='After dynamic rebuild', @Message=@LogMessage;
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='After dynamic index rebuild', @Message=@LogMessage;
 		END TRY
 		BEGIN CATCH
 			IF @@TRANCOUNT > 0 ROLLBACK;
 
 			SET @ErrorNumber = ERROR_NUMBER();
-			SET @LogMessage = 'Error ' + CONVERT(varchar(20), ERROR_NUMBER()) + ' occurred while attempting to rebuild
+			SET @LogMessage = 'Error ' + CONVERT(VARCHAR(20), ERROR_NUMBER()) + ' occurred while attempting to rebuild
 				index ' + QUOTENAME(@IndexName) + ' on table ' + 
 				QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName) + '. State: ' + CONVERT(varchar(20),ERROR_STATE()) +
 				'; Severity: ' + CONVERT(varchar(20),ERROR_SEVERITY()) + ' Message: ' + ERROR_MESSAGE();
 
-			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='CATCH dynamic rebuild', @Message=@LogMessage;
+			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=0, @TraceID=NULL, @Location='CATCH dynamic index rebuild', @Message=@LogMessage;
 		END CATCH
 
-		SET @RebuildEndTime = GETDATE(); 
+		SET @RebuildEndTimeUTC = GETUTCDATE(); 
 
 
-		IF DATEDIFF(second, @RebuildStartTime, @RebuildEndTime) >= 5 
-			OR DATEDIFF(second, @LastSleepTime, @RebuildEndTime) >= 15
+		IF DATEDIFF(second, @RebuildStartTimeUTC, @RebuildEndTimeUTC) >= 5 
+			OR DATEDIFF(second, @LastSleepTimeUTC, @RebuildEndTimeUTC) >= 15
 		BEGIN
 			--If the last index rebuild actually took some time, then we may be inhibiting AutoWho. 
 			--Waiting 3 seconds before we go to the next index gives AutoWho time (if it was blocked) to finish its run and go back to sleep
 			WAITFOR DELAY '00:00:03';
-			SET @LastSleepTime = GETDATE();
+			SET @LastSleepTimeUTC = GETUTCDATE();
 		END
 
 		FETCH iterateScores INTO @SchemaName, @TableName, @IndexName;
 	END
 
-	SET @FinalRebuildEndTime = GETDATE();
+	SET @FinalRebuildEndTimeUTC = GETUTCDATE();
 
 	CLOSE iterateScores;
 	DEALLOCATE iterateScores;

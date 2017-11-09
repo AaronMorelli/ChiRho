@@ -33,8 +33,11 @@ CREATE PROCEDURE [CoreXR].[TraceTimeInfo]
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Given a point in time (usually executed with the current time), finds the start time and end time
-	of the next trace for the @Utility supplied. 
+	PURPOSE: Given a point in time in UTC (usually executed with the current time), finds the earliest start time and end time in UTC
+	where the point in time is between (inclusive) the start and end, i.e. when the trace should be running.
+	That "earliest" time includes start/end times whene point-in-time is after the start and before the end, which basically
+	means "the trace should be running now". Consumers can use this both to determine whether the trace should be running now,
+	and if so, what the end time should be.
 
 	OUTSTANDING ISSUES: None at this time
 
@@ -46,35 +49,42 @@ DECLARE @rc INT,
 	@st DATETIME, 
 	@nd DATETIME
 
-EXEC @rc = CoreXR.TraceTimeInfo @Utility=N'AutoWho', @PointInTime = @pit, @UtilityIsEnabled = @en OUTPUT, 
-		@UtilityStartTime = @st OUTPUT, @UtilityEndTime = @nd OUTPUT
+EXEC @rc = CoreXR.TraceTimeInfo @Utility=N'AutoWho', @PointInTimeUTC = @pit, @UtilityIsEnabled = @en OUTPUT, 
+		@UtilityStartTimeUTC = @st OUTPUT, @UtilityEndTimeUTC = @nd OUTPUT
 
 SELECT @rc as ProcRC, @en as Enabled, @st as StartTime, @nd as EndTime
 */
 (
-	@Utility NVARCHAR(20),
-	@PointInTime DATETIME,
-	@UtilityIsEnabled NCHAR(1) OUTPUT,
-	@UtilityStartTime DATETIME OUTPUT,
-	@UtilityEndTime DATETIME OUTPUT
+	@Utility				NVARCHAR(20),
+	@PointInTimeUTC			DATETIME,		--The caller is responsible for passing in a UTC datetime rather than a local time.
+	@UtilityIsEnabled		NCHAR(1) OUTPUT,
+	@UtilityStartTimeUTC	DATETIME OUTPUT,
+	@UtilityEndTimeUTC		DATETIME OUTPUT
 )
 AS
 BEGIN
 	SET NOCOUNT ON;
 
-	DECLARE @lmsg NVARCHAR(4000),
-		@rc INT,
-		@timetmp_smaller DATETIME,
-		@timetmp_larger DATETIME;
+	DECLARE	
+		@lmsg				NVARCHAR(4000),
+		@rc					INT,
+		@opt__BeginTime		TIME(0),
+		@opt__EndTime		TIME(0),
+		@opt__BeginEndIsUTC NCHAR(1),
 
-	DECLARE 
-		@opt__BeginTime		SMALLINT,		
-		@opt__EndTime		SMALLINT
-		;
+		@BeginTimeUTC		TIME(0),
+		@EndTimeUTC			TIME(0),
+		@RangeDescription	VARCHAR(10),
+		@PointInTime_TimeOnly TIME(0),
+		
+		@UTCDiffMinutesFromLocalTime	INT,
+		@BeginTimeWithDate	DATETIME,
+		@EndTimeWithDate	DATETIME,
+		@PointInTimeWithDate	DATETIME;
 
-	IF @PointInTime IS NULL
+	IF @PointInTimeUTC IS NULL
 	BEGIN
-		SET @PointInTime = GETDATE();
+		SET @PointInTimeUTC = GETUTCDATE();
 	END
 
 	IF @Utility NOT IN (N'AutoWho', N'ServerEye')
@@ -83,94 +93,77 @@ BEGIN
 		RETURN -1;
 	END
 
+	SET @UTCDiffMinutesFromLocalTime = DATEDIFF(MINUTE,GETDATE(), GETUTCDATE());	--use minutes, not hours, b/c of time zones that are 30 minutes shifted.
+
 	IF @Utility = N'AutoWho'
 	BEGIN
 		SELECT 
 			@UtilityIsEnabled		 = [AutoWhoEnabled],
 			@opt__BeginTime			 = [BeginTime],
-			@opt__EndTime			 = [EndTime]
+			@opt__EndTime			 = [EndTime],
+			@opt__BeginEndIsUTC		 = [BeginEndIsUTC]
 		FROM AutoWho.Options o;
 
-		--Ok, we have the various option values. Note that if BeginTime is smaller than EndTime, 
-		-- we have a trace that does NOT span a day... e.g. 5am to 4pm
-		-- However, if EndTime is > BeginTime, then we DO have a trace that spans a day, e.g. 4pm to 5am
-		SET @UtilityStartTime = DATEADD(MINUTE, 
-										@opt__BeginTime % 100,
-										DATEADD(HOUR, 
-											@opt__BeginTime / 100, 
-											CONVERT(DATETIME, 
-													CONVERT(VARCHAR(20), @PointInTime,101)
-													)
-												)
-										);
-
-		SET @UtilityEndTime = DATEADD(MINUTE, 
-										@opt__EndTime % 100,
-										DATEADD(HOUR, 
-											@opt__EndTime / 100, 
-											CONVERT(DATETIME, 
-													CONVERT(VARCHAR(20), @PointInTime,101)
-													)
-												)
-										);
-
-		IF @UtilityEndTime < @UtilityStartTime
+		--First, check to see if the begin/end options are UTC or local. If local, convert to UTC.
+		--The logic below works because the TIME data type wraps. E.g. if you pass in '20:00' and add 7 hours, you get 03:00
+		IF @opt__BeginEndIsUTC = N'Y'
 		BEGIN
-			SET @UtilityEndTime = DATEADD(DAY, 1, @UtilityEndTime);
+			SET @BeginTimeUTC = @opt__BeginTime;
+			SET @EndTimeUTC = @opt__EndTime;
+		END
+		ELSE
+		BEGIN
+			SET @BeginTimeUTC = DATEADD(MINUTE, @UTCDiffMinutesFromLocalTime, @opt__BeginTime);
+			SET @EndTimeUTC = DATEADD(MINUTE, @UTCDiffMinutesFromLocalTime, @opt__EndTime);
 		END
 
-		IF @PointInTime >= @UtilityEndTime
+		SET @PointInTime_TimeOnly = CONVERT(TIME(0),@PointInTimeUTC);
+
+		--Our logic differs based on whether Begin is < End or Begin is > End.
+		-- (If Begin is > End, e.g. 16:00 and 4:00, it means that End represents the next day, e.g. 16:00 on one day and 4:00 on the next day)
+		IF @BeginTimeUTC < @EndTimeUTC
 		BEGIN
-			SET @UtilityStartTime = DATEADD(DAY, 1, @UtilityStartTime);
-			SET @UtilityEndTime = DATEADD(DAY, 1, @UtilityEndTime);
+			--trace is contained in one day
+			IF @PointInTime_TimeOnly <= @BeginTimeUTC
+				OR (@PointInTime_TimeOnly >= @BeginTimeUTC AND @PointInTime_TimeOnly < @EndTimeUTC)
+			BEGIN
+				SET @UtilityStartTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@BeginTimeUTC);
+				SET @UtilityEndTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@EndTimeUTC);
+			END
+			ELSE 
+			BEGIN
+				--PIT must be > @BeginTimeUTC AND > @EndTimeUTC. The next run is tomorrow
+				SET @UtilityStartTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@BeginTimeUTC);
+				SET @UtilityStartTimeUTC = DATEADD(DAY, 1, @UtilityStartTimeUTC);
+				SET @UtilityEndTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@EndTimeUTC);
+				SET @UtilityEndTimeUTC = DATEADD(DAY, 1, @UtilityEndTimeUTC);
+			END
+		END
+		ELSE
+		BEGIN
+			--trace spans 2 days
+			IF @PointInTime_TimeOnly >= @BeginTimeUTC	--if after the BeginTime the trace should run the rest of the day and into tomorrow
+
+				OR (@PointInTime_TimeOnly < @BeginTimeUTC AND @PointInTime_TimeOnly >= @EndTimeUTC)
+				-- conceptually, this is before today's run and after yesterday's run ended. So the next start time 
+				-- is today's start/tomorrow's end.
+			BEGIN
+				SET @UtilityStartTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@BeginTimeUTC);
+				SET @UtilityEndTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@EndTimeUTC);
+				SET @UtilityEndTimeUTC = DATEADD(DAY, 1, @UtilityEndTimeUTC);
+			END
+			ELSE
+			BEGIN
+				--PIT is < begin and also < end. Conceptually this means it is within the range of yesterday's start time/today's end time.
+				SET @UtilityStartTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@BeginTimeUTC);
+				SET @UtilityStartTimeUTC = DATEADD(DAY, -1, @UtilityStartTimeUTC);
+				SET @UtilityEndTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@EndTimeUTC)
+			END
 		END
 	END
 	ELSE IF @Utility = N'ServerEye'
 	BEGIN
 		RETURN 0;
-		/* Return to when SE dev gets serious
-		--Ok validation succeeeded. Get our option values
-		SELECT 
-			@UtilityIsEnabled		 = [ServerEyeEnabled],
-			@opt__BeginTime			 = [BeginTime],
-			@opt__EndTime			 = [EndTime]
-		FROM ServerEye.Options o
-		;
-
-		--Ok, we have the various option values. Note that if BeginTime is smaller than EndTime, 
-		-- we have a trace that does NOT span a day... e.g. 5am to 4pm
-		-- However, if EndTime is < BeginTime, then we DO have a trace that spans a day, e.g. 4pm to 5am
-		SET @UtilityStartTime = DATEADD(MINUTE, 
-										@opt__BeginTime % 100,
-										DATEADD(HOUR, 
-											@opt__BeginTime / 100, 
-											CONVERT(DATETIME, 
-													CONVERT(VARCHAR(20), @PointInTime,101)
-													)
-												)
-										);
-
-		SET @UtilityEndTime = DATEADD(MINUTE, 
-										@opt__EndTime % 100,
-										DATEADD(HOUR, 
-											@opt__EndTime / 100, 
-											CONVERT(DATETIME, 
-												CONVERT(VARCHAR(20), @PointInTime,101)
-													)
-												)
-										);
-
-		IF @UtilityEndTime < @UtilityStartTime
-		BEGIN
-			SET @UtilityEndTime = DATEADD(DAY, 1, @UtilityEndTime);
-		END
-
-		IF @PointInTime >= @UtilityEndTime
-		BEGIN
-			SET @UtilityStartTime = DATEADD(DAY, 1, @UtilityStartTime);
-			SET @UtilityEndTime = DATEADD(DAY, 1, @UtilityEndTime);
-		END
-		*/
 	END --outside IF/ELSE that controls utility-specific logic	
 
 	RETURN 0;

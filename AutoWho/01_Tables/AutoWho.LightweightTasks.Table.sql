@@ -41,7 +41,8 @@ GO
 SET ANSI_PADDING ON
 GO
 CREATE TABLE [AutoWho].[LightweightTasks](
-	[SPIDCaptureTime] [datetime] NULL,
+	[SPIDCaptureTime] [datetime] NOT NULL,
+	[UTCCaptureTime] [datetime] NOT NULL,		--unlike TAW, we need a UTC field because lightweight captures are not recorded in AutoWho.CaptureTime
 	[task__task_address] [varbinary](8) NOT NULL,
 	[task__task_state] [nvarchar](60) NULL,
 	[task__context_switches_count] [int] NULL,

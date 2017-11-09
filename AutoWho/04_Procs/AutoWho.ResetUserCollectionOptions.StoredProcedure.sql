@@ -80,6 +80,7 @@ BEGIN
 		[UseBackgroundThresholdIgnore],
 
 		[HistoryInsertDate],
+		[HistoryInsertDateUTC],
 		[TriggerAction],
 		[LastModifiedUser]
 	)
@@ -111,6 +112,7 @@ BEGIN
 		[ResolveLockWaits],
 		[UseBackgroundThresholdIgnore],
 		GETDATE(),
+		GETUTCDATE(),
 		'Reset',
 		SUSER_SNAME()
 	FROM AutoWho.UserCollectionOptions

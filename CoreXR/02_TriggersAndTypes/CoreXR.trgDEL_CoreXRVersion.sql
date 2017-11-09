@@ -42,12 +42,16 @@ AS 	BEGIN
 INSERT INTO CoreXR.Version_History 
 ([Version], 
 EffectiveDate, 
+EffectiveDateUTC,
 HistoryInsertDate, 
+HistoryInsertDateUTC,
 TriggerAction)
 SELECT 
 Version, 
 EffectiveDate, 
-getdate(),
+EffectiveDateUTC,
+GETDATE(),
+GETUTCDATE(),
 'Delete'
 FROM deleted
 END

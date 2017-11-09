@@ -75,6 +75,8 @@ BEGIN
 	SET ANSI_PADDING ON;
 
 	DECLARE @scratch__int				INT,
+			@lv__StartUTC				DATETIME,
+			@lv__EndUTC					DATETIME,
 			@lv__CollectionInitiatorID	TINYINT,
 			@lv__numCaptures			INT,
 			@lv__numNeedPopulation		INT,
@@ -130,7 +132,12 @@ exec sp_XR_SessionSummary @start=''<start datetime>'', @end=''<end datetime>'',
 															RIGHT(CONVERT(NVARCHAR(20),N'000') + CONVERT(NVARCHAR(20),DATEPART(MILLISECOND, @end)),3)
 							);
 
-	IF @start > GETDATE() OR @end > GETDATE()
+	SET @lv__StartUTC = DATEADD(MINUTE, DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()), @start);
+	SET @lv__EndUTC = DATEADD(MINUTE, DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()), @end);
+
+	--We use UTC for this check b/c of the DST "fall-back" scenario. We don't want to prevent a user from calling this proc for a timerange 
+	--that already occurred (e.g. 1:30am-1:45am) at the second occurrence of 1:15am that day.
+	IF @lv__StartUTC > GETUTCDATE() OR @lv__EndUTC > GETUTCDATE()
 	BEGIN
 		RAISERROR(@lv__helpexec,10,1);
 		RAISERROR('Neither of the parameters @start or @end can be in the future.',16,1);
@@ -213,7 +220,7 @@ exec sp_XR_SessionSummary @start=''<start datetime>'', @end=''<end datetime>'',
 		@lv__numNeedPopulation = ss.numNeedPopulation
 	FROM (
 		SELECT COUNT(*) as numCaptures,
-			SUM(CASE WHEN t.CaptureSummaryPopulated = 0 THEN 1 ELSE 0 END) as numNeedPopulation
+			SUM(CASE WHEN t.CaptureSummaryPopulated = 0 OR t.CaptureSummaryDeltaPopulated = 0 THEN 1 ELSE 0 END) as numNeedPopulation
 		FROM @@XRDATABASENAME@@.AutoWho.CaptureTimes t
 		WHERE t.CollectionInitiatorID = @lv__CollectionInitiatorID
 		AND t.RunWasSuccessful = 1
@@ -248,9 +255,9 @@ exec sp_XR_SessionSummary @start=''<start datetime>'', @end=''<end datetime>'',
 
 
 	--Determine our 
-	IF @orderby IN (1,13,24,35,46,58,70)
+	IF @orderby IN (1,13,24,35,46,58,70,83)
 	BEGIN
-		SET @lv__orderByColumn = N'SPIDCaptureTime';
+		SET @lv__orderByColumn = N'UTCCaptureTime';
 	END
 	ELSE
 	BEGIN
@@ -701,7 +708,7 @@ exec sp_XR_SessionSummary @start=''<start datetime>'', @end=''<end datetime>'',
 		,CASE WHEN ISNULL(TranDetails,0) = 0 THEN N'''' ELSE CONVERT(NVARCHAR(20), TranDetails) END ' + CASE WHEN @savespace = N'y' THEN N' as [hasTrnD]' ELSE N' as [82_HasTranDetails]' END + N'
 		,SPIDCaptureTime' + CASE WHEN @savespace = N'y' THEN N' as SCT' ELSE N' as [83_SPIDCaptureTime]' END + N' 
 	FROM (
-		SELECT CollectionInitiatorID, SPIDCaptureTime, CapturedSPIDs, 
+		SELECT CollectionInitiatorID, UTCCaptureTime, SPIDCaptureTime, CapturedSPIDs, 
 			Active, ActLongest_ms, ActAvg_ms, Act0to1, Act1to5, Act5to10, Act10to30, Act30to60, Act60to300, Act300plus, 
 				ActLongest_ms_fmt = CONVERT(NVARCHAR(20),CONVERT(money,ActLongest_ms),1), 
 				ActAvg_ms_fmt = CONVERT(NVARCHAR(20),CONVERT(money,ActAvg_ms),1), 
@@ -819,7 +826,7 @@ exec sp_XR_SessionSummary @start=''<start datetime>'', @end=''<end datetime>'',
 		CASE WHEN @orderdir = N'd' THEN N'desc' ELSE N'' END + 
 
 		--Are we ordering by time secondarily?
-		CASE WHEN @lv__orderByColumn <> N'SPIDCaptureTime' THEN N',SPIDCaptureTime ASC' ELSE N'' END + N'
+		CASE WHEN @lv__orderByColumn <> N'UTCCaptureTime' THEN N',UTCCaptureTime ASC' ELSE N'' END + N'
 	;
 	';
 

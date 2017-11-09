@@ -43,6 +43,7 @@ CREATE TABLE [AutoWho].[DimNetAddress](
 	[local_net_address] [varchar](48) NOT NULL,
 	[local_tcp_port] [int] NOT NULL,
 	[TimeAdded] [datetime] NOT NULL,
+	[TimeAddedUTC] [datetime] NOT NULL,
  CONSTRAINT [PK_AutoWho_DimNetAddress] PRIMARY KEY CLUSTERED 
 (
 	[DimNetAddressID] ASC
@@ -56,7 +57,11 @@ CREATE UNIQUE NONCLUSTERED INDEX [AK_AutoWho_DimNetAddress] ON [AutoWho].[DimNet
 	[local_tcp_port]
 )
 INCLUDE ( 	[DimNetAddressID],
-	[TimeAdded]) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+	[TimeAdded],
+	[TimeAddedUTC]
+) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 GO
-ALTER TABLE [AutoWho].[DimNetAddress] ADD  CONSTRAINT [DF_AutoWho_DimNetAddress_TimeAdded]  DEFAULT (getdate()) FOR [TimeAdded]
+ALTER TABLE [AutoWho].[DimNetAddress] ADD  CONSTRAINT [DF_AutoWho_DimNetAddress_TimeAdded]  DEFAULT (GETDATE()) FOR [TimeAdded]
+GO
+ALTER TABLE [AutoWho].[DimNetAddress] ADD  CONSTRAINT [DF_AutoWho_DimNetAddress_TimeAddedUTC]  DEFAULT (GETUTCDATE()) FOR [TimeAddedUTC]
 GO

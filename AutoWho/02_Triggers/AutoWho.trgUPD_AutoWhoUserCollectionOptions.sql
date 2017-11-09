@@ -68,6 +68,7 @@ INSERT INTO [AutoWho].[UserCollectionOptions_History](
 	[UseBackgroundThresholdIgnore],
 
 	[HistoryInsertDate],
+	[HistoryInsertDateUTC],
 	[TriggerAction],
 	[LastModifiedUser]
 )
@@ -99,6 +100,7 @@ SELECT
 	[ResolveLockWaits],
 	[UseBackgroundThresholdIgnore],
 	GETDATE(),
+	GETUTCDATE(),
 	'Update',
 	SUSER_SNAME()
 FROM inserted

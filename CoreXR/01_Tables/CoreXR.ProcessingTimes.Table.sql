@@ -39,11 +39,11 @@ SET QUOTED_IDENTIFIER ON
 GO
 CREATE TABLE [CoreXR].[ProcessingTimes](
 	[Label] [nvarchar](50) NOT NULL,
+	[LastProcessedTimeUTC] [datetime2](7) NULL,
 	[LastProcessedTime] [datetime2](7) NULL,
 CONSTRAINT [PKProcessingTimes] PRIMARY KEY CLUSTERED 
 (
 	[Label] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
-
 GO

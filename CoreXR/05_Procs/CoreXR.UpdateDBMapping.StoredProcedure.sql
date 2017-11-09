@@ -34,7 +34,7 @@ CREATE PROCEDURE [CoreXR].[UpdateDBMapping]
 					sqlcrossjoin.wordpress.com
 
 	PURPOSE: Since our app stored historical data, and DBs are sometimes detached/re-attached, etc,
-	 we want to keep a mapping between DBID and DBName. (Much of our storage just keeps DBID rather than DBName).
+	 we want to keep a mapping between DBID and DBName. (Most of the AutoWho/ServerEye tables just store DBID rather than DBName).
 	 We make the (usually-safe, but not always) assumption that 2 DBs with the same name are really the same database.
 
 	OUTSTANDING ISSUES: None at this time.
@@ -46,56 +46,80 @@ EXEC CoreXR.UpdateDBMapping
 AS
 BEGIN
 	SET NOCOUNT ON;
-	DECLARE @EffectiveTime DATETIME = GETDATE();
+	DECLARE @EffectiveTime DATETIME = GETDATE(),
+			@EffectiveTimeUTC DATETIME = GETUTCDATE();
 
 	CREATE TABLE #CurrentDBIDNameMapping (
-		DBID int not null, 
-		DBName nvarchar(256) not null
+		DBID	INT NOT NULL, 
+		DBName	NVARCHAR(256) NOT NULL
 	);
 
 	INSERT INTO #CurrentDBIDNameMapping (
-		DBID, DBName
+		DBID, 
+		DBName
 	)
-	SELECT d.database_id, d.name
-	FROM sys.databases d
-	;
+	SELECT 
+		d.database_id, 
+		d.name
+	FROM sys.databases d;
 
-	-- In the below joins, we typically connect the contents of #DBIDchanges to the "current" set of rows in 
-	-- CoreXR.DBIDNameMapping, i.e. where EffectiveEndTime is null
+	/* The CoreXR.DBIDNameMapping table tracks time ranges for mappings, and there is (of course) also
+		the concept of a "current set", i.e. every row where EffectiveEndTimeUTC IS NULL.
 
-	-- First, find matches on DBName, where the DBID is different.
-	--		a. first, close out the our row (EffectiveEndTime = GETDATE()
-	--		b. second, insert the new pair in. Note that this also takes care of completely new DBName values.
+		First, we close out every row where we have a DBName present in both the current set and in our SQL catalog,
+		but the DBIDs don't match. This probably indicates something like a detach/re-attach.
+	*/
 
 	UPDATE targ 
-	SET EffectiveEndTime = @EffectiveTime
+	SET EffectiveEndTimeUTC = @EffectiveTimeUTC,
+		EffectiveEndTime = @EffectiveTime
 	FROM CoreXR.DBIDNameMapping targ 
 		INNER JOIN #CurrentDBIDNameMapping t
 			ON t.DBName = targ.DBName
 			AND t.DBID <> targ.DBID
-	WHERE targ.EffectiveEndTime IS NULL
-	;
+	WHERE targ.EffectiveEndTimeUTC IS NULL;
 
-	INSERT INTO CoreXR.DBIDNameMapping
-	(DBID, DBName, EffectiveStartTime, EffectiveEndTime)
-	SELECT t.DBID, t.DBName, @EffectiveTime, NULL 
+	/*
+		Next, we insert any DBNames where the name is in the catalog but not present at all in our current set. 
+		(It could be present in an older, already-closed-out row).
+		It could be a new DB, or it could have been detached for a while, its row in CoreXR.DBIDNameMapping closed out,
+		and then re-attached.
+	*/
+	INSERT INTO CoreXR.DBIDNameMapping (
+		DBID, 
+		DBName, 
+		EffectiveStartTimeUTC, 
+		EffectiveEndTimeUTC, 
+		EffectiveStartTime, 
+		EffectiveEndTime
+	)
+	SELECT 
+		t.DBID, 
+		t.DBName, 
+		@EffectiveTimeUTC, 
+		NULL ,
+		@EffectiveTime, 
+		NULL 
 	FROM #CurrentDBIDNameMapping t
 	WHERE NOT EXISTS (
 		SELECT * 
 		FROM CoreXR.DBIDNameMapping m
 		WHERE m.DBName = t.DBName
-		AND m.EffectiveEndTime IS NULL 
+		AND m.EffectiveEndTimeUTC IS NULL 
 	);
 
+	/* 
+		Finally, we close out any current set members that are not present at all in the SQL catalog
+	*/
 	UPDATE targ 
-	SET EffectiveEndTime = @EffectiveTime
+	SET EffectiveEndTimeUTC = @EffectiveTimeUTC,
+		EffectiveEndTime = @EffectiveTime
 	FROM CoreXR.DBIDNameMapping targ 
-	WHERE targ.EffectiveEndTime IS NULL
+	WHERE targ.EffectiveEndTimeUTC IS NULL
 	AND NOT EXISTS (
 		SELECT * FROM #CurrentDBIDNameMapping t
 		WHERE t.DBName = targ.DBName
-	)
-	;
+	);
 
 	RETURN 0;
 END
