@@ -29,17 +29,19 @@
 #	PURPOSE: Install the ChiRho toolkit
 # To Execute
 # ------------------------
-# ps prompt>.\ChiRho_Installer.ps1 -Server . -Database ChiRho -HoursToKeep 336
+# ps prompt>.\ChiRho_Installer.ps1 -Server . -Database ChiRho -SessionDataHoursToKeep 336 -ServerDataDaysToKeep 30 -DBExists N
 
-# the Database name can be any alphanumeric string. The Hours to Keep defines how much
-# time the collected data is kept by default. (More specific retention policies can be 
-# set up in the various Options tables
+# the Database name can be any alphanumeric string. SessionDataHoursToKeep defines how much
+# time the session-related DMV data is kept. ServerDataDaysToKeep defines how much time the 
+# server-related DMV data is kept. Session DMV data is generally much larger than server-level
+# data, hence the difference in granularity.
 #####
 
 param ( 
 [Parameter(Mandatory=$true)][string]$Server, 
 [Parameter(Mandatory=$false)][string]$Database,
-[Parameter(Mandatory=$false)][string]$HoursToKeep,
+[Parameter(Mandatory=$false)][string]$SessionDataHoursToKeep,
+[Parameter(Mandatory=$false)][string]$ServerDataDaysToKeep,
 [Parameter(Mandatory=$false)][string]$DBExists
 ) 
 
@@ -66,15 +68,26 @@ if ( ($Database -eq $null) -or ($Database -eq "") )  {
 	$Database = "ChiRho"
 }
 
-if ( ($HoursToKeep -eq $null) -or ($HoursToKeep -eq "") ) {
-	$HoursToKeep = "336"
+if ( ($SessionDataHoursToKeep -eq $null) -or ($SessionDataHoursToKeep -eq "") ) {
+	$SessionDataHoursToKeep = "336"
     # 14 days
 }
 
-[int]$HoursToKeep_num = [convert]::ToInt32($HoursToKeep, 10)
+[int]$SessionDataHoursToKeep_num = [convert]::ToInt32($SessionDataHoursToKeep, 10)
 
-if ( ($HoursToKeep_num -le 0) -or ($HoursToKeep_num -gt 4320) ) {
-    Write-Host "Parameter -HoursToKeep cannot be <= 0 or > 4320 (180 days)" -foregroundcolor red -backgroundcolor black
+if ( ($SessionDataHoursToKeep_num -le 0) -or ($SessionDataHoursToKeep_num -gt 4320) ) {
+    Write-Host "Parameter -SessionDataHoursToKeep cannot be <= 0 or > 4320 (180 days)" -foregroundcolor red -backgroundcolor black
+	Break
+}
+
+if ( ($ServerDataDaysToKeep -eq $null) -or ($ServerDataDaysToKeep -eq "") ) {
+	$ServerDataDaysToKeep = "30"
+}
+
+[int]$ServerDataDaysToKeep_num = [convert]::ToInt32($ServerDataDaysToKeep, 10)
+
+if ( ($ServerDataDaysToKeep_num -lt 3) -or ($ServerDataDaysToKeep_num -gt 30) ) {
+    Write-Host "Parameter -ServerDataDaysToKeep cannot be < 3 or > 30 days" -foregroundcolor red -backgroundcolor black
 	Break
 }
 
@@ -113,7 +126,7 @@ $outmsg = $curtime + "------> Beginning installation..."
 Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
 $curtime = Get-Date -format s
-$outmsg = $curtime + "------> Parameter Validation complete. Proceeding with installation on server " + $Server + ", Database " + $Database + ", HoursToKeep " + $HoursToKeep + ", DBExists " + $DBExists
+$outmsg = $curtime + "------> Parameter Validation complete. Proceeding with installation on server " + $Server + ", Database " + $Database + ", SessionDataHoursToKeep " + $SessionDataHoursToKeep + ", ServerDataDaysToKeep " + $ServerDataDaysToKeep + ", DBExists " + $DBExists
 Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
 
@@ -123,7 +136,7 @@ Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
 CD $curScriptLoc 
 
-powershell.exe -noprofile -command .\InstallerScripts\install_database_objects.ps1 -Server $Server -Database $Database -HoursToKeep $HoursToKeep -DBExists $DBExists -curScriptLocation $curScriptLoc > $installerLogFile
+powershell.exe -noprofile -command .\InstallerScripts\install_database_objects.ps1 -Server $Server -Database $Database -SessionDataHoursToKeep $SessionDataHoursToKeep -ServerDataDaysToKeep $ServerDataDaysToKeep -DBExists $DBExists -curScriptLocation $curScriptLoc > $installerLogFile
 $scriptresult = $?
 
 $curtime = Get-Date -format s

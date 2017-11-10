@@ -37,7 +37,7 @@ GO
 CREATE TABLE [AutoWho].[Options](
 	[RowID] [int] NOT NULL CONSTRAINT [DF_Options_RowID]  DEFAULT ((1)),
 	[AutoWhoEnabled] [nchar](1) NOT NULL CONSTRAINT [DF_Options_AutoWhoEnabled]  DEFAULT (N'Y'),
-	[BeginTime] [time](0) NOT NULL CONSTRAINT [DF_Options_BeginTime]  DEFAULT (('00:00:59')),
+	[BeginTime] [time](0) NOT NULL CONSTRAINT [DF_Options_BeginTime]  DEFAULT (('00:00:00')),
 	[EndTime] [time](0) NOT NULL CONSTRAINT [DF_Options_EndTime]  DEFAULT (('23:59:30')),
 	[BeginEndIsUTC] [nchar](1) NOT NULL CONSTRAINT [DF_Options_BeginEndIsUTC]  DEFAULT (N'N'),
 	[IntervalLength] [smallint] NOT NULL CONSTRAINT [DF_Options_IntervalLength]  DEFAULT ((15)),
@@ -264,7 +264,7 @@ GO
 --
 EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Enforces just 1 row in the table' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'RowID'
 GO
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Master on/off switch for the AutoWho tracing portion of DMViewer. Takes "Y" or "N"' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'AutoWhoEnabled'
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Master on/off switch for the AutoWho tracing portion of ChiRho. Takes "Y" or "N"' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'AutoWhoEnabled'
 GO
 EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'The time at which to start running the AutoWho trace.' , @level0type=N'SCHEMA',@level0name=N'AutoWho', @level1type=N'TABLE',@level1name=N'Options', @level2type=N'COLUMN',@level2name=N'BeginTime'
 GO

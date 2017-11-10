@@ -78,10 +78,32 @@ BEGIN
 				@lv__PostProcStartUTC		DATETIME,
 				@lv__PostProcEndUTC			DATETIME,
 				@lv__ShouldRunPurge			NCHAR(1) = N'N',
+				@lv__CurTimeUTC				DATETIME,
 				@lv__TodayDOW				NVARCHAR(10),
 				@lv__TodayDOWInUTC			NVARCHAR(10),
 				@lv__ThisHour				INT,
 				@lv__ThisHourInUTC			INT;
+
+		DECLARE 
+				@AutoWho__IsEnabled		NCHAR(1), 
+				@AutoWho__StartTimeUTC	DATETIME, 
+				@AutoWho__EndTimeUTC	DATETIME,
+
+				@ServerEye__IsEnabled	NCHAR(1), 
+				@ServerEye__StartTimeUTC DATETIME,
+				@ServerEye__EndTimeUTC	DATETIME;
+
+		IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs where name = @AutoWhoJobName)
+		BEGIN
+			RAISERROR('Job specified in parameter @AutoWhoJobName not found.',16,1);
+			RETURN -1;
+		END
+
+		IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs where name = @ServerEyeJobName)
+		BEGIN
+			RAISERROR('Job specified in parameter @ServerEyeJobName not found.',16,1);
+			RETURN -3;
+		END
 
 		SET @PurgeDOW = LOWER(@PurgeDOW);
 
@@ -111,7 +133,7 @@ BEGIN
 		IF @PurgeDOWHourIsUTC NOT IN (N'N', N'Y')
 		BEGIN
 			RAISERROR('Parameter @PurgeDOWHourIsUTC must be either Y or N.',16,1);
-			RETURN -7;
+			RETURN -9;
 		END
 
 		SET @lv__TodayDOW = LOWER(SUBSTRING(LTRIM(RTRIM(DATENAME(dw,GETDATE()))),1,3));
@@ -146,62 +168,101 @@ BEGIN
 			EXECUTE master.dbo.xp_sqlagent_enum_jobs 1, 'hullabaloo'; --undocumented
 			--can't use this because we can't nest an INSERT EXEC: exec msdb.dbo.sp_help_job @execution_status=1
 
-		--In this proc, we do these things
-		--	1. Check the status of the AutoWho job, and start, if appropriate
-		--	2. Run AutoWho purge and maint if it is the appropriate time
-		--	3. Check the status of the ServerEye job, and start, if appropriate
-		--	4. Run ServerEye purge and maint if it is the appropriate time
+		SET @lv__CurTimeUTC = GETUTCDATE();
+
+		/*
+			In this proc, we do these things
+
+			1. Check whether the AutoWho and ServerEye jobs are running, and start, if appropriate.
+
+			2. After we begin (or not) each job, we run supporting procs for each:
+				a. AutoWho.UpdateStoreLastTouched
+				b. TODO: ServerEye.UpdateStoreLastTouche	<-- this proc does not exist yet, but likely will at some point
+				c. AutoWho.PostProcessor
+				d. AutoWho Purge
+				e. AutoWho index maintenance
+				f. ServerEye Purge
+				g. ServerEye index maintenance
+
+		*/
 
 		/*************************************** AutoWho Job stuff ***************************/
-		DECLARE @AutoWho__IsEnabled		NCHAR(1), 
-				@AutoWho__StartTimeUTC	DATETIME, 
-				@AutoWho__EndTimeUTC	DATETIME,
-				@lv__CurTimeUTC			DATETIME;
+		--This proc gives us the next time range when the AutoWho trace should be running. If @lv__CurTimeUTC is within a time range when AutoWho
+		--should be running, we'll get the start/end of the time range that AutoWho should be running for right now.
+		EXEC @lv__ProcRC = CoreXR.TraceTimeInfo @Utility=N'AutoWho', @PointInTimeUTC = @lv__CurTimeUTC, @UtilityIsEnabled = @AutoWho__IsEnabled OUTPUT,
+				@UtilityStartTimeUTC = @AutoWho__StartTimeUTC OUTPUT, @UtilityEndTimeUTC = @AutoWho__EndTimeUTC OUTPUT;
 
-		IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs where name = @AutoWhoJobName)
+		IF @lv__CurTimeUTC BETWEEN @AutoWho__StartTimeUTC AND @AutoWho__EndTimeUTC 
+			AND @AutoWho__IsEnabled = N'Y'
 		BEGIN
-			RAISERROR('Job specified in parameter @AutoWhoJobName not found.',16,1);
-			RETURN -7;
-		END
-		ELSE
-		BEGIN
-			SET @lv__CurTimeUTC = GETUTCDATE();
-			--This proc gives us the next time range when the AutoWho trace should be running. If @lv__CurTimeUTC is within a time range when AutoWho
-			--should be running, we'll get the start/end of the time range that AutoWho should be running for right now.
-			EXEC @lv__ProcRC = CoreXR.TraceTimeInfo @Utility=N'AutoWho', @PointInTimeUTC = @lv__CurTimeUTC, @UtilityIsEnabled = @AutoWho__IsEnabled OUTPUT,
-					@UtilityStartTimeUTC = @AutoWho__StartTimeUTC OUTPUT, @UtilityEndTimeUTC = @AutoWho__EndTimeUTC OUTPUT;
+			--the trace SHOULD be running. check to see if it is already.
+			--if not, then start it.
 
-			IF @lv__CurTimeUTC BETWEEN @AutoWho__StartTimeUTC AND @AutoWho__EndTimeUTC 
-				AND @AutoWho__IsEnabled = N'Y'
+			IF NOT EXISTS (SELECT * 
+					FROM #CurrentlyRunningJobs1 t
+						INNER JOIN msdb.dbo.sysjobs j 
+							ON t.Job_ID = j.job_id
+				WHERE j.name = @AutoWhoJobName
+				AND t.Running = 1)
 			BEGIN
-				--the trace SHOULD be running. check to see if it is already.
-				--if not, then start it.
-
-				IF NOT EXISTS (SELECT * 
-						FROM #CurrentlyRunningJobs1 t
-							INNER JOIN msdb.dbo.sysjobs j 
-								ON t.Job_ID = j.job_id
-					WHERE j.name = @AutoWhoJobName
-					AND t.Running = 1)
+				IF NOT EXISTS (SELECT * FROM AutoWho.SignalTable t WITH (NOLOCK) 
+								WHERE LOWER(SignalName) = N'aborttrace' 
+								AND LOWER(t.SignalValue) = N'allday'
+								AND DATEDIFF(DAY, InsertTime, GETDATE()) = 0)	--we use local instead of UTC because the DST 1am-2am issue doesn't affect this logic 
+																				--and everything thinks in local time anyway (so there's no value in aborting for the full UTC day)
+				--any abort requests will, by default, continue their effect the rest of the day.
 				BEGIN
-					IF NOT EXISTS (SELECT * FROM AutoWho.SignalTable t WITH (NOLOCK) 
-									WHERE LOWER(SignalName) = N'aborttrace' 
-									AND LOWER(t.SignalValue) = N'allday'
-									AND DATEDIFF(DAY, InsertTime, GETDATE()) = 0)	--we use local instead of UTC because the DST 1am-2am issue doesn't affect this logic 
-																					--and everything thinks in local time anyway (so there's no value in aborting for the full UTC day)
-					--any abort requests will, by default, continue their effect the rest of the day.
-					BEGIN
-						EXEC msdb.dbo.sp_start_job @job_name = @AutoWhoJobName;
-						EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = 0, @TraceID = NULL, @Location = N'XRMaster AutoWho Job Start', @Message = N'AutoWho Trace job started.';
-					END
-					ELSE
-					BEGIN
-						EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = -1, @TraceID = NULL, @Location = N'XRMaster AutoWho Signal', @Message = N'An AbortTrace signal exists for today. This procedure has been told not to run the rest of the day.';
-					END
-				END	 
-			END		--IF @lv__CurTimeUTC BETWEEN @AutoWho__StartTimeUTC AND @AutoWho__EndTimeUTC 
-					-- that is, "IF trace should be running"
-		END		--IF job exists/doesn't exist
+					EXEC msdb.dbo.sp_start_job @job_name = @AutoWhoJobName;
+					EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = 0, @TraceID = NULL, @Location = N'XRMaster AutoWho Job Start', @Message = N'AutoWho Trace job started.';
+				END
+				ELSE
+				BEGIN
+					EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = -1, @TraceID = NULL, @Location = N'XRMaster AutoWho Signal', @Message = N'An AbortTrace signal exists for today. This procedure has been told not to run the rest of the day.';
+				END
+			END	 
+		END		--IF @lv__CurTimeUTC BETWEEN @AutoWho__StartTimeUTC AND @AutoWho__EndTimeUTC 
+				-- that is, "IF trace should be running"
+		/*************************************** AutoWho Job stuff ***************************/
+
+
+		/*************************************** ServerEye Job stuff ***************************/
+		--This proc gives us the next time range when the ServerEye trace should be running. If @lv__CurTimeUTC is within a time range when ServerEye
+		--should be running, we'll get the start/end of the time range that ServerEye should be running for right now.
+		EXEC @lv__ProcRC = CoreXR.TraceTimeInfo @Utility=N'ServerEye', @PointInTimeUTC = @lv__CurTimeUTC, @UtilityIsEnabled = @ServerEye__IsEnabled OUTPUT,
+				@UtilityStartTimeUTC = @ServerEye__StartTimeUTC OUTPUT, @UtilityEndTimeUTC = @ServerEye__EndTimeUTC OUTPUT;
+
+		IF @lv__CurTimeUTC BETWEEN @ServerEye__StartTimeUTC AND @ServerEye__EndTimeUTC 
+			AND @ServerEye__IsEnabled = N'Y'
+		BEGIN
+			--the trace SHOULD be running. check to see if it is already.
+			--if not, then start it.
+
+			IF NOT EXISTS (SELECT * 
+					FROM #CurrentlyRunningJobs1 t
+						INNER JOIN msdb.dbo.sysjobs j 
+							ON t.Job_ID = j.job_id
+				WHERE j.name = @ServerEyeJobName
+				AND t.Running = 1)
+			BEGIN
+				IF NOT EXISTS (SELECT * FROM ServerEye.SignalTable t WITH (NOLOCK) 
+								WHERE LOWER(SignalName) = N'aborttrace' 
+								AND LOWER(t.SignalValue) = N'allday'
+								AND DATEDIFF(DAY, InsertTime, GETDATE()) = 0)	--we use local instead of UTC because the DST 1am-2am issue doesn't affect this logic 
+																				--and everything thinks in local time anyway (so there's no value in aborting for the full UTC day)
+				--any abort requests will, by default, continue their effect the rest of the day.
+				BEGIN
+					EXEC msdb.dbo.sp_start_job @job_name = @ServerEyeJobName;
+					EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode = 0, @TraceID = NULL, @Location = N'XRMaster ServerEye Job Start', @Message = N'ServerEye Trace job started.';
+				END
+				ELSE
+				BEGIN
+					EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode = -1, @TraceID = NULL, @Location = N'XRMaster ServerEye Signal', @Message = N'An AbortTrace signal exists for today. This procedure has been told not to run the rest of the day.';
+				END
+			END	 
+		END		--IF @lv__CurTimeUTC BETWEEN @ServerEye__StartTimeUTC AND @ServerEye__EndTimeUTC 
+				-- that is, "IF trace should be running"
+		/*************************************** ServerEye Job stuff ***************************/
+		
 
 		BEGIN TRY
 			SET @lv__ProcRC = 0;
@@ -241,7 +302,7 @@ BEGIN
 			EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode = -999, @TraceID = NULL, @Location = N'ErrorPostProcess', @Message = @ErrorMessage;
 		END CATCH
 
-
+		/*************************************** AutoWho Purge ***************************/
 		--Evaluate whether we should run AutoWho purge
 		IF @PurgeDOWHourIsUTC = N'N'
 			AND @PurgeDOW LIKE '%' + @lv__TodayDOW + '%'
@@ -287,70 +348,58 @@ BEGIN
 			--Now that we have (potentially) deleted a bunch of rows, do some index maint
 			EXEC AutoWho.MaintainIndexes;
 		END
-		/*************************************** AutoWho Job stuff ***************************/
+		/*************************************** AutoWho Purge ***************************/
 
---SE is still in development
-RETURN 0;
 
-		/*************************************** ServerEye Job stuff ***************************/
-/*
-		DECLARE @ServerEye__IsEnabled NCHAR(1), 
-				@ServerEye__NextStartTime DATETIME, 
-				@ServerEye__NextEndTime DATETIME
-				;
 
-		IF NOT EXISTS (SELECT * FROM msdb.dbo.sysjobs where name = @ServerEyeJobName)
+		/*************************************** ServerEye Purge ***************************/
+		--Evaluate whether we should run ServerEye purge
+		SET @lv__ShouldRunPurge = N'N';
+		IF @PurgeDOWHourIsUTC = N'N'
+			AND @PurgeDOW LIKE '%' + @lv__TodayDOW + '%'
+			AND (
+				@lv__ThisHour = @PurgeHour
+					OR (@lv__ThisHour = 0 AND @PurgeHour = 24)
+				)
+			--AND the log doesn't show any purge as having run in the last 75 minutes (use UTC time to avoid weirdness on DST-change days)
+			AND NOT EXISTS (
+				SELECT *
+				FROM ServerEye.[Log] l
+				WHERE l.LocationTag = 'XRMaster ServerEye Purge'
+				AND l.LogMessage = 'Purge procedure completed'
+				AND l.LogDTUTC > DATEADD(MINUTE, -75, GETUTCDATE())
+			)
 		BEGIN
-			RAISERROR('Job specified in parameter @ServerEyeJobName not found.',16,1);
-			RETURN -9;
+			SET @lv__ShouldRunPurge = N'Y';
 		END
-		ELSE
+		ELSE IF @PurgeDOWHourIsUTC = N'Y'
+			AND @PurgeDOW LIKE '%' + @lv__TodayDOWInUTC + '%'
+			AND (
+				@lv__ThisHourInUTC = @PurgeHour
+					OR (@lv__ThisHourInUTC = 0 AND @PurgeHour = 24)
+				)
+			--AND the log doesn't show any purge as having run in the last 75 minutes (use UTC time to avoid weirdness on DST-change days)
+			AND NOT EXISTS (
+				SELECT *
+				FROM ServerEye.[Log] l
+				WHERE l.LocationTag = 'XRMaster ServerEye Purge'
+				AND l.LogMessage = 'Purge procedure completed'
+				AND l.LogDTUTC > DATEADD(MINUTE, -75, GETUTCDATE())
+			)
 		BEGIN
-			SET @lv__CurTimeUTC = GETDATE();
-			EXEC @lv__ProcRC = CoreXR.TraceTimeInfo @Utility=N'ServerEye', @PointInTime = @lv__CurTimeUTC, @UtilityIsEnabled = @ServerEye__IsEnabled OUTPUT,
-					@UtilityStartTime = @ServerEye__NextStartTime OUTPUT, @UtilityEndTime = @ServerEye__NextEndTime OUTPUT
-				;
+			SET @lv__ShouldRunPurge = N'Y';
+		END
 
-			IF @lv__CurTimeUTC BETWEEN @ServerEye__NextStartTime AND @ServerEye__NextEndTime
-				AND @ServerEye__IsEnabled = N'Y'
-			BEGIN
-				--the trace SHOULD be running. check to see if it is already.
-				--if not, then start it.
-				IF NOT EXISTS (SELECT * 
-						FROM #CurrentlyRunningJobs1 t
-							INNER JOIN msdb.dbo.sysjobs j ON t.Job_ID = j.job_id
-					WHERE j.name = @ServerEyeJobName
-					AND t.Running = 1)
-				BEGIN
-					IF NOT EXISTS (SELECT * FROM ServerEye.SignalTable t WITH (NOLOCK) 
-									WHERE LOWER(SignalName) = N'aborttrace' 
-									AND LOWER(t.SignalValue) = N'allday'
-									AND DATEDIFF(DAY, InsertTime, GETDATE()) = 0)
-					--any abort requests will, by default, continue their effect the rest of the day.
-					--Thus, anyone putting a signal row into a table will need to later delete that record if they want the ServerEye trace to resume that day
-					BEGIN
-						EXEC msdb.dbo.sp_start_job @job_name = @ServerEyeJobName;
+		IF @lv__ShouldRunPurge = N'Y'
+		BEGIN
+			EXEC ServerEye.ApplyRetentionPolicies;
 
-						INSERT INTO ServerEye.[Log]
-						(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-						SELECT SYSDATETIME(), NULL, 0, 'XRMaster', 'ServerEye Trace job started.';
-						;
-					END
-					ELSE
-					BEGIN
-						INSERT INTO AutoWho.[Log]
-						(LogDT, TraceID, ErrorCode, LocationTag, LogMessage)
-						SELECT SYSDATETIME(), NULL, -1, 'XRMaster', N'An AbortTrace signal exists for today. This procedure has been told not to run the rest of the day.';
-						;
-					END
-				END
-			END		--IF @tmptime BETWEEN @ServerEye__NextStartTime AND @ServerEye__NextEndTime
-					-- that is, "IF trace should be running"
-		END		--IF job exists/doesn't exist
-*/
+			EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode = 0, @TraceID = NULL, @Location = N'XRMaster ServerEye Purge', @Message = N'Purge procedure completed';
 
-		--TODO: implement ServerEye purge
-		/*************************************** ServerEye Job stuff ***************************/
+			--Now that we have (potentially) deleted a bunch of rows, do some index maint
+			EXEC ServerEye.MaintainIndexes;
+		END
+		/*************************************** ServerEye Purge ***************************/
 
 		RETURN 0;
 	END TRY
@@ -365,8 +414,5 @@ RETURN 0;
 		RAISERROR(@ErrorMessage, 16, 1);
 		RETURN -999;
 	END CATCH
-END
-
-
-;
+END;
 GO

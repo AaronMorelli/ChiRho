@@ -33,7 +33,8 @@
 param ( 
 [Parameter(Mandatory=$true)][string]$Server, 
 [Parameter(Mandatory=$true)][string]$Database,
-[Parameter(Mandatory=$true)][string]$HoursToKeep,
+[Parameter(Mandatory=$true)][string]$SessionDataHoursToKeep,
+[Parameter(Mandatory=$true)][string]$ServerDataDaysToKeep,
 [Parameter(Mandatory=$true)][string]$DBExists,
 [Parameter(Mandatory=$true)][string]$curScriptLocation
 ) 
@@ -41,7 +42,7 @@ param (
 $ErrorActionPreference = "Stop"
 
 $curtime = Get-Date -format s
-$outmsg = $curtime + "------> Parameter Validation complete. Proceeding with installation on server " + $Server + ", Database " + $Database + ", HoursToKeep " + $HoursToKeep
+$outmsg = $curtime + "------> Parameter Validation complete. Proceeding with installation on server " + $Server + ", Database " + $Database + ", SessionDataHoursToKeep " + $SessionDataHoursToKeep + ", ServerDataDaysToKeep " + $ServerDataDaysToKeep
 Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
 $curtime = Get-Date -format s
@@ -83,15 +84,17 @@ $autowho_views = $autowho_parent + "03_Views"
 $autowho_procedures = $autowho_parent + "04_Procs"
 
 ## this is not implemented yet
-# $servereye_parent = $curScriptLocation + "servereye\"
-# $servereye_functions = $servereye_parent + "functions"
-# $servereye_procedures = $servereye_parent + "procedures"
-# $servereye_schemas = $servereye_parent + "schemas"
-# $servereye_tables = $servereye_parent + "tables"
-# $servereye_views = $servereye_parent + "views"
+$servereye_parent = $curScriptLocation + "ServerEye\"
+$servereye_config = $servereye_parent + "ServerEyeConfig.sql"
+$servereye_tables = $servereye_parent + "01_Tables"
+$servereye_triggers = $servereye_parent + "02_Triggers"
+$servereye_views = $servereye_parent + "03_Views"
+$servereye_procedures = $servereye_parent + "04_Procs"
+
 
 $job_core = $curScriptLocation + "Jobs\ChiRhoMaster.sql"
 $job_autowho = $curScriptLocation + "Jobs\AutoWhoTrace.sql"
+$job_servereye = $curScriptLocation + "Jobs\ServerEyeTrace.sql"
 
 $masterprocs_parent = $curScriptLocation + "master\"
 
@@ -152,7 +155,7 @@ if ( $DBExists -eq "N" ) {
     }
 }
 else {
-    # scrub it of any existing PE objects. (Other objects aren't touched, so that PE can safely exist in an already-existing utility database)
+    # scrub it of any existing XR objects. (Other objects aren't touched, so that XR can safely exist in an already-existing utility database)
     $curtime = Get-Date -format s
     $outmsg = $curtime + "------> Scrubbing XR database: " + $Database + " of any previously-installed PE objects."
     Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
@@ -456,7 +459,7 @@ Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
 # AutoWho config
 try {
-	$MyVariableArray = "HoursToKeep=$HoursToKeep"
+	$MyVariableArray = "HoursToKeep=$SessionDataHoursToKeep"
 	
 	invoke-sqlcmd -inputfile $autowho_config -serverinstance $Server -database $Database -Variable $MyVariableArray -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
 	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
@@ -474,6 +477,156 @@ catch [system.exception] {
 } # AutoWho config
 
 Write-Host "" -foregroundcolor cyan -backgroundcolor black
+
+
+
+
+
+# ###################################################
+# ServerEye
+$curtime = Get-Date -format s
+$outmsg = $curtime + "------> Creating ServerEye tables"
+Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+
+# ServerEye tables
+try {
+	(dir $servereye_tables) |  
+		ForEach-Object {  
+			$curScript = $_.FullName
+			$curFileName = $_.Name
+
+			invoke-sqlcmd -inputfile $curScript -serverinstance $Server -database $Database -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+			#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+			CD $curScriptLocation
+		}
+}
+catch [system.exception] {
+	Write-Host "Error occurred when creating ServerEye tables, in file: " + $curScript -foregroundcolor red -backgroundcolor black
+	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+    $curtime = Get-Date -format s
+	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+    throw "Installation failed"
+	break
+}  # end of ServerEye tables block
+
+Write-Host "" -foregroundcolor cyan -backgroundcolor black
+
+$curtime = Get-Date -format s
+$outmsg = $curtime + "------> Creating ServerEye triggers"
+Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+
+# ServerEye triggers
+try {
+	(dir $servereye_triggers) |  
+		ForEach-Object {  
+			$curScript = $_.FullName
+			$curFileName = $_.Name
+
+			invoke-sqlcmd -inputfile $curScript -serverinstance $Server -database $Database -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+			#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+			CD $curScriptLocation
+		}
+}
+catch [system.exception] {
+	Write-Host "Error occurred when creating ServerEye triggers, in file: " + $curScript -foregroundcolor red -backgroundcolor black
+	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+    $curtime = Get-Date -format s
+	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+    throw "Installation failed"
+	break
+}  # end of ServerEye triggers
+
+Write-Host "" -foregroundcolor cyan -backgroundcolor black
+
+<#
+$curtime = Get-Date -format s
+$outmsg = $curtime + "------> Creating ServerEye views"
+Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+
+# ServerEye Views
+try {
+	(dir $servereye_views) |  
+		ForEach-Object {  
+			$curScript = $_.FullName
+			$curFileName = $_.Name
+
+			invoke-sqlcmd -inputfile $curScript -serverinstance $Server -database $Database -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+			#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+			CD $curScriptLocation
+		}
+}
+catch [system.exception] {
+	Write-Host "Error occurred when creating ServerEye views, in file: " + $curScript -foregroundcolor red -backgroundcolor black
+	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+    $curtime = Get-Date -format s
+	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+    throw "Installation failed"
+	break
+}  # end of ServerEye views
+
+Write-Host "" -foregroundcolor cyan -backgroundcolor black
+#>
+
+$curtime = Get-Date -format s
+$outmsg = $curtime + "------> Creating ServerEye procedures"
+Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+
+# AutoWho procedures
+try {
+	(dir $servereye_procedures) |  
+		ForEach-Object {  
+			$curScript = $_.FullName
+			$curFileName = $_.Name
+
+			invoke-sqlcmd -inputfile $curScript -serverinstance $Server -database $Database -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+			#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+			CD $curScriptLocation
+		}
+}
+catch [system.exception] {
+	Write-Host "Error occurred when creating ServerEye procedures, in file: " + $curScript -foregroundcolor red -backgroundcolor black
+	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+    $curtime = Get-Date -format s
+	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+    throw "Installation failed"
+	break
+}  # end of ServerEye procedures
+
+Write-Host "" -foregroundcolor cyan -backgroundcolor black
+
+$curtime = Get-Date -format s
+$outmsg = $curtime + "------> Configuring ServerEye"
+Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+
+# AutoWho config
+try {
+	$MyVariableArray = "DaysToKeep=$ServerDataDaysToKeep"
+	
+	invoke-sqlcmd -inputfile $servereye_config -serverinstance $Server -database $Database -Variable $MyVariableArray -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+	CD $curScriptLocation
+
+	Write-Host "Finished ServerEye configuration" -foregroundcolor cyan -backgroundcolor black
+}
+catch [system.exception] {
+	Write-Host "Error occurred during ServerEye configuration, in file: " + $curScript -foregroundcolor red -backgroundcolor black
+	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+    $curtime = Get-Date -format s
+	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+    throw "Installation failed"
+	break
+} # ServerEye config
+
+Write-Host "" -foregroundcolor cyan -backgroundcolor black
+
+
+
+
+
+
+
+
+
 
 
 # we take our __TEMPLATE versions of the master procs and create versions with $Database substituted for @@XRDATABASENAME@@
@@ -773,5 +926,30 @@ catch [system.exception] {
     throw "Installation failed"
 	break
 } # AutoWho job
+
+Write-Host "" -foregroundcolor cyan -backgroundcolor black
+
+$curtime = Get-Date -format s
+$outmsg = $curtime + "------> Creating ServerEye trace job"
+Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+
+# AutoWho job
+try {
+	$MyVariableArray = "DBName=$Database"
+	
+	invoke-sqlcmd -inputfile $job_servereye -serverinstance $Server -database msdb -Variable $MyVariableArray -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+	CD $curScriptLocation
+
+	Write-Host "Finished creating ServerEye trace job" -foregroundcolor cyan -backgroundcolor black
+}
+catch [system.exception] {
+	Write-Host "Error occurred when creating ServerEye trace job: " -foregroundcolor red -backgroundcolor black
+	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+    $curtime = Get-Date -format s
+	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+    throw "Installation failed"
+	break
+} # ServerEye job
 
 Write-Host "" -foregroundcolor cyan -backgroundcolor black

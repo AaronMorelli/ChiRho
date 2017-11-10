@@ -19,9 +19,9 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: AutoWhoTrace.sql
+	FILE NAME: ServerEyeTrace.sql
 
-	JOB NAME: <DB name> - AlwaysDisabled - AutoWho Trace
+	JOB NAME: <DB name> - AlwaysDisabled - ServerEye Trace
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
@@ -29,14 +29,14 @@
 					sqlcrossjoin.wordpress.com
 
 	PURPOSE: When called (by the ChiRho master job), runs in an infinite loop until the
-	time when AutoWho is configured to stop.
+	time when ServerEye is configured to stop.
 */
 USE [msdb]
 GO
 DECLARE @DBN_input NVARCHAR(256),
 		@JobName NVARCHAR(128);
 SET @DBN_input = N'$(DBName)';
-SET @JobName = @DBN_input +  N' - AlwaysDisabled - AutoWho Trace'
+SET @JobName = @DBN_input +  N' - AlwaysDisabled - ServerEye Trace'
 
 BEGIN TRANSACTION
 DECLARE @ReturnCode INT
@@ -57,12 +57,12 @@ EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=@JobName,
 		@notify_level_netsend=0, 
 		@notify_level_page=0, 
 		@delete_level=0, 
-		@description=N'This job is started by the ChiRho Master job and starts a DMV polling trace against the **SESSION**-focused DMVs that (by default) lasts all day.', 
+		@description=N'This job is started by the ChiRho Master job and starts a DMV polling trace against the **SERVER**-focused DMVs that (by default) lasts all day.', 
 		@category_name=N'[Uncategorized (Local)]', 
 		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
 IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
 
-EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'StartAutoWhoTrace', 
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'StartServerEyeTrace', 
 		@step_id=1, 
 		@cmdexec_success_code=0, 
 		@on_success_action=1, 
@@ -75,7 +75,7 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'StartAut
 		@command=N'DECLARE @ProcRC INT
 DECLARE @lmsg VARCHAR(4000)
 
-EXEC @ProcRC = AutoWho.Executor @ErrorMessage = @lmsg OUTPUT
+EXEC @ProcRC = ServerEye.Executor @ErrorMessage = @lmsg OUTPUT
 
 PRINT ''Return Code: '' + CONVERT(VARCHAR(20),@ProcRC)
 PRINT ''Return Message: '' + COALESCE(@lmsg,''<NULL>'')', 

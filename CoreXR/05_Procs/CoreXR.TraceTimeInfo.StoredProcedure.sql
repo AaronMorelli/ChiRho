@@ -103,68 +103,73 @@ BEGIN
 			@opt__EndTime			 = [EndTime],
 			@opt__BeginEndIsUTC		 = [BeginEndIsUTC]
 		FROM AutoWho.Options o;
-
-		--First, check to see if the begin/end options are UTC or local. If local, convert to UTC.
-		--The logic below works because the TIME data type wraps. E.g. if you pass in '20:00' and add 7 hours, you get 03:00
-		IF @opt__BeginEndIsUTC = N'Y'
-		BEGIN
-			SET @BeginTimeUTC = @opt__BeginTime;
-			SET @EndTimeUTC = @opt__EndTime;
-		END
-		ELSE
-		BEGIN
-			SET @BeginTimeUTC = DATEADD(MINUTE, @UTCDiffMinutesFromLocalTime, @opt__BeginTime);
-			SET @EndTimeUTC = DATEADD(MINUTE, @UTCDiffMinutesFromLocalTime, @opt__EndTime);
-		END
-
-		SET @PointInTime_TimeOnly = CONVERT(TIME(0),@PointInTimeUTC);
-
-		--Our logic differs based on whether Begin is < End or Begin is > End.
-		-- (If Begin is > End, e.g. 16:00 and 4:00, it means that End represents the next day, e.g. 16:00 on one day and 4:00 on the next day)
-		IF @BeginTimeUTC < @EndTimeUTC
-		BEGIN
-			--trace is contained in one day
-			IF @PointInTime_TimeOnly <= @BeginTimeUTC
-				OR (@PointInTime_TimeOnly >= @BeginTimeUTC AND @PointInTime_TimeOnly < @EndTimeUTC)
-			BEGIN
-				SET @UtilityStartTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@BeginTimeUTC);
-				SET @UtilityEndTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@EndTimeUTC);
-			END
-			ELSE 
-			BEGIN
-				--PIT must be > @BeginTimeUTC AND > @EndTimeUTC. The next run is tomorrow
-				SET @UtilityStartTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@BeginTimeUTC);
-				SET @UtilityStartTimeUTC = DATEADD(DAY, 1, @UtilityStartTimeUTC);
-				SET @UtilityEndTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@EndTimeUTC);
-				SET @UtilityEndTimeUTC = DATEADD(DAY, 1, @UtilityEndTimeUTC);
-			END
-		END
-		ELSE
-		BEGIN
-			--trace spans 2 days
-			IF @PointInTime_TimeOnly >= @BeginTimeUTC	--if after the BeginTime the trace should run the rest of the day and into tomorrow
-
-				OR (@PointInTime_TimeOnly < @BeginTimeUTC AND @PointInTime_TimeOnly >= @EndTimeUTC)
-				-- conceptually, this is before today's run and after yesterday's run ended. So the next start time 
-				-- is today's start/tomorrow's end.
-			BEGIN
-				SET @UtilityStartTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@BeginTimeUTC);
-				SET @UtilityEndTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@EndTimeUTC);
-				SET @UtilityEndTimeUTC = DATEADD(DAY, 1, @UtilityEndTimeUTC);
-			END
-			ELSE
-			BEGIN
-				--PIT is < begin and also < end. Conceptually this means it is within the range of yesterday's start time/today's end time.
-				SET @UtilityStartTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@BeginTimeUTC);
-				SET @UtilityStartTimeUTC = DATEADD(DAY, -1, @UtilityStartTimeUTC);
-				SET @UtilityEndTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@EndTimeUTC)
-			END
-		END
 	END
 	ELSE IF @Utility = N'ServerEye'
 	BEGIN
-		RETURN 0;
-	END --outside IF/ELSE that controls utility-specific logic	
+		SELECT 
+			@UtilityIsEnabled		 = [ServerEyeEnabled],
+			@opt__BeginTime			 = [BeginTime],
+			@opt__EndTime			 = [EndTime],
+			@opt__BeginEndIsUTC		 = [BeginEndIsUTC]
+		FROM ServerEye.Options o;
+	END
+
+	--First, check to see if the begin/end options are UTC or local. If local, convert to UTC.
+	--The logic below works because the TIME data type wraps. E.g. if you pass in '20:00' and add 7 hours, you get 03:00
+	IF @opt__BeginEndIsUTC = N'Y'
+	BEGIN
+		SET @BeginTimeUTC = @opt__BeginTime;
+		SET @EndTimeUTC = @opt__EndTime;
+	END
+	ELSE
+	BEGIN
+		SET @BeginTimeUTC = DATEADD(MINUTE, @UTCDiffMinutesFromLocalTime, @opt__BeginTime);
+		SET @EndTimeUTC = DATEADD(MINUTE, @UTCDiffMinutesFromLocalTime, @opt__EndTime);
+	END
+
+	SET @PointInTime_TimeOnly = CONVERT(TIME(0),@PointInTimeUTC);
+
+	--Our logic differs based on whether Begin is < End or Begin is > End.
+	-- (If Begin is > End, e.g. 16:00 and 4:00, it means that End represents the next day, e.g. 16:00 on one day and 4:00 on the next day)
+	IF @BeginTimeUTC < @EndTimeUTC
+	BEGIN
+		--trace is contained in one day
+		IF @PointInTime_TimeOnly <= @BeginTimeUTC
+			OR (@PointInTime_TimeOnly >= @BeginTimeUTC AND @PointInTime_TimeOnly < @EndTimeUTC)
+		BEGIN
+			SET @UtilityStartTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@BeginTimeUTC);
+			SET @UtilityEndTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@EndTimeUTC);
+		END
+		ELSE 
+		BEGIN
+			--PIT must be > @BeginTimeUTC AND > @EndTimeUTC. The next run is tomorrow
+			SET @UtilityStartTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@BeginTimeUTC);
+			SET @UtilityStartTimeUTC = DATEADD(DAY, 1, @UtilityStartTimeUTC);
+			SET @UtilityEndTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@EndTimeUTC);
+			SET @UtilityEndTimeUTC = DATEADD(DAY, 1, @UtilityEndTimeUTC);
+		END
+	END
+	ELSE
+	BEGIN
+		--trace spans 2 days
+		IF @PointInTime_TimeOnly >= @BeginTimeUTC	--if after the BeginTime the trace should run the rest of the day and into tomorrow
+
+			OR (@PointInTime_TimeOnly < @BeginTimeUTC AND @PointInTime_TimeOnly >= @EndTimeUTC)
+			-- conceptually, this is before today's run and after yesterday's run ended. So the next start time 
+			-- is today's start/tomorrow's end.
+		BEGIN
+			SET @UtilityStartTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@BeginTimeUTC);
+			SET @UtilityEndTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@EndTimeUTC);
+			SET @UtilityEndTimeUTC = DATEADD(DAY, 1, @UtilityEndTimeUTC);
+		END
+		ELSE
+		BEGIN
+			--PIT is < begin and also < end. Conceptually this means it is within the range of yesterday's start time/today's end time.
+			SET @UtilityStartTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@BeginTimeUTC);
+			SET @UtilityStartTimeUTC = DATEADD(DAY, -1, @UtilityStartTimeUTC);
+			SET @UtilityEndTimeUTC = CONVERT(DATETIME,CONVERT(DATE,@PointInTimeUTC)) + CONVERT(DATETIME,@EndTimeUTC)
+		END
+	END
 
 	RETURN 0;
 END 
