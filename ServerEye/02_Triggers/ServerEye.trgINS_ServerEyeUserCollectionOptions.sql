@@ -19,31 +19,48 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: AutoWho.SignalTable.Table.sql
+	FILE NAME: ServerEye.trgINS_ServerEyeUserCollectionOptions.sql
 
-	TABLE NAME: AutoWho.SignalTable
+	TRIGGER NAME: ServerEye.trgINS_ServerEyeUserCollectionOptions
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Allows various "messages" to be passed in to the AutoWho.Executor's
-	infinite loop, such as "abort".
+	PURPOSE: Copies data inserted into the UserCollectionOptions table into the history table.
 */
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE TABLE [AutoWho].[SignalTable](
-	[SignalName] [nvarchar](100) NOT NULL,
-	[SignalValue] [nvarchar](100) NULL,
-	[InsertTime] [datetime] NOT NULL,
-	[InsertTimeUTC] [datetime] NOT NULL,
- CONSTRAINT [PK_AutoWho_SignalTable] PRIMARY KEY CLUSTERED 
-(
-	[SignalName] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+CREATE TRIGGER [ServerEye].[trgINS_ServerEyeUserCollectionOptions] ON [ServerEye].[UserCollectionOptions]
 
-) ON [PRIMARY]
+FOR INSERT
+AS 	BEGIN
+
+INSERT INTO [ServerEye].[UserCollectionOptions_History](
+	[HistoryInsertDate],
+	[HistoryInsertDateUTC],
+	[TriggerAction],
+	[LastModifiedUser],
+	[OptionSet],
+
+	[IncludeDBs],
+	[ExcludeDBs],
+	[DebugSpeed]
+)
+SELECT 
+	GETDATE(),
+	GETUTCDATE(),
+	'Insert',
+	SUSER_SNAME(),
+	[OptionSet],
+	[IncludeDBs],
+	[ExcludeDBs],
+	[DebugSpeed]
+FROM inserted
+;
+
+END
 GO

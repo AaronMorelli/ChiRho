@@ -148,7 +148,6 @@ BEGIN
 		END
 	END
 
-	/* Uncomment when ServerEye dev gets serious
 	IF @Utility = N'ServerEye'
 	BEGIN 
 		IF UPPER(ISNULL(@PreventAllDay,N'Z')) NOT IN (N'N',N'Y')
@@ -157,26 +156,26 @@ BEGIN
 			RETURN -1;
 		END
 
-		--TODO: delete from the signal table
+		DELETE FROM ServerEye.SignalTable
+		WHERE SignalName = N'AbortTrace' ;
 
 		IF UPPER(@PreventAllDay) = N'N'
 		BEGIN
 			INSERT INTO ServerEye.SignalTable 
-			(SignalName, SignalValue, InsertTime)
-			VALUES (N'AbortTrace', N'OneTime', GETDATE());		-- N'OneTime' --> the Wrapper proc, when it sees this row for the same day,
+			(SignalName, SignalValue, InsertTime, InsertTimeUTC)
+			VALUES (N'AbortTrace', N'OneTime', GETDATE(), GETUTCDATE());	-- N'OneTime' --> the Wrapper proc, when it sees this row for the same day,
 																-- will abort the loop early and then delete this row so that
 																-- the next time it starts it will continue to run
 		END
 		ELSE
 		BEGIN
 			INSERT INTO ServerEye.SignalTable 
-				(SignalName, SignalValue, InsertTime)
-			VALUES (N'AbortTrace', N'AllDay', GETDATE());		-- N'AllDay' --> the Wrapper proc, when it sees this row for the same day,
+				(SignalName, SignalValue, InsertTime, InsertTimeUTC)
+			VALUES (N'AbortTrace', N'AllDay', GETDATE(), GETUTCDATE());		-- N'AllDay' --> the Wrapper proc, when it sees this row for the same day,
 																-- will abort the loop early, but wil NOT delete this row. Thus, 
 																-- that row will prevent this wrapper proc from running the rest of the day
 		END
 	END
-	*/
 
 	--as other utilities are added, their "Abort Trace" logic goes here
 

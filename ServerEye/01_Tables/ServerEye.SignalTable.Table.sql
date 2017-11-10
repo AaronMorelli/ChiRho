@@ -19,28 +19,28 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: AutoWho.SignalTable.Table.sql
+	FILE NAME: ServerEye.SignalTable.Table.sql
 
-	TABLE NAME: AutoWho.SignalTable
+	TABLE NAME: ServerEye.SignalTable
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Allows various "messages" to be passed in to the AutoWho.Executor's
+	PURPOSE: Allows various "messages" to be passed in to the ServerEye.Executor's
 	infinite loop, such as "abort".
 */
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE TABLE [AutoWho].[SignalTable](
+CREATE TABLE [ServerEye].[SignalTable](
 	[SignalName] [nvarchar](100) NOT NULL,
 	[SignalValue] [nvarchar](100) NULL,
 	[InsertTime] [datetime] NOT NULL,
 	[InsertTimeUTC] [datetime] NOT NULL,
- CONSTRAINT [PK_AutoWho_SignalTable] PRIMARY KEY CLUSTERED 
+ CONSTRAINT [PK_ServerEye_SignalTable] PRIMARY KEY CLUSTERED 
 (
 	[SignalName] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]

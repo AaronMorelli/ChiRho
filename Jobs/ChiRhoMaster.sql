@@ -114,7 +114,7 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'StopAuto
 		@retry_attempts=0, 
 		@retry_interval=0, 
 		@os_run_priority=0, @subsystem=N'TSQL', 
-		@command=N'exec CoreXR.AbortTrace @Utility = N''AutoWho'', @TraceID = NULL, @AbortCode = N''M'', @PreventAllDay = N''Y''', 
+		@command=N'exec CoreXR.AbortTrace @Utility = N''AutoWho'', @TraceID = NULL, @AbortCode = N''A'', @PreventAllDay = N''Y''', 
 		@database_name=@DBN_input, 
 		@flags=0
 IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
@@ -129,7 +129,7 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'StopServ
 		@retry_attempts=0, 
 		@retry_interval=0, 
 		@os_run_priority=0, @subsystem=N'TSQL', 
-		@command=N'exec CoreXR.AbortTrace @Utility = N''ServerEye'', @TraceID = NULL , @PreventAllDay = N''N''', 
+		@command=N'exec CoreXR.AbortTrace @Utility = N''ServerEye'', @TraceID = NULL, @AbortCode = N''O'', @PreventAllDay = N''N''', 
 		@database_name=@DBN_input, 
 		@flags=0
 IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
@@ -144,7 +144,7 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'StopServ
 		@retry_attempts=0, 
 		@retry_interval=0, 
 		@os_run_priority=0, @subsystem=N'TSQL', 
-		@command=N'exec CoreXR.AbortTrace @Utility = N''ServerEye'', @TraceID = NULL , @PreventAllDay = N''Y''', 
+		@command=N'exec CoreXR.AbortTrace @Utility = N''ServerEye'', @TraceID = NULL, @AbortCode = N''A'', @PreventAllDay = N''Y''', 
 		@database_name=@DBN_input, 
 		@flags=0
 IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback

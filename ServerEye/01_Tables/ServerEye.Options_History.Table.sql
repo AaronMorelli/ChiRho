@@ -19,31 +19,43 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: AutoWho.SignalTable.Table.sql
+	FILE NAME: ServerEye.Options_History.Table.sql
 
-	TABLE NAME: AutoWho.SignalTable
+	TABLE NAME: ServerEye.Options_History
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Allows various "messages" to be passed in to the AutoWho.Executor's
-	infinite loop, such as "abort".
+	PURPOSE: Populated by triggers on the ServerEye.Options table every time
+	any option value changes.
 */
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE TABLE [AutoWho].[SignalTable](
-	[SignalName] [nvarchar](100) NOT NULL,
-	[SignalValue] [nvarchar](100) NULL,
-	[InsertTime] [datetime] NOT NULL,
-	[InsertTimeUTC] [datetime] NOT NULL,
- CONSTRAINT [PK_AutoWho_SignalTable] PRIMARY KEY CLUSTERED 
+CREATE TABLE [ServerEye].[Options_History](
+	[HistoryInsertDate] [datetime] NOT NULL,
+	[HistoryInsertDateUTC] [datetime] NOT NULL,
+	[LastModifiedUser] [nvarchar](128) NOT NULL,
+	[TriggerAction] [nvarchar](40) NOT NULL,
+	[RowID] [int] NOT NULL,
+	[ServerEyeEnabled] [nchar](1) NOT NULL,
+	[BeginTime] [time](0) NOT NULL,
+	[EndTime] [time](0) NOT NULL,
+	[BeginEndIsUTC] [nchar](1) NOT NULL,
+	[IntervalLength] [smallint] NOT NULL,
+	[IncludeDBs] [nvarchar](4000) NOT NULL,
+	[ExcludeDBs] [nvarchar](4000) NOT NULL,
+	[Retention_Days] [int] NOT NULL,
+	[DebugSpeed] [nchar](1) NOT NULL,
+	[PurgeUnextractedData] [nchar](1) NOT NULL,
+ CONSTRAINT [PKServerEyeOptions_History] PRIMARY KEY CLUSTERED 
 (
-	[SignalName] ASC
+	[HistoryInsertDate] ASC,
+	[TriggerAction] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
-
 ) ON [PRIMARY]
+
 GO

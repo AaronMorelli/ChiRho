@@ -19,31 +19,31 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: AutoWho.SignalTable.Table.sql
+	FILE NAME: ServerEye.trgDEL_ServerEyeUserCollectionOptions.sql
 
-	TABLE NAME: AutoWho.SignalTable
+	TRIGGER NAME: ServerEye.trgDEL_ServerEyeUserCollectionOptions
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Allows various "messages" to be passed in to the AutoWho.Executor's
-	infinite loop, such as "abort".
+	PURPOSE: Prevents deletes on the ServerEye.UserCollectionOptions table.
 */
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE TABLE [AutoWho].[SignalTable](
-	[SignalName] [nvarchar](100) NOT NULL,
-	[SignalValue] [nvarchar](100) NULL,
-	[InsertTime] [datetime] NOT NULL,
-	[InsertTimeUTC] [datetime] NOT NULL,
- CONSTRAINT [PK_AutoWho_SignalTable] PRIMARY KEY CLUSTERED 
-(
-	[SignalName] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+CREATE TRIGGER [ServerEye].[trgDEL_ServerEyeUserCollectionOptions] ON [ServerEye].[UserCollectionOptions]
 
-) ON [PRIMARY]
+FOR DELETE
+AS 	BEGIN
+
+--We don't allow deletes.
+RAISERROR('Deletes on the UserCollectionOption table are forbidden. To reset the options to defaults, call the ServerEye.ResetUserCollectionOptions procedure.',10,1);
+ROLLBACK TRANSACTION;
+
+RETURN;
+
+END
 GO

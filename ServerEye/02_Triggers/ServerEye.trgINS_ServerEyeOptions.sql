@@ -19,31 +19,40 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: AutoWho.SignalTable.Table.sql
+	FILE NAME: ServerEye.trgINS_ServerEyeOptions.sql
 
-	TABLE NAME: AutoWho.SignalTable
+	TRIGGER NAME: ServerEye.trgINS_ServerEyeOptions
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Allows various "messages" to be passed in to the AutoWho.Executor's
-	infinite loop, such as "abort".
+	PURPOSE: Copies data inserted into the Options table into the history table.
 */
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE TABLE [AutoWho].[SignalTable](
-	[SignalName] [nvarchar](100) NOT NULL,
-	[SignalValue] [nvarchar](100) NULL,
-	[InsertTime] [datetime] NOT NULL,
-	[InsertTimeUTC] [datetime] NOT NULL,
- CONSTRAINT [PK_AutoWho_SignalTable] PRIMARY KEY CLUSTERED 
-(
-	[SignalName] ASC
-)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+CREATE TRIGGER [ServerEye].[trgINS_ServerEyeOptions] ON [ServerEye].[Options]
 
-) ON [PRIMARY]
+FOR INSERT
+AS 	BEGIN
+
+INSERT INTO ServerEye.Options_History
+(
+RowID, ServerEyeEnabled, BeginTime, EndTime, BeginEndIsUTC, IntervalLength, IncludeDBs, ExcludeDBs, Retention_Days, DebugSpeed, PurgeUnextractedData,
+HistoryInsertDate,
+HistoryInsertDateUTC,
+TriggerAction,
+LastModifiedUser)
+SELECT 
+RowID, ServerEyeEnabled, BeginTime, EndTime, BeginEndIsUTC, IntervalLength, IncludeDBs, ExcludeDBs, Retention_Days, DebugSpeed, PurgeUnextractedData,
+GETDATE(),
+GETUTCDATE(),
+'Insert',
+SUSER_SNAME()
+FROM inserted
+
+END
 GO
