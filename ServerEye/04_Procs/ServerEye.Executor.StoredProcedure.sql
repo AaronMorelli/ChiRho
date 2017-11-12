@@ -101,37 +101,42 @@ BEGIN TRY
 
 	--General variables 
 	DECLARE 
-		 @lv__ThisRC					INT, 
-		 @lv__ProcRC					INT, 
-		 @lv__tmpStr					NVARCHAR(4000),
-		 @lv__ScratchInt				INT,
-		 @lv__EarlyAbort				NCHAR(1),
-		 @lv__RunTimeSeconds			BIGINT,
-		 @lv__RunTimeMinutes			INT,
-		 @lv__LoopStartTimeUTC			DATETIME,
-		 @lv__ServerEyeCallCompleteTimeUTC	DATETIME,
-		 @lv__LoopEndTimeUTC			DATETIME,
-		 @lv__LoopNextStartUTC			DATETIME,
-		 @lv__LoopNextStartSecondDifferential INT,
-		 @lv__WaitForMinutes			INT,
-		 @lv__WaitForSeconds			INT,
-		 @lv__WaitForString				VARCHAR(20),
-		 @lv__LoopCounter				INT,
-		 @lv__SuccessiveExceptions		INT,
-		 @lv__RunWasSuccessful			BIT,
-		 @lv__TraceID					INT,
-		 @lv__DBInclusionsExist			BIT,
-		 @lv__TempDBCreateTime			DATETIME,
-		 @lv__LocalCaptureTime			DATETIME,
-		 @lv__UTCCaptureTime			DATETIME,
+		@lv__ThisRC					INT, 
+		@lv__ProcRC					INT, 
+		@lv__tmpStr					NVARCHAR(4000),
+		@lv__ScratchInt				INT,
+		@lv__EarlyAbort				NCHAR(1),
+		@lv__RunTimeSeconds			BIGINT,
+		@lv__RunTimeMinutes			INT,
+		@lv__LoopStartTimeUTC		DATETIME,
+		@lv__ServerEyeCallCompleteTimeUTC	DATETIME,
+		@lv__LoopEndTimeUTC			DATETIME,
+		@lv__LoopNextStartUTC		DATETIME,
+		@lv__LoopNextStartSecondDifferential INT,
+		@lv__WaitForMinutes			INT,
+		@lv__WaitForSeconds			INT,
+		@lv__WaitForString			VARCHAR(20),
+		@lv__LoopCounter			INT,
+		@lv__ExceptionThisRun		INT,
+		@lv__SuccessiveExceptions	INT,
+		@lv__TraceID				INT,
+		@lv__DBInclusionsExist		BIT,
+		@lv__TempDBCreateTime		DATETIME,
+		@lv__LocalCaptureTime		DATETIME,
+		@lv__UTCCaptureTime			DATETIME,
+		
+		@lv__MediumInterval			INT,
+		@lv__LowInterval			INT,
+		@lv__BatchInterval			INT,
+		@lv__MediumFreqThisRun		BIT,
+		@lv__LowFreqThisRun			BIT,
+		@lv__BatchFreqThisRun			BIT,
+		@lv__HighFrequencySuccessful	SMALLINT,
+		@lv__MediumFrequencySuccessful	SMALLINT,
+		@lv__LowFrequencySuccessful		SMALLINT,
+		@lv__BatchFrequencySuccessful	SMALLINT,
+		@lv__RunWasSuccessful		BIT;
 
-		 @lv__MediumInterval			INT,
-		 @lv__LowInterval				INT,
-		 @lv__BatchInterval				INT,
-		 @lv__MediumFreqThisRun			BIT,
-		 @lv__LowFreqThisRun			BIT,
-		 @lv__BatchFreqThisRun			BIT
-		 ;
 
 	--variables to hold option table contents
 	DECLARE 
@@ -174,7 +179,7 @@ BEGIN TRY
 				AND DATEDIFF(DAY, InsertTime, GETDATE()) = 0 )
 	BEGIN
 		SET @ErrorMessage = N'An AbortTrace signal exists for today. This procedure has been told not to run the rest of the day.';
-		SET @lv__ThisRC = -9;
+		SET @lv__ThisRC = -7;
 		EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='Abort flag exists', @Message=@ErrorMessage;
 
 		EXEC sp_releaseapplock @Resource = 'ServerEyeBackgroundTrace', @LockOwner = 'Session';
@@ -201,7 +206,7 @@ BEGIN TRY
 	IF @lv__ServerEyeEnabled = N'N'
 	BEGIN
 		SET @ErrorMessage = 'According to the option table, ServerEye is not enabled';
-		SET @lv__ThisRC = -11;
+		SET @lv__ThisRC = -9;
 		EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='NotEnabled', @Message=@ErrorMessage;
 	
 		EXEC sp_releaseapplock @Resource = 'ServerEyeBackgroundTrace', @LockOwner = 'Session';
@@ -214,7 +219,7 @@ BEGIN TRY
 		SET @ErrorMessage = @ErrorMessage + ' Current time: ' + CONVERT(NVARCHAR(20),GETDATE()) + '; UTC time: ' + CONVERT(NVARCHAR(20),GETUTCDATE()) + 
 			'; Next ServerEye Start time (UTC): ' + CONVERT(NVARCHAR(20),@lv__ServerEyeStartTimeUTC) + 
 			'; Next ServerEye End time (UTC): ' + CONVERT(NVARCHAR(20),@lv__ServerEyeEndTimeUTC);
-		SET @lv__ThisRC = -13;
+		SET @lv__ThisRC = -11;
 		EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='Outside Begin/End', @Message=@ErrorMessage;
 	
 		EXEC sp_releaseapplock @Resource = 'ServerEyeBackgroundTrace', @LockOwner = 'Session';
@@ -275,7 +280,7 @@ BEGIN TRY
 				CONVERT(NVARCHAR(20), ERROR_NUMBER()) + N'; State: ' + CONVERT(NVARCHAR(20), ERROR_STATE()) + N'; Severity: ' + CONVERT(NVARCHAR(20), ERROR_SEVERITY()) + '; Message: ' + 
 				ERROR_MESSAGE();
 
-			SET @lv__ThisRC = -15;
+			SET @lv__ThisRC = -13;
 			EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='DB Inclusions', @Message=@ErrorMessage;
 	
 			EXEC sp_releaseapplock @Resource = 'ServerEyeBackgroundTrace', @LockOwner = 'Session';
@@ -301,7 +306,7 @@ BEGIN TRY
 				CONVERT(NVARCHAR(20), ERROR_NUMBER()) + N'; State: ' + CONVERT(NVARCHAR(20), ERROR_STATE()) + N'; Severity: ' + CONVERT(NVARCHAR(20), ERROR_SEVERITY()) + '; Message: ' + 
 				ERROR_MESSAGE();
 
-			SET @lv__ThisRC = -17;
+			SET @lv__ThisRC = -15;
 			EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='DB Exclusions', @Message=@ErrorMessage;
 	
 			EXEC sp_releaseapplock @Resource = 'ServerEyeBackgroundTrace', @LockOwner = 'Session';
@@ -313,7 +318,7 @@ BEGIN TRY
 	BEGIN
 		SET @ErrorMessage = N'One or more DB names are present in both the IncludeDBs option and ExcludeDBs option. This is not allowed.';
 
-		SET @lv__ThisRC = -19;
+		SET @lv__ThisRC = -17;
 		EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='IncludeExclude', @Message=@ErrorMessage;
 	
 		EXEC sp_releaseapplock @Resource = 'ServerEyeBackgroundTrace', @LockOwner = 'Session';
@@ -325,7 +330,7 @@ BEGIN TRY
 	IF @lv__RunTimeSeconds < 120
 	BEGIN
 		SET @ErrorMessage = N'The current time, combined with the BeginTime and EndTime options, have resulted in a trace that will run for < 120 seconds. This is not allowed, and the trace will not be started.';
-		SET @lv__ThisRC = -21;
+		SET @lv__ThisRC = -19;
 		EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='Less 60sec', @Message=@ErrorMessage;
 	
 		EXEC sp_releaseapplock @Resource = 'ServerEyeBackgroundTrace', @LockOwner = 'Session';
@@ -340,7 +345,7 @@ BEGIN TRY
 		IF ISNULL(@lv__TraceID,-1) < 0
 		BEGIN
 			SET @ErrorMessage = N'TraceID value is invalid. The Create Trace procedure failed silently.';
-			SET @lv__ThisRC = -23;
+			SET @lv__ThisRC = -21;
 			EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='InvalidTraceID', @Message=@ErrorMessage;
 	
 			EXEC sp_releaseapplock @Resource = 'ServerEyeBackgroundTrace', @LockOwner = 'Session';
@@ -349,7 +354,7 @@ BEGIN TRY
 	END TRY
 	BEGIN CATCH
 		SET @ErrorMessage = N'Exception occurred when creating a new trace: ' + ERROR_MESSAGE();
-		SET @lv__ThisRC = -25;
+		SET @lv__ThisRC = -23;
 		EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=NULL, @Location='CreateTraceException', @Message=@ErrorMessage;
 
 		EXEC sp_releaseapplock @Resource = 'ServerEyeBackgroundTrace', @LockOwner = 'Session';
@@ -398,6 +403,7 @@ BEGIN TRY
 		SET @lv__LowFreqThisRun = 0;
 		SET @lv__BatchFreqThisRun = 0;
 		SET @lv__RunWasSuccessful = 0;
+		SET @lv__ExceptionThisRun = 0;
 
 		IF @lv__LoopCounter = 1
 		BEGIN
@@ -424,96 +430,221 @@ BEGIN TRY
 			END
 		END
 
+		SET @lv__UTCCaptureTime = GETUTCDATE();
+		SET @lv__LocalCaptureTime = DATEADD(MINUTE, 0-DATEDIFF(MINUTE, GETDATE(), GETUTCDATE()), @lv__UTCCaptureTime);
+
+		--Each collector proc raises an exception if not successful for any reason.
 		BEGIN TRY
-			EXEC @lv__ProcRC = ServerEye.Collector @init = 255,
-					@RunMedium = @lv__MediumFreqThisRun, 
-					@RunLow = @lv__LowFreqThisRun, 
-					@RunBatch = @lv__BatchFreqThisRun,
-					@LocalCaptureTime = @lv__LocalCaptureTime OUTPUT, 
-					@UTCCaptureTime = @lv__UTCCaptureTime OUTPUT,
-					@RunWasSuccessful = @lv__RunWasSuccessful OUTPUT;
+			EXEC @lv__ProcRC = ServerEye.CollectorHiFreq @init = 255,
+					@LocalCaptureTime = @lv__LocalCaptureTime, 
+					@UTCCaptureTime = @lv__UTCCaptureTime;
 
-			IF @lv__RunWasSuccessful = 1
-			BEGIN
-				UPDATE targ 
-				SET PrevSuccessfulUTCCaptureTime = hi.UTCCaptureTime,
-
-					--We only set the prev-successful times for these 3 fields when the CURRENT capture
-					--actually ran the medium/low/batch code. 
-					PrevSuccessfulMedium = CASE WHEN targ.MediumFrequencySuccessful = 1 THEN md.UTCCaptureTime ELSE NULL END,
-					PrevSuccessfulLow = CASE WHEN targ.LowFrequencySuccessful = 1 THEN lo.UTCCaptureTime ELSE NULL END,
-					PrevSuccessfulBatch = CASE WHEN targ.BatchFrequencySuccessful = 1 THEN b.UTCCaptureTime ELSE NULL END
-				FROM ServerEye.CaptureTimes targ
-					OUTER APPLY (
-						SELECT TOP 1
-							hi.UTCCaptureTime
-						FROM ServerEye.CaptureTimes hi
-						WHERE hi.UTCCaptureTime < @lv__UTCCaptureTime
-						--must be within 10 minutes (double the highest frequency allowed for @opt__IntervalLength)
-						AND hi.UTCCaptureTime >= DATEADD(MINUTE, -10, @lv__UTCCaptureTime)
-						AND hi.RunWasSuccessful = 1
-						ORDER BY hi.UTCCaptureTime DESC
-					) hi
-					OUTER APPLY (
-						SELECT TOP 1
-							md.UTCCaptureTime
-						FROM ServerEye.CaptureTimes md
-						WHERE md.UTCCaptureTime < @lv__UTCCaptureTime
-						--must be within 30 minutes (5 min longer than the longest amount of time allowed for medium frequency)
-						AND md.UTCCaptureTime >= DATEADD(MINUTE, -30, @lv__UTCCaptureTime)
-						AND md.RunWasSuccessful = 1
-						AND md.MediumFrequencySuccessful = 1
-						ORDER BY md.UTCCaptureTime DESC
-					) md
-					OUTER APPLY (
-						SELECT TOP 1
-							lo.UTCCaptureTime
-						FROM ServerEye.CaptureTimes lo
-						WHERE lo.UTCCaptureTime < @lv__UTCCaptureTime
-						--must be within 60 minutes (10 min longer than the longest amount of time allowed for low frequency)
-						AND lo.UTCCaptureTime >= DATEADD(MINUTE, -60, @lv__UTCCaptureTime)
-						AND lo.RunWasSuccessful = 1
-						AND lo.LowFrequencySuccessful = 1
-						ORDER BY lo.UTCCaptureTime DESC
-					) lo
-					OUTER APPLY (
-						SELECT TOP 1
-							b.UTCCaptureTime
-						FROM ServerEye.CaptureTimes b
-						WHERE b.UTCCaptureTime < @lv__UTCCaptureTime
-						--must be within 3.5 hours (30 min longer than the longest amount of time allowed for batch frequency)
-						AND b.UTCCaptureTime >= DATEADD(MINUTE, -330, @lv__UTCCaptureTime)
-						AND b.RunWasSuccessful = 1
-						AND b.BatchFrequencySuccessful = 1
-						ORDER BY b.UTCCaptureTime DESC
-					) b
-				WHERE targ.UTCCaptureTime = @lv__UTCCaptureTime;
-			END
-	
-			SET @lv__SuccessiveExceptions = 0;
+			SET @lv__HighFrequencySuccessful = 1;
 		END TRY
 		BEGIN CATCH
-			SET @ErrorMessage = 'Executor: ServerEye Collector procedure generated an exception: Error Number: ' + 
+			IF @@TRANCOUNT > 0 ROLLBACK;
+
+			SET @lv__HighFrequencySuccessful = 0;
+
+			SET @ErrorMessage = 'Executor: ServerEye CollectorHiFreq procedure generated an exception: Error Number: ' + 
 				CONVERT(VARCHAR(20), ERROR_NUMBER()) + '; Error Message: ' + ERROR_MESSAGE();
-			EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=-33, @TraceID=@lv__TraceID, @Location='Executor: ServerEye Collector exception', @Message=@ErrorMessage;
+			EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=-25, @TraceID=@lv__TraceID, @Location='Executor: HiFreq exception', @Message=@ErrorMessage;
 
-			SET @lv__SuccessiveExceptions = @lv__SuccessiveExceptions + 1;
-
-			IF @lv__SuccessiveExceptions >= 5
-			BEGIN
-				EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=-35, @TraceID=@lv__TraceID, @Location='Abort b/c exceptions', @Message=N'5 consecutive failures; this procedure is terminating.';
-
-				SET @lv__EarlyAbort = N'E';	--signals (to the logic immediately after the WHILE loop's END) how we exited the loop
-
-				--Ok, we've had 5 straight errors. Something is wrong, and we need a human to intervene.
-				--To prevent the procedure from just firing up a few minutes later, we insert a record into the signal table
-				INSERT INTO ServerEye.SignalTable
-				(SignalName, SignalValue, InsertTime)
-				SELECT N'AbortTrace', N'AllDay', GETDATE();
-
-				BREAK;		--exit the loop
-			END
+			SET @lv__ExceptionThisRun = 1;
 		END CATCH
+
+		IF @lv__MediumFreqThisRun = 1
+		BEGIN
+			BEGIN TRY
+				EXEC @lv__ProcRC = ServerEye.CollectorMedFreq @init = 255,
+						@LocalCaptureTime = @lv__LocalCaptureTime, 
+						@UTCCaptureTime = @lv__UTCCaptureTime;
+
+				SET @lv__MediumFrequencySuccessful = 1;
+			END TRY
+			BEGIN CATCH
+				IF @@TRANCOUNT > 0 ROLLBACK;
+
+				SET @lv__MediumFrequencySuccessful = 0;
+
+				SET @ErrorMessage = 'Executor: ServerEye CollectorMedFreq procedure generated an exception: Error Number: ' + 
+					CONVERT(VARCHAR(20), ERROR_NUMBER()) + '; Error Message: ' + ERROR_MESSAGE();
+				EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=-27, @TraceID=@lv__TraceID, @Location='Executor: MedFreq exception', @Message=@ErrorMessage;
+
+				SET @lv__ExceptionThisRun = 1;
+			END CATCH
+		END
+
+
+		IF @lv__LowFreqThisRun = 1
+		BEGIN
+			BEGIN TRY
+				EXEC @lv__ProcRC = ServerEye.CollectorLowFreq @init = 255,
+						@LocalCaptureTime = @lv__LocalCaptureTime, 
+						@UTCCaptureTime = @lv__UTCCaptureTime;
+
+				SET @lv__LowFrequencySuccessful = 1;
+			END TRY
+			BEGIN CATCH
+				IF @@TRANCOUNT > 0 ROLLBACK;
+
+				SET @lv__LowFrequencySuccessful = 0;
+
+				SET @ErrorMessage = 'Executor: ServerEye CollectorLowFreq procedure generated an exception: Error Number: ' + 
+					CONVERT(VARCHAR(20), ERROR_NUMBER()) + '; Error Message: ' + ERROR_MESSAGE();
+				EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=-29, @TraceID=@lv__TraceID, @Location='Executor: LowFreq exception', @Message=@ErrorMessage;
+
+				SET @lv__ExceptionThisRun = 1;
+			END CATCH
+		END
+
+		IF @lv__BatchFreqThisRun = 1
+		BEGIN
+			BEGIN TRY
+				EXEC @lv__ProcRC = ServerEye.CollectorBatchFreq @init = 255,
+						@LocalCaptureTime = @lv__LocalCaptureTime, 
+						@UTCCaptureTime = @lv__UTCCaptureTime;
+
+				SET @lv__BatchFrequencySuccessful = 1;
+			END TRY
+			BEGIN CATCH
+				IF @@TRANCOUNT > 0 ROLLBACK;
+
+				SET @lv__BatchFrequencySuccessful = 0;
+
+				SET @ErrorMessage = 'Executor: ServerEye CollectorBatchFreq procedure generated an exception: Error Number: ' + 
+					CONVERT(VARCHAR(20), ERROR_NUMBER()) + '; Error Message: ' + ERROR_MESSAGE();
+				EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=-29, @TraceID=@lv__TraceID, @Location='Executor: BatchFreq exception', @Message=@ErrorMessage;
+
+				SET @lv__ExceptionThisRun = 1;
+			END CATCH
+		END
+
+		IF @lv__ExceptionThisRun = 1
+		BEGIN
+			SET @lv__ExceptionThisRun = @lv__ExceptionThisRun + 1;
+		END
+		ELSE
+		BEGIN
+			SET @lv__SuccessiveExceptions = 0;
+		END
+
+		SET @lv__RunWasSuccessful = CASE WHEN @lv__HighFrequencySuccessful = 1
+										AND (
+											(@lv__MediumFreqThisRun = 1 AND @lv__MediumFrequencySuccessful = 1)
+											OR (@lv__MediumFreqThisRun = 0 AND @lv__MediumFrequencySuccessful = 0)
+											)
+										AND (
+											(@lv__LowFreqThisRun = 1 AND @lv__LowFrequencySuccessful = 1)
+											OR (@lv__LowFreqThisRun = 0 AND @lv__LowFrequencySuccessful = 0)
+											)
+										AND (
+											(@lv__BatchFreqThisRun = 1 AND @lv__BatchFrequencySuccessful = 1)
+											OR (@lv__BatchFreqThisRun = 0 AND @lv__BatchFrequencySuccessful = 0)
+											)
+									THEN 1
+								ELSE 0
+								END;
+
+		INSERT INTO [ServerEye].[CaptureTimes] (
+			[CollectionInitiatorID],
+			[UTCCaptureTime],
+			[LocalCaptureTime],
+	
+			[HighFrequencySuccessful],
+			[MediumFrequencySuccessful],
+			[LowFrequencySuccessful],
+			[BatchFrequencySuccessful],
+
+			[RunWasSuccessful],
+			[ExtractedForDW],
+			[ServerEyeDuration_ms],
+			[DurationBreakdown]
+		)
+		SELECT 
+			255,
+			@lv__UTCCaptureTime,
+			@lv__LocalCaptureTime,
+			@lv__HighFrequencySuccessful,
+			@lv__MediumFrequencySuccessful,
+			@lv__LowFrequencySuccessful,
+			@lv__BatchFrequencySuccessful,
+		
+			[RunWasSuccessful] = @lv__RunWasSuccessful,
+			[ExtractedForDW] = 0,
+			[ServerEyeDuration_ms] = 0,		--TODO
+			[DurationBreakdown] = NULL;		--TODO
+		
+		IF @lv__RunWasSuccessful = 1
+		BEGIN
+			UPDATE targ 
+			SET PrevSuccessfulUTCCaptureTime = hi.UTCCaptureTime,
+
+				--We only set the prev-successful times for these 3 fields when the CURRENT capture
+				--actually ran the medium/low/batch code. 
+				PrevSuccessfulMedium = CASE WHEN @lv__MediumFrequencySuccessful = 1 THEN md.UTCCaptureTime ELSE NULL END,
+				PrevSuccessfulLow = CASE WHEN @lv__LowFrequencySuccessful = 1 THEN lo.UTCCaptureTime ELSE NULL END,
+				PrevSuccessfulBatch = CASE WHEN @lv__BatchFrequencySuccessful = 1 THEN b.UTCCaptureTime ELSE NULL END
+			FROM ServerEye.CaptureTimes targ
+				OUTER APPLY (
+					SELECT TOP 1
+						hi.UTCCaptureTime
+					FROM ServerEye.CaptureTimes hi
+					WHERE hi.UTCCaptureTime < @lv__UTCCaptureTime
+					--must be within 10 minutes (double the highest frequency allowed for @opt__IntervalLength)
+					AND hi.UTCCaptureTime >= DATEADD(MINUTE, -10, @lv__UTCCaptureTime)
+					AND hi.RunWasSuccessful = 1
+					ORDER BY hi.UTCCaptureTime DESC
+				) hi
+				OUTER APPLY (
+					SELECT TOP 1
+						md.UTCCaptureTime
+					FROM ServerEye.CaptureTimes md
+					WHERE md.UTCCaptureTime < @lv__UTCCaptureTime
+					--must be within 30 minutes (5 min longer than the longest amount of time allowed for medium frequency)
+					AND md.UTCCaptureTime >= DATEADD(MINUTE, -30, @lv__UTCCaptureTime)
+					AND md.RunWasSuccessful = 1
+					AND md.MediumFrequencySuccessful = 1
+					ORDER BY md.UTCCaptureTime DESC
+				) md
+				OUTER APPLY (
+					SELECT TOP 1
+						lo.UTCCaptureTime
+					FROM ServerEye.CaptureTimes lo
+					WHERE lo.UTCCaptureTime < @lv__UTCCaptureTime
+					--must be within 60 minutes (10 min longer than the longest amount of time allowed for low frequency)
+					AND lo.UTCCaptureTime >= DATEADD(MINUTE, -60, @lv__UTCCaptureTime)
+					AND lo.RunWasSuccessful = 1
+					AND lo.LowFrequencySuccessful = 1
+					ORDER BY lo.UTCCaptureTime DESC
+				) lo
+				OUTER APPLY (
+					SELECT TOP 1
+						b.UTCCaptureTime
+					FROM ServerEye.CaptureTimes b
+					WHERE b.UTCCaptureTime < @lv__UTCCaptureTime
+					--must be within 5.5 hours (30 min longer than the longest amount of time allowed for batch frequency)
+					AND b.UTCCaptureTime >= DATEADD(MINUTE, -330, @lv__UTCCaptureTime)
+					AND b.RunWasSuccessful = 1
+					AND b.BatchFrequencySuccessful = 1
+					ORDER BY b.UTCCaptureTime DESC
+				) b
+			WHERE targ.UTCCaptureTime = @lv__UTCCaptureTime;
+		END
+	
+
+		IF @lv__SuccessiveExceptions >= 5
+		BEGIN
+			EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=-35, @TraceID=@lv__TraceID, @Location='Abort b/c exceptions', @Message=N'5 consecutive failures; this procedure is terminating.';
+
+			SET @lv__EarlyAbort = N'E';	--signals (to the logic immediately after the WHILE loop's END) how we exited the loop
+
+			--Ok, we've had 5 straight errors. Something is wrong, and we need a human to intervene.
+			--To prevent the procedure from just firing up a few minutes later, we insert a record into the signal table
+			INSERT INTO ServerEye.SignalTable
+			(SignalName, SignalValue, InsertTime)
+			SELECT N'AbortTrace', N'AllDay', GETDATE();
+		END
 
 		--Note that we put this outside the TRY/CATCH, so that even if we encounter an exception, we can 
 		-- still evaluate how long it took to hit that exception, and (if it was a long time), gather info
