@@ -26,7 +26,7 @@ CREATE PROCEDURE [ServerEye].[CollectorLowFreq]
 
 	FILE NAME: ServerEye.CollectorLowFreq.StoredProcedure.sql
 
-	PROCEDURE NAME: CollectorLowFreq.Collector
+	PROCEDURE NAME: ServerEye.CollectorLowFreq
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
@@ -99,6 +99,91 @@ BEGIN TRY
 		vfs.io_stall, 
 		vfs.size_on_disk_bytes
 	FROM sys.dm_io_virtual_file_stats(null, null) vfs;
+
+	SET @errorloc = N'dm_os_wait_stats';
+	INSERT INTO ServerEye.dm_os_wait_stats (
+		UTCCaptureTime,
+		LocalCaptureTime, 
+		DimWaitTypeID, 
+		waiting_tasks_count, 
+		wait_time_ms, 
+		max_wait_time_ms, 
+		signal_wait_time_ms
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime, 
+		d.DimWaitTypeID,
+		w.waiting_tasks_count, 
+		w.wait_time_ms, 
+		w.max_wait_time_ms, 
+		w.signal_wait_time_ms 
+	FROM ServerEye.DimWaitType d
+		INNER hash JOIN sys.dm_os_wait_stats w
+			ON d.wait_type = w.wait_type
+	WHERE w.max_wait_time_ms > 0
+	OR w.signal_wait_time_ms > 0
+	OR w.wait_time_ms > 0
+	OR w.waiting_tasks_count > 0
+	OPTION(FORCE ORDER);
+
+	SET @errorloc = N'dm_os_latch_stats';
+	INSERT INTO ServerEye.dm_os_latch_stats (
+		UTCCaptureTime,
+		LocalCaptureTime, 
+		DimLatchClassID, 
+		waiting_requests_count, 
+		wait_time_ms, 
+		max_wait_time_ms
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime, 
+		d.DimLatchClassID,
+		waiting_requests_count, 
+		wait_time_ms, 
+		max_wait_time_ms
+	FROM ServerEye.DimLatchClass d
+		INNER hash JOIN sys.dm_os_latch_stats l
+			ON d.latch_class = l.latch_class
+	WHERE l.waiting_requests_count > 0
+	OR l.wait_time_ms > 0
+	OR l.max_wait_time_ms > 0
+	OPTION(FORCE ORDER);
+
+
+
+	SET @errorloc = N'dm_os_spinlock_stats';
+	INSERT INTO ServerEye.dm_os_spinlock_stats (
+		UTCCaptureTime,
+		LocalCaptureTime, 
+		DimSpinlockID, 
+		collisions, 
+		spins, 
+		spins_per_collision, 
+		sleep_time, 
+		backoffs
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime, 
+		d.DimSpinlockID, 
+		s.collisions, 
+		s.spins, 
+		s.spins_per_collision, 
+		s.sleep_time, 
+		s.backoffs
+	FROM ServerEye.DimSpinlock d
+		INNER hash JOIN sys.dm_os_spinlock_stats s
+			ON d.SpinlockName = s.name
+	WHERE s.collisions > 0
+	OR s.spins > 0
+	OR s.spins_per_collision > 0
+	OR s.sleep_time > 0 
+	OR s.backoffs > 0
+	OPTION(FORCE ORDER);
+
+
 
 	RETURN 0;
 END TRY

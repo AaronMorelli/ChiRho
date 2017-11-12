@@ -65,14 +65,36 @@ BEGIN
 	INTO #DistinctWaitTypes1
 	FROM sys.dm_os_wait_stats w;
 
-	INSERT INTO ServerEye.DimWaitType
-		(wait_type, TimeAdded, TimeAddedUTC)
-	SELECT DISTINCT w.wait_type, GETDATE(), GETUTCDATE()
+	INSERT INTO ServerEye.DimWaitType (
+		wait_type, 
+		isBenign
+	)
+	SELECT DISTINCT 
+		w.wait_type, 
+		[isBenign] = 0	--TODO: set this logic appropriately
 	FROM #DistinctWaitTypes1 w
 	WHERE NOT EXISTS (
 		SELECT * FROM ServerEye.DimWaitType dwt
 		WHERE dwt.wait_type = w.wait_type
 	);
+
+	INSERT INTO ServerEye.DimLatchClass (
+		latch_class,
+		[IsBenign]
+	)
+	SELECT DISTINCT 
+		ls.latch_class, 
+		0
+	FROM sys.dm_os_latch_stats ls;
+
+	INSERT INTO [ServerEye].[DimSpinlock] (
+		[SpinlockName],
+		[IsBenign]
+	)
+	SELECT DISTINCT
+		s.name,
+		0
+	FROM sys.dm_os_spinlock_stats s;
 
 	RETURN 0;
 END

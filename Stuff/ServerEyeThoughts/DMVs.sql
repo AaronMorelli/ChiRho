@@ -13,24 +13,37 @@ order by o.type, o.name
 
 ******** Priority 1 ********
 COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_sys_info
-COMPLETE LOW-FREQ		SELECT * FROM sys.dm_io_virtual_file_stats
-SELECT * FROM sys.dm_db_file_space_usage		--for tempdb usage (though could do for all DBs)
-SELECT * FROM sys.dm_db_log_space_usage			--use DBCC SQLPERF(LOGSPACE) in older versions
-SELECT * FROM sys.dm_os_wait_stats
-SELECT * FROM sys.dm_os_latch_stats
-SELECT * FROM sys.dm_os_spinlock_stats
-SELECT * FROM sys.dm_os_ring_buffers			--only certain ring buffers are higher priority
-SELECT * FROM sys.dm_os_performance_counters	--only certain counters are truly important. Need the perf counter table and some prioritization scheme.
-SELECT * FROM sys.dm_os_volume_stats		--Which SQL version was this released in? Is there a workaround for older versions?
+COMPLETE HI-FREQ		SELECT * FROM sys.dm_db_file_space_usage		--for tempdb usage (though could do for all DBs)
 
+COMPLETE MED-FREQ		DB/file stats  (sys.databases, sys.master_files, sys.database_files, DBCC SQLPERF(LOGSPACE))
+
+COMPLETE LOW-FREQ		SELECT * FROM sys.dm_io_virtual_file_stats
+COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_wait_stats
+COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_latch_stats
+COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_spinlock_stats
+SELECT * FROM sys.dm_os_ring_buffers			--only certain ring buffers are higher priority
+			Connectivity
+			Exception	(aggregate)
+			Security_Error
+			DONE Scheduler_Monitor
+
+			These are NOT yet a priority
+				CLRAppDomain
+				Memory_Broker
+				Resource_Monitor	
+				XE_Log
+
+SELECT * FROM sys.dm_os_performance_counters	--only certain counters are truly important. Need the perf counter table and some prioritization scheme.
+
+
+
+Create a ticket to cover the work to research the following (which version they were introduced into, when I should use them, other workarounds, etc)
+SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE) to get log usage 
+SELECT * FROM sys.dm_os_volume_stats		--Which SQL version was this released in? Is there a workaround for older versions?
 use msdb 
 go
 exec sp_getVolumeFreeSpace @database_name='master', @file_id=1		--must be run in msdb for some reason???
 
-SELECT * FROM sys.databases		--primarily for filegrowth
-SELECT * FROM sys.master_files	--ditto		which of these holds the true size of TempDB?
-SELECT * FROM sys.database_files	--ditto
-select * from sys.filegroups		--any value here? e.g. by dividing out by filegroup
 ******** Priority 1 ********
 
 ******** Priority 2 ********
