@@ -45,7 +45,8 @@ To Execute
 (
 	@init				TINYINT,
 	@LocalCaptureTime	DATETIME, 
-	@UTCCaptureTime		DATETIME
+	@UTCCaptureTime		DATETIME,
+	@SQLServerStartTime	DATETIME
 )
 AS
 BEGIN

@@ -85,7 +85,11 @@ BEGIN
 	SELECT DISTINCT 
 		ls.latch_class, 
 		0
-	FROM sys.dm_os_latch_stats ls;
+	FROM sys.dm_os_latch_stats ls
+	WHERE NOT EXISTS (
+		SELECT * FROM ServerEye.DimLatchClass l
+		WHERE l.latch_class = ls.latch_class
+	);
 
 	INSERT INTO [ServerEye].[DimSpinlock] (
 		[SpinlockName],
@@ -94,7 +98,11 @@ BEGIN
 	SELECT DISTINCT
 		s.name,
 		0
-	FROM sys.dm_os_spinlock_stats s;
+	FROM sys.dm_os_spinlock_stats s
+	WHERE NOT EXISTS (
+		SELECT * FROM ServerEye.DimSpinlock dsl
+		WHERE dsl.SpinlockName = s.name
+	);
 
 	RETURN 0;
 END

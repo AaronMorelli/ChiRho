@@ -45,20 +45,39 @@ To Execute
 (
 	@init				TINYINT,
 	@LocalCaptureTime	DATETIME, 
-	@UTCCaptureTime		DATETIME
+	@UTCCaptureTime		DATETIME,
+	@SQLServerStartTime	DATETIME
 )
 AS
 BEGIN
 	SET NOCOUNT ON;
 	SET XACT_ABORT ON;
 
-	DECLARE @errorloc NVARCHAR(100);
-
-	DECLARE @err__ErrorSeverity INT, 
+	DECLARE @errorloc NVARCHAR(100),
+			@err__ErrorSeverity INT, 
 			@err__ErrorState INT, 
-			@err__ErrorText NVARCHAR(4000);
+			@err__ErrorText NVARCHAR(4000),
+			@lv__ProcRC INT;
 
 BEGIN TRY
+
+	/*
+		We do ring buffers first because they are a bit more time sensitive. But we swallow any exceptions for now 
+		because the semi-structured nature of the data makes this much more unpredictable. The viewer procs need to be 
+		written in such a way as to not assume that ring buffer data is present.
+
+		TODO: is that really the right decision?
+	*/
+	BEGIN TRY
+		EXEC @lv__ProcRC = ServerEye.CollectorLowFreqRingBuffer @init = 255,
+						@LocalCaptureTime = @LocalCaptureTime, 
+						@UTCCaptureTime = @UTCCaptureTime,
+						@SQLServerStartTime	= @SQLServerStartTime;
+
+	END TRY
+	BEGIN CATCH
+		IF @@TRANCOUNT > 0 ROLLBACK;
+	END CATCH
 
 	SET @errorloc = N'dm_io_virtual_file_stats';
 	INSERT INTO ServerEye.dm_io_virtual_file_stats (

@@ -22,9 +22,9 @@ COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_wait_stats
 COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_latch_stats
 COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_spinlock_stats
 SELECT * FROM sys.dm_os_ring_buffers			--only certain ring buffers are higher priority
-			Connectivity
-			Exception	(aggregate)
-			Security_Error
+			DONE Connectivity
+			DONE Exception
+			DONE Security_Error
 			DONE Scheduler_Monitor
 
 			These are NOT yet a priority
@@ -33,16 +33,14 @@ SELECT * FROM sys.dm_os_ring_buffers			--only certain ring buffers are higher pr
 				Resource_Monitor	
 				XE_Log
 
+SELECT * FROM sys.dm_os_volume_stats		--This is available starting with SQL 2008. Definitely implement!
+
 SELECT * FROM sys.dm_os_performance_counters	--only certain counters are truly important. Need the perf counter table and some prioritization scheme.
 
 
 
-Create a ticket to cover the work to research the following (which version they were introduced into, when I should use them, other workarounds, etc)
 SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE) to get log usage 
-SELECT * FROM sys.dm_os_volume_stats		--Which SQL version was this released in? Is there a workaround for older versions?
-use msdb 
-go
-exec sp_getVolumeFreeSpace @database_name='master', @file_id=1		--must be run in msdb for some reason???
+		--Which SQL version was this released in? Is there a workaround for older versions?
 
 ******** Priority 1 ********
 

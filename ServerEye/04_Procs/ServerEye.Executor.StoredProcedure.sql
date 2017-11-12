@@ -109,6 +109,7 @@ BEGIN TRY
 		@lv__RunTimeSeconds			BIGINT,
 		@lv__RunTimeMinutes			INT,
 		@lv__LoopStartTimeUTC		DATETIME,
+		@lv__SQLServerStartTime		DATETIME,
 		@lv__ServerEyeCallCompleteTimeUTC	DATETIME,
 		@lv__LoopEndTimeUTC			DATETIME,
 		@lv__LoopNextStartUTC		DATETIME,
@@ -373,6 +374,61 @@ BEGIN TRY
 
 	EXEC ServerEye.PrePopulateDimensions;
 
+	SET @lv__SQLServerStartTime = (select sqlserver_start_time from sys.dm_os_sys_info);
+
+	--When we collect ring buffers, we use track the min & max timestamps that we've observed so that we can avoid the overhead of re-processing
+	-- ring buffer entries that we've processed before. Since the ring buffers empty out on a SQL restart, we track the sql server start time 
+	-- so we can throw away old entries. The reason we keep min around, and not just max, is in case the timestamp field wraps to negative. 
+	DELETE targ 
+	FROM ServerEye.RingBufferProgress targ 
+	WHERE targ.sqlserver_start_time <> @lv__SQLServerStartTime;
+
+	CREATE TABLE #DistinctRBs (
+		ring_buffer_type NVARCHAR(128)
+	);
+
+	INSERT INTO #DistinctRBs (
+		ring_buffer_type
+	)
+	SELECT DISTINCT rb.ring_buffer_type
+	FROM sys.dm_os_ring_buffers rb;
+
+	-- The current ring buffer contents may not have all of the known types. We want our ServerEye.RingBufferProgress
+	-- table to have a record for every type (as much as is possible) so we check that the well-known types are present
+	INSERT INTO #DistinctRBs (
+		ring_buffer_type
+	)
+	SELECT subq.ring_buffer_type
+	FROM (
+		SELECT N'RING_BUFFER_RESOURCE_MONITOR' as ring_buffer_type UNION ALL 
+		SELECT N'RING_BUFFER_MEMORY_BROKER' UNION ALL 
+		SELECT N'RING_BUFFER_SCHEDULER_MONITOR' UNION ALL 
+		SELECT N'RING_BUFFER_MEMORY_BROKER_CLERKS' UNION ALL 
+		SELECT N'RING_BUFFER_SECURITY_ERROR' UNION ALL 
+		SELECT N'RING_BUFFER_SCHEDULER' UNION ALL 
+		SELECT N'RING_BUFFER_EXCEPTION' UNION ALL 
+		SELECT N'RING_BUFFER_CONNECTIVITY' UNION ALL 
+		SELECT N'RING_BUFFER_HOBT_SCHEMAMGR' UNION ALL 
+		SELECT N'RING_BUFFER_XE_BUFFER_STATE' UNION ALL 
+		SELECT N'RING_BUFFER_XE_LOG' UNION ALL 
+		SELECT N'RING_BUFFER_CLRAPPDOMAIN' 
+	) subq
+	WHERE NOT EXISTS (
+		SELECT * FROM #DistinctRBs t
+		WHERE t.ring_buffer_type = subq.ring_buffer_type
+	);
+
+	INSERT INTO ServerEye.RingBufferProgress (
+		sqlserver_start_time, ring_buffer_type, max_timestamp_processed
+	)
+	SELECT @lv__SQLServerStartTime, rb.ring_buffer_type, 0
+	FROM #DistinctRBs rb
+	WHERE NOT EXISTS (
+		SELECT *
+		FROM ServerEye.RingBufferProgress rb2
+		WHERE rb2.ring_buffer_type = rb.ring_buffer_type
+	);
+
 	/*
 		@opt__IntervalLength can be one of the following: 1, 2, or 5
 		This governs how many minutes are between each run of the high-frequency metrics.
@@ -437,7 +493,8 @@ BEGIN TRY
 		BEGIN TRY
 			EXEC @lv__ProcRC = ServerEye.CollectorHiFreq @init = 255,
 					@LocalCaptureTime = @lv__LocalCaptureTime, 
-					@UTCCaptureTime = @lv__UTCCaptureTime;
+					@UTCCaptureTime = @lv__UTCCaptureTime,
+					@SQLServerStartTime	= @lv__SQLServerStartTime;
 
 			SET @lv__HighFrequencySuccessful = 1;
 		END TRY
@@ -458,7 +515,8 @@ BEGIN TRY
 			BEGIN TRY
 				EXEC @lv__ProcRC = ServerEye.CollectorMedFreq @init = 255,
 						@LocalCaptureTime = @lv__LocalCaptureTime, 
-						@UTCCaptureTime = @lv__UTCCaptureTime;
+						@UTCCaptureTime = @lv__UTCCaptureTime,
+						@SQLServerStartTime	= @lv__SQLServerStartTime;
 
 				SET @lv__MediumFrequencySuccessful = 1;
 			END TRY
@@ -481,7 +539,8 @@ BEGIN TRY
 			BEGIN TRY
 				EXEC @lv__ProcRC = ServerEye.CollectorLowFreq @init = 255,
 						@LocalCaptureTime = @lv__LocalCaptureTime, 
-						@UTCCaptureTime = @lv__UTCCaptureTime;
+						@UTCCaptureTime = @lv__UTCCaptureTime,
+						@SQLServerStartTime	= @lv__SQLServerStartTime;
 
 				SET @lv__LowFrequencySuccessful = 1;
 			END TRY
@@ -503,7 +562,8 @@ BEGIN TRY
 			BEGIN TRY
 				EXEC @lv__ProcRC = ServerEye.CollectorBatchFreq @init = 255,
 						@LocalCaptureTime = @lv__LocalCaptureTime, 
-						@UTCCaptureTime = @lv__UTCCaptureTime;
+						@UTCCaptureTime = @lv__UTCCaptureTime,
+						@SQLServerStartTime	= @lv__SQLServerStartTime;
 
 				SET @lv__BatchFrequencySuccessful = 1;
 			END TRY
@@ -732,21 +792,25 @@ BEGIN TRY
 		SET @lv__ThisRC = -37;
 		SET @ErrorMessage = 'Exiting wrapper procedure due to exception-based abort';
 		EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=@lv__TraceID, @Location='Exception exit', @Message=@ErrorMessage;
+
+		EXEC CoreXR.AbortTrace @Utility = N'ServerEye', @TraceID = @lv__TraceID, @AbortCode = @lv__EarlyAbort, @PreventAllDay = N'Y';
 	END
 	ELSE IF @lv__EarlyAbort IN (N'O', N'A')
 	BEGIN
 		SET @lv__ThisRC = -39;
 		SET @ErrorMessage = 'Exiting wrapper procedure due to manual abort, type: ' + @lv__EarlyAbort;
 		EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=@lv__TraceID, @Location='Manual abort exit', @Message=@ErrorMessage;
+
+		--We don't need to abort this trace as it should have been aborted already
 	END
 	ELSE 
 	BEGIN
 		SET @lv__ThisRC = 0;
 		SET @ErrorMessage = 'ServerEye trace successfully completed.';
 		EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=@lv__TraceID, @Location='Successful complete', @Message=@ErrorMessage;
-	END
 
-	EXEC CoreXR.StopTrace @Utility=N'ServerEye', @TraceID = @lv__TraceID, @AbortCode = @lv__EarlyAbort;
+		EXEC CoreXR.StopTrace @Utility=N'ServerEye', @TraceID = @lv__TraceID, @AbortCode = @lv__EarlyAbort;
+	END
 
 	EXEC sp_releaseapplock @Resource = 'ServerEyeBackgroundTrace', @LockOwner = 'Session';
 
