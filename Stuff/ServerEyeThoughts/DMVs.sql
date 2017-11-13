@@ -33,7 +33,7 @@ SELECT * FROM sys.dm_os_ring_buffers			--only certain ring buffers are higher pr
 				Resource_Monitor	
 				XE_Log
 
-SELECT * FROM sys.dm_os_volume_stats		--This is available starting with SQL 2008. Definitely implement!
+COMPLETE MED-FREQ		SELECT * FROM sys.dm_os_volume_stats		--This is available starting with SQL 2008.
 
 SELECT * FROM sys.dm_os_performance_counters	--only certain counters are truly important. Need the perf counter table and some prioritization scheme.
 
@@ -44,29 +44,48 @@ SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE
 
 ******** Priority 1 ********
 
+
 ******** Priority 2 ********
+
+	--I'm thinking of putting the aggregates from these into a single row per capture, and all in the same table.
+	--I could even put them into sys.dm_os_sys_info_volatile
+	SELECT * FROM sys.dm_os_tasks		--any value here? Maybe just an aggregate count?
+	SELECT * FROM sys.dm_os_threads		--any value here? Maybe just an aggregate count?
+	SELECT * FROM sys.dm_db_session_space_usage		--agg bkgrd usage
+	SELECT * FROM sys.dm_db_task_space_usage		--ditto
+
+	SELECT * FROM sys.dm_tran_top_version_generators
+
+	--Connections profile (maybe aggregate these to get a profile of who is connected to the system?)
+	SELECT * FROM sys.dm_exec_requests
+	SELECT * FROM sys.dm_exec_sessions
+	SELECT * FROM sys.dm_exec_connections
+
+	SELECT * FROM sys.dm_os_buffer_descriptors		--put this in the batch collector
+	SELECT * FROM sys.dm_os_process_memory
+	SELECT * FROM sys.dm_os_sys_memory
+	SELECT * FROM sys.dm_os_memory_nodes
+	SELECT * FROM sys.dm_os_nodes
+	SELECT * FROM sys.dm_os_schedulers
+	SELECT * FROM sys.dm_os_workers
+	SELECT * FROM sys.dm_os_memory_clerks
+	SELECT * FROM sys.dm_os_memory_cache_clock_hands
+******** Priority 2 ********
+
+
+******** Priority 3 ********
 	--Misc
 	SELECT * FROM sys.dm_server_memory_dumps		--we just want to know if there have been any mem dumps
 	exec sp_server_diagnostics						--Any value here? this runs as an XE session. Some of the info it collects is useful, other info is redundant
 
 	--CPU
-	SELECT * FROM sys.dm_os_schedulers
-	SELECT * FROM sys.dm_os_nodes
-	SELECT * FROM sys.dm_os_workers
-	SELECT * FROM sys.dm_os_tasks		--any value here?
-	SELECT * FROM sys.dm_os_threads		--any value here?
+
 
 	--Memory
-	SELECT * FROM sys.dm_os_memory_nodes
-	SELECT * FROM sys.dm_os_process_memory
-	SELECT * FROM sys.dm_os_sys_memory
 	SELECT * FROM sys.dm_os_memory_broker_clerks
-	SELECT * FROM sys.dm_os_memory_clerks
-	SELECT * FROM sys.dm_os_memory_cache_clock_hands
+
 
 	--DB and TempDB
-	SELECT * FROM sys.dm_db_session_space_usage		--agg bkgrd usage
-	SELECT * FROM sys.dm_db_task_space_usage		--ditto
 	SELECT * FROM sys.dm_db_partition_stats			--maybe cap a baseline at the first run, then trigger collection when we see a DB grow? to see which table(s) are growing?
 	select * from sys.partitions			--any value here?
 	select * from sys.allocation_units		--any value here?
@@ -74,14 +93,11 @@ SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE
 	select * from sys.system_internals_partitions
 
 
-	--Connections profile (maybe aggregate these to get a profile of who is connected to the system?)
-	SELECT * FROM sys.dm_exec_requests
-	SELECT * FROM sys.dm_exec_sessions
-	SELECT * FROM sys.dm_exec_connections
-******** Priority 2 ********
-
 
 ******** Priority 3 ********
+
+
+******** Priority 4 ********
 	--Misc
 	SELECT * FROM sys.dm_resource_governor_resource_pool_volumes
 	SELECT * FROM sys.dm_resource_governor_resource_pools
@@ -95,7 +111,6 @@ SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE
 
 
 	--Memory
-	SELECT * FROM sys.dm_os_buffer_descriptors		--may move to priority 2
 	SELECT * FROM sys.dm_exec_query_memory_grants		--agg by pools or groups or whatever?
 	SELECT * FROM sys.dm_exec_query_resource_semaphores
 	SELECT * FROM sys.dm_os_memory_brokers
@@ -111,7 +126,7 @@ SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE
 
 	--TempDB
 	SELECT * FROM sys.dm_tran_version_store		--trigger an aggregate query if tempdb usage is very high.
-	SELECT * FROM sys.dm_tran_top_version_generators	--is this cheap to query? Maybe just use this instead
+	
 
 	--DB details
 	select * from sys.indexes 
@@ -137,7 +152,7 @@ SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE
 	select * from sys.server_event_session_fields
 	select * from sys.server_event_session_targets
 	SELECT * FROM sys.dm_xe_session_targets		--is there any value here?
-******** Priority 3 ********
+******** Priority 4 ********
 
 */
 
