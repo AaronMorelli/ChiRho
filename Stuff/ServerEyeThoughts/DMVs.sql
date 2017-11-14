@@ -33,7 +33,7 @@ SELECT * FROM sys.dm_os_ring_buffers			--only certain ring buffers are higher pr
 				Resource_Monitor	
 				XE_Log
 
-COMPLETE MED-FREQ		SELECT * FROM sys.dm_os_volume_stats		--This is available starting with SQL 2008.
+COMPLETE MED-FREQ		SELECT * FROM sys.dm_os_volume_stats		--This is available starting with SQL 2008 R2 SP1
 
 SELECT * FROM sys.dm_os_performance_counters	--only certain counters are truly important. Need the perf counter table and some prioritization scheme.
 
@@ -56,10 +56,8 @@ SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE
 
 	SELECT * FROM sys.dm_tran_top_version_generators
 
-	--Connections profile (maybe aggregate these to get a profile of who is connected to the system?)
-	SELECT * FROM sys.dm_exec_requests
-	SELECT * FROM sys.dm_exec_sessions
-	SELECT * FROM sys.dm_exec_connections
+COMPLETE MED-FREQ		Connections profile from dm_exec_requests, dm_exec_sessions, dm_exec_connections
+	
 
 	SELECT * FROM sys.dm_os_buffer_descriptors		--put this in the batch collector
 	SELECT * FROM sys.dm_os_process_memory
