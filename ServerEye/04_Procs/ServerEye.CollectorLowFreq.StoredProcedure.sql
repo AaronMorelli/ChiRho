@@ -202,7 +202,22 @@ BEGIN TRY
 	OR s.backoffs > 0
 	OPTION(FORCE ORDER);
 
-
+	INSERT INTO [ServerEye].[dm_server_memory_dumps] (
+		[filename],
+		[creation_time],
+		[size_in_bytes]
+	)
+	SELECT DISTINCT
+		d.filename,
+		d.creation_time,
+		d.size_in_bytes
+	FROM sys.dm_server_memory_dumps d
+	WHERE NOT EXISTS (
+		SELECT *
+		FROM ServerEye.dm_server_memory_dumps d2
+		WHERE d2.filename = d.filename 
+		AND d2.creation_time = d.creation_time
+	);
 
 	RETURN 0;
 END TRY

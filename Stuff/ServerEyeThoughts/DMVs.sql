@@ -12,7 +12,12 @@ order by o.type, o.name
 /* DMVs (this query was run on a SQL 2014 instance)
 
 ******** Priority 1 ********
-COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_sys_info
+COMPLETE HI-FREQ		--Aggregate these into a single row and place together in a Single-Row table
+						SELECT * FROM sys.dm_os_sys_info
+						SELECT * FROM sys.dm_os_process_memory
+						SELECT * FROM sys.dm_os_sys_memory
+						Aggregated data from: sys.dm_os_tasks, sys.dm_os_threads, sys.dm_db_session_space_usage, sys.dm_db_task_space_usage
+
 COMPLETE HI-FREQ		SELECT * FROM sys.dm_db_file_space_usage		--for tempdb usage (though could do for all DBs)
 
 COMPLETE MED-FREQ		DB/file stats  (sys.databases, sys.master_files, sys.database_files, DBCC SQLPERF(LOGSPACE))
@@ -21,6 +26,7 @@ COMPLETE LOW-FREQ		SELECT * FROM sys.dm_io_virtual_file_stats
 COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_wait_stats
 COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_latch_stats
 COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_spinlock_stats
+COMPLETE LOW-FREQ		SELECT * FROM sys.dm_server_memory_dumps
 SELECT * FROM sys.dm_os_ring_buffers			--only certain ring buffers are higher priority
 			DONE Connectivity
 			DONE Exception
@@ -34,8 +40,11 @@ SELECT * FROM sys.dm_os_ring_buffers			--only certain ring buffers are higher pr
 				XE_Log
 
 COMPLETE MED-FREQ		SELECT * FROM sys.dm_os_volume_stats		--This is available starting with SQL 2008 R2 SP1
+COMPLETE BATCH-FREQ		SELECT * FROM sys.dm_os_buffer_descriptors
+COMPLETE MED-FREQ		Connections profile from dm_exec_requests, dm_exec_sessions, dm_exec_connections
 
-SELECT * FROM sys.dm_os_performance_counters	--only certain counters are truly important. Need the perf counter table and some prioritization scheme.
+***BIGGEST TODO STILL IS PERF COUNTERS***
+	SELECT * FROM sys.dm_os_performance_counters	--only certain counters are truly important. Need the perf counter table and some prioritization scheme.
 
 
 
@@ -46,34 +55,22 @@ SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE
 
 
 ******** Priority 2 ********
-
-	--I'm thinking of putting the aggregates from these into a single row per capture, and all in the same table.
-	--I could even put them into sys.dm_os_sys_info_volatile
-	SELECT * FROM sys.dm_os_tasks		--any value here? Maybe just an aggregate count?
-	SELECT * FROM sys.dm_os_threads		--any value here? Maybe just an aggregate count?
-	SELECT * FROM sys.dm_db_session_space_usage		--agg bkgrd usage
-	SELECT * FROM sys.dm_db_task_space_usage		--ditto
-
 	SELECT * FROM sys.dm_tran_top_version_generators
 
-COMPLETE MED-FREQ		Connections profile from dm_exec_requests, dm_exec_sessions, dm_exec_connections
-	
 
-	SELECT * FROM sys.dm_os_buffer_descriptors		--put this in the batch collector
-	SELECT * FROM sys.dm_os_process_memory
-	SELECT * FROM sys.dm_os_sys_memory
+
 	SELECT * FROM sys.dm_os_memory_nodes
 	SELECT * FROM sys.dm_os_nodes
 	SELECT * FROM sys.dm_os_schedulers
 	SELECT * FROM sys.dm_os_workers
-	SELECT * FROM sys.dm_os_memory_clerks
+	SELECT * FROM sys.dm_os_memory_clerks order by type
 	SELECT * FROM sys.dm_os_memory_cache_clock_hands
 ******** Priority 2 ********
 
 
 ******** Priority 3 ********
 	--Misc
-	SELECT * FROM sys.dm_server_memory_dumps		--we just want to know if there have been any mem dumps
+	
 	exec sp_server_diagnostics						--Any value here? this runs as an XE session. Some of the info it collects is useful, other info is redundant
 
 	--CPU
@@ -82,13 +79,6 @@ COMPLETE MED-FREQ		Connections profile from dm_exec_requests, dm_exec_sessions, 
 	--Memory
 	SELECT * FROM sys.dm_os_memory_broker_clerks
 
-
-	--DB and TempDB
-	SELECT * FROM sys.dm_db_partition_stats			--maybe cap a baseline at the first run, then trigger collection when we see a DB grow? to see which table(s) are growing?
-	select * from sys.partitions			--any value here?
-	select * from sys.allocation_units		--any value here?
-	select * from sys.system_internals_allocation_units
-	select * from sys.system_internals_partitions
 
 
 
@@ -398,6 +388,12 @@ SELECT * FROM sys.dm_tran_transactions_snapshot
 
 
 --No need right now, miscellaneous reasons.
+SELECT * FROM sys.dm_db_partition_stats		--toyed with the idea of triggering a query when observing DB growth, but there's just not much additional value here
+	select * from sys.partitions			--beyond the manual research we can do when a DB grows significantly. 
+	select * from sys.allocation_units
+	select * from sys.system_internals_allocation_units
+	select * from sys.system_internals_partitions
+
 SELECT * FROM sys.dm_db_persisted_sku_features
 SELECT * FROM sys.dm_db_script_level
 SELECT * FROM sys.dm_db_uncontained_entities
