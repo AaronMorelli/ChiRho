@@ -492,6 +492,70 @@ BEGIN TRY
 		mixed_extent_page_count
 	FROM tempdb.sys.dm_db_file_space_usage;
 
+	SET @errorloc = 'dm_os_memory_nodes';
+	INSERT INTO [ServerEye].[dm_os_memory_nodes](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[memory_node_id],
+		[virtual_address_space_reserved_kb],
+		[virtual_address_space_committed_kb],
+		[locked_page_allocations_kb],
+		[pages_kb],
+		[shared_memory_reserved_kb],
+		[shared_memory_committed_kb],
+		[cpu_affinity_mask],
+		[online_scheduler_mask],
+		[processor_group],
+		[foreign_committed_kb]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[memory_node_id],
+		[virtual_address_space_reserved_kb],
+		[virtual_address_space_committed_kb],
+		[locked_page_allocations_kb],
+		[pages_kb],
+		[shared_memory_reserved_kb],
+		[shared_memory_committed_kb],
+		[cpu_affinity_mask],
+		[online_scheduler_mask],
+		[processor_group],
+		[foreign_committed_kb]
+	FROM sys.dm_os_memory_nodes n;
+
+
+	INSERT INTO [ServerEye].[dm_os_nodes](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[node_id],
+		[node_state_desc],
+		[memory_node_id],
+		[cpu_affinity_mask],
+		[online_scheduler_count],
+		[idle_scheduler_count],
+		[active_worker_count],
+		[avg_load_balance],
+		[resource_monitor_state],
+		[online_scheduler_mask],
+		[processor_group]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		n.node_id,
+		n.node_state_desc,
+		n.memory_node_id,
+		n.cpu_affinity_mask,
+		n.online_scheduler_count,
+		n.idle_scheduler_count,
+		n.active_worker_count,
+		n.avg_load_balance,
+		n.resource_monitor_state,
+		n.online_scheduler_mask,
+		n.processor_group
+	FROM sys.dm_os_nodes n;
+
 END TRY
 BEGIN CATCH
 	IF @@TRANCOUNT > 0 ROLLBACK;

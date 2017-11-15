@@ -53,7 +53,10 @@ BEGIN
 	SET NOCOUNT ON;
 	SET XACT_ABORT ON;
 
-	DECLARE @errorloc NVARCHAR(100),
+	DECLARE @DynSQL	NVARCHAR(4000),
+			@CurDBID INT,
+			@CurDBName NVARCHAR(128),
+			@errorloc NVARCHAR(100),
 			@err__ErrorSeverity INT, 
 			@err__ErrorState INT, 
 			@err__ErrorText NVARCHAR(4000),
@@ -78,6 +81,104 @@ BEGIN TRY
 	BEGIN CATCH
 		IF @@TRANCOUNT > 0 ROLLBACK;
 	END CATCH
+
+
+	--TODO: the version store call can be very expensive. Make this a triggered collection, i.e. if version store
+	-- usage is above a certain % or something
+	SET @errorloc = N'dm_tran_top_version_generators';
+	IF OBJECT_ID('tempdb..#dm_tran_top_version_generators') IS NOT NULL DROP TABLE #dm_tran_top_version_generators;
+	CREATE TABLE #dm_tran_top_version_generators (
+		[database_id]		[smallint] NOT NULL,
+		[rowset_id]			[bigint] NOT NULL,
+		[aggregated_record_length_in_bytes] [int] NULL,
+		[object_id]			[int] NULL,
+		[index_id]			[int] NULL,
+		[partition_number]	[int] NULL
+	);
+
+	INSERT INTO #dm_tran_top_version_generators (
+		[database_id],
+		[rowset_id],
+		[aggregated_record_length_in_bytes]
+	)
+	SELECT 
+		v.database_id,
+		v.rowset_id,
+		v.aggregated_record_length_in_bytes
+	FROM sys.dm_tran_top_version_generators v;
+	
+	DECLARE iterateVSDatabases CURSOR FOR 
+	SELECT DISTINCT v.database_id
+	FROM #dm_tran_top_version_generators v
+		INNER JOIN sys.databases d
+			ON d.database_id = v.database_id
+	WHERE d.state_desc = 'ONLINE'
+	AND d.user_access_desc = 'MULTI_USER'
+	ORDER BY v.database_id ASC;
+
+	OPEN iterateVSDatabases;
+	FETCH iterateVSDatabases INTO @CurDBID;
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		SET @CurDBName = DB_NAME(@CurDBID);
+
+		SET @DynSQL = N'USE ' + QUOTENAME(@CurDBName) + N';
+		UPDATE targ 
+		SET object_id = p.object_id,
+			index_id = p.index_id,
+			partition_number = p.partition_number
+		FROM #dm_tran_top_version_generators targ
+			INNER JOIN sys.partitions p
+				ON targ.rowset_id = p.hobt_id
+		WHERE targ.database_id = ' + CONVERT(NVARCHAR(20),@CurDBID) + N'
+		';
+
+		EXEC (@DynSQL);
+
+		FETCH iterateVSDatabases INTO @CurDBID;
+	END
+
+	CLOSE iterateVSDatabases;
+	DEALLOCATE iterateVSDatabases;
+
+	INSERT INTO [ServerEye].[dm_tran_top_version_generators](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[database_id],
+		[rowset_id],
+		[aggregated_record_length_in_bytes],
+		[object_id],
+		[index_id],
+		[partition_number]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		database_id,
+		rowset_id,
+		SUM(aggregated_record_length_in_bytes),
+		object_id,
+		index_id,
+		partition_number
+	FROM (
+		SELECT 
+			
+			[database_id] = ISNULL(t.database_id,-1),
+			[rowset_id] = ISNULL(t.rowset_id,-1),
+			[aggregated_record_length_in_bytes] = ISNULL(t.aggregated_record_length_in_bytes,-1),
+			[object_id] = ISNULL(t.object_id,-1),
+			[index_id] = ISNULL(t.index_id,-1),
+			[partition_number] = ISNULL(t.partition_number,-1)
+		FROM #dm_tran_top_version_generators t
+	) ss
+	GROUP BY database_id,
+		rowset_id,
+		object_id,
+		index_id,
+		partition_number;
+
+
 
 	SET @errorloc = N'dm_io_virtual_file_stats';
 	INSERT INTO ServerEye.dm_io_virtual_file_stats (

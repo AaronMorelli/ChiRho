@@ -42,6 +42,7 @@ SELECT * FROM sys.dm_os_ring_buffers			--only certain ring buffers are higher pr
 COMPLETE MED-FREQ		SELECT * FROM sys.dm_os_volume_stats		--This is available starting with SQL 2008 R2 SP1
 COMPLETE BATCH-FREQ		SELECT * FROM sys.dm_os_buffer_descriptors
 COMPLETE MED-FREQ		Connections profile from dm_exec_requests, dm_exec_sessions, dm_exec_connections
+COMPLETE LOW-FREQ		SELECT * FROM sys.dm_tran_top_version_generators
 
 ***BIGGEST TODO STILL IS PERF COUNTERS***
 	SELECT * FROM sys.dm_os_performance_counters	--only certain counters are truly important. Need the perf counter table and some prioritization scheme.
@@ -55,12 +56,8 @@ SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE
 
 
 ******** Priority 2 ********
-	SELECT * FROM sys.dm_tran_top_version_generators
-
-
-
-	SELECT * FROM sys.dm_os_memory_nodes
-	SELECT * FROM sys.dm_os_nodes
+COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_memory_nodes
+COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_nodes
 	SELECT * FROM sys.dm_os_schedulers
 	SELECT * FROM sys.dm_os_workers
 	SELECT * FROM sys.dm_os_memory_clerks order by type
@@ -74,7 +71,6 @@ SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE
 	exec sp_server_diagnostics						--Any value here? this runs as an XE session. Some of the info it collects is useful, other info is redundant
 
 	--CPU
-
 
 	--Memory
 	SELECT * FROM sys.dm_os_memory_broker_clerks
@@ -112,9 +108,6 @@ SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE
 	SELECT * FROM sys.dm_exec_trigger_stats
 	SELECT * FROM sys.dm_exec_cached_plans
 
-	--TempDB
-	SELECT * FROM sys.dm_tran_version_store		--trigger an aggregate query if tempdb usage is very high.
-	
 
 	--DB details
 	select * from sys.indexes 
@@ -393,7 +386,7 @@ SELECT * FROM sys.dm_db_partition_stats		--toyed with the idea of triggering a q
 	select * from sys.allocation_units
 	select * from sys.system_internals_allocation_units
 	select * from sys.system_internals_partitions
-
+SELECT * FROM sys.dm_tran_version_store
 SELECT * FROM sys.dm_db_persisted_sku_features
 SELECT * FROM sys.dm_db_script_level
 SELECT * FROM sys.dm_db_uncontained_entities
