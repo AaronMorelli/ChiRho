@@ -45,7 +45,7 @@ CREATE TABLE [ServerEye].[dm_os_spinlock_stats](
 	[spins_per_collision] [real] NULL,
 	[sleep_time] [bigint] NULL,
 	[backoffs] [int] NULL,
- CONSTRAINT [PK_Spinlocks] PRIMARY KEY CLUSTERED 
+ CONSTRAINT [PKSpinlocks] PRIMARY KEY CLUSTERED 
 (
 	[UTCCaptureTime] ASC,
 	[DimSpinlockID] ASC

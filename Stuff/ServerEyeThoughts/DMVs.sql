@@ -12,7 +12,12 @@ order by o.type, o.name
 /* DMVs (this query was run on a SQL 2014 instance)
 
 ******** Priority 1 ********
-COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_sys_info
+COMPLETE HI-FREQ		--Aggregate these into a single row and place together in a Single-Row table
+						SELECT * FROM sys.dm_os_sys_info
+						SELECT * FROM sys.dm_os_process_memory
+						SELECT * FROM sys.dm_os_sys_memory
+						Aggregated data from: sys.dm_os_tasks, sys.dm_os_threads, sys.dm_db_session_space_usage, sys.dm_db_task_space_usage
+
 COMPLETE HI-FREQ		SELECT * FROM sys.dm_db_file_space_usage		--for tempdb usage (though could do for all DBs)
 
 COMPLETE MED-FREQ		DB/file stats  (sys.databases, sys.master_files, sys.database_files, DBCC SQLPERF(LOGSPACE))
@@ -21,10 +26,11 @@ COMPLETE LOW-FREQ		SELECT * FROM sys.dm_io_virtual_file_stats
 COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_wait_stats
 COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_latch_stats
 COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_spinlock_stats
+COMPLETE LOW-FREQ		SELECT * FROM sys.dm_server_memory_dumps
 SELECT * FROM sys.dm_os_ring_buffers			--only certain ring buffers are higher priority
-			Connectivity
-			Exception	(aggregate)
-			Security_Error
+			DONE Connectivity
+			DONE Exception
+			DONE Security_Error
 			DONE Scheduler_Monitor
 
 			These are NOT yet a priority
@@ -33,57 +39,50 @@ SELECT * FROM sys.dm_os_ring_buffers			--only certain ring buffers are higher pr
 				Resource_Monitor	
 				XE_Log
 
-SELECT * FROM sys.dm_os_performance_counters	--only certain counters are truly important. Need the perf counter table and some prioritization scheme.
+COMPLETE MED-FREQ		SELECT * FROM sys.dm_os_volume_stats		--This is available starting with SQL 2008 R2 SP1
+COMPLETE BATCH-FREQ		SELECT * FROM sys.dm_os_buffer_descriptors
+COMPLETE MED-FREQ		Connections profile from dm_exec_requests, dm_exec_sessions, dm_exec_connections
+COMPLETE LOW-FREQ		SELECT * FROM sys.dm_tran_top_version_generators
+
+***BIGGEST TODO STILL IS PERF COUNTERS***
+	SELECT * FROM sys.dm_os_performance_counters	--only certain counters are truly important. Need the perf counter table and some prioritization scheme.
 
 
 
-Create a ticket to cover the work to research the following (which version they were introduced into, when I should use them, other workarounds, etc)
 SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE) to get log usage 
-SELECT * FROM sys.dm_os_volume_stats		--Which SQL version was this released in? Is there a workaround for older versions?
-use msdb 
-go
-exec sp_getVolumeFreeSpace @database_name='master', @file_id=1		--must be run in msdb for some reason???
+		--Which SQL version was this released in? Is there a workaround for older versions?
 
 ******** Priority 1 ********
 
+
 ******** Priority 2 ********
-	--Misc
-	SELECT * FROM sys.dm_server_memory_dumps		--we just want to know if there have been any mem dumps
-	exec sp_server_diagnostics						--Any value here? this runs as an XE session. Some of the info it collects is useful, other info is redundant
+COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_memory_nodes
+COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_nodes
+COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_schedulers
+COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_workers
 
-	--CPU
-	SELECT * FROM sys.dm_os_schedulers
-	SELECT * FROM sys.dm_os_nodes
-	SELECT * FROM sys.dm_os_workers
-	SELECT * FROM sys.dm_os_tasks		--any value here?
-	SELECT * FROM sys.dm_os_threads		--any value here?
-
-	--Memory
-	SELECT * FROM sys.dm_os_memory_nodes
-	SELECT * FROM sys.dm_os_process_memory
-	SELECT * FROM sys.dm_os_sys_memory
-	SELECT * FROM sys.dm_os_memory_broker_clerks
-	SELECT * FROM sys.dm_os_memory_clerks
+	SELECT * FROM sys.dm_os_memory_clerks order by type
 	SELECT * FROM sys.dm_os_memory_cache_clock_hands
-
-	--DB and TempDB
-	SELECT * FROM sys.dm_db_session_space_usage		--agg bkgrd usage
-	SELECT * FROM sys.dm_db_task_space_usage		--ditto
-	SELECT * FROM sys.dm_db_partition_stats			--maybe cap a baseline at the first run, then trigger collection when we see a DB grow? to see which table(s) are growing?
-	select * from sys.partitions			--any value here?
-	select * from sys.allocation_units		--any value here?
-	select * from sys.system_internals_allocation_units
-	select * from sys.system_internals_partitions
-
-
-	--Connections profile (maybe aggregate these to get a profile of who is connected to the system?)
-	SELECT * FROM sys.dm_exec_requests
-	SELECT * FROM sys.dm_exec_sessions
-	SELECT * FROM sys.dm_exec_connections
 ******** Priority 2 ********
 
 
 ******** Priority 3 ********
+	--Misc
+	
+	exec sp_server_diagnostics						--Any value here? this runs as an XE session. Some of the info it collects is useful, other info is redundant
+
+	--CPU
+
+	--Memory
+	SELECT * FROM sys.dm_os_memory_broker_clerks
+
+
+
+
+******** Priority 3 ********
+
+
+******** Priority 4 ********
 	--Misc
 	SELECT * FROM sys.dm_resource_governor_resource_pool_volumes
 	SELECT * FROM sys.dm_resource_governor_resource_pools
@@ -97,7 +96,6 @@ exec sp_getVolumeFreeSpace @database_name='master', @file_id=1		--must be run in
 
 
 	--Memory
-	SELECT * FROM sys.dm_os_buffer_descriptors		--may move to priority 2
 	SELECT * FROM sys.dm_exec_query_memory_grants		--agg by pools or groups or whatever?
 	SELECT * FROM sys.dm_exec_query_resource_semaphores
 	SELECT * FROM sys.dm_os_memory_brokers
@@ -111,9 +109,6 @@ exec sp_getVolumeFreeSpace @database_name='master', @file_id=1		--must be run in
 	SELECT * FROM sys.dm_exec_trigger_stats
 	SELECT * FROM sys.dm_exec_cached_plans
 
-	--TempDB
-	SELECT * FROM sys.dm_tran_version_store		--trigger an aggregate query if tempdb usage is very high.
-	SELECT * FROM sys.dm_tran_top_version_generators	--is this cheap to query? Maybe just use this instead
 
 	--DB details
 	select * from sys.indexes 
@@ -139,7 +134,7 @@ exec sp_getVolumeFreeSpace @database_name='master', @file_id=1		--must be run in
 	select * from sys.server_event_session_fields
 	select * from sys.server_event_session_targets
 	SELECT * FROM sys.dm_xe_session_targets		--is there any value here?
-******** Priority 3 ********
+******** Priority 4 ********
 
 */
 
@@ -387,6 +382,12 @@ SELECT * FROM sys.dm_tran_transactions_snapshot
 
 
 --No need right now, miscellaneous reasons.
+SELECT * FROM sys.dm_db_partition_stats		--toyed with the idea of triggering a query when observing DB growth, but there's just not much additional value here
+	select * from sys.partitions			--beyond the manual research we can do when a DB grows significantly. 
+	select * from sys.allocation_units
+	select * from sys.system_internals_allocation_units
+	select * from sys.system_internals_partitions
+SELECT * FROM sys.dm_tran_version_store
 SELECT * FROM sys.dm_db_persisted_sku_features
 SELECT * FROM sys.dm_db_script_level
 SELECT * FROM sys.dm_db_uncontained_entities

@@ -45,21 +45,21 @@ To Execute
 (
 	@init				TINYINT,
 	@LocalCaptureTime	DATETIME, 
-	@UTCCaptureTime		DATETIME
+	@UTCCaptureTime		DATETIME,
+	@SQLServerStartTime	DATETIME
 )
 AS
 BEGIN
 	SET NOCOUNT ON;
 	SET XACT_ABORT ON;
 
-	DECLARE @errorloc NVARCHAR(100);
-	DECLARE @lv__osisNULLID INT,
-		@lv__CurrentOsisID INT,
-		@lv__scratchint INT;
-
-	DECLARE @err__ErrorSeverity INT, 
+	DECLARE @errorloc NVARCHAR(100),
+			@err__ErrorSeverity INT, 
 			@err__ErrorState INT, 
-			@err__ErrorText NVARCHAR(4000);
+			@err__ErrorText NVARCHAR(4000),
+			@lv__osisNULLID INT,
+			@lv__CurrentOsisID INT,
+			@lv__scratchint INT;
 
 
 BEGIN TRY
@@ -240,25 +240,82 @@ BEGIN TRY
 	END	--IF @osisNULL IS NULL
 
 	SET @errorloc = 'osis5'
-	INSERT INTO ServerEye.dm_os_sys_info_volatile (
-		UTCCaptureTime, 
-		LocalCaptureTime, 
-		StableOSIID, 
-		cpu_ticks, 
-		ms_ticks, 
-		committed_kb, 
-		--bpool_committed, 
-		committed_target_kb, 
-		--bpool_commit_target, 
-		visible_target_kb, 
-		--bpool_visible, 
-		process_kernel_time_ms, 
-		process_user_time_ms
+	INSERT INTO [ServerEye].[SysInfoSingleRow](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[StableOSIID],
+
+		--metrics from sys.dm_os_sys_info (that are volatile enough to not be in ServerEye.dm_os_sys_info)
+		[cpu_ticks],
+		[ms_ticks],
+		[committed_kb],
+		--[bpool_committed],
+		[committed_target_kb],
+		--[bpool_commit_target],
+		[visible_target_kb],
+		--[bpool_visible],
+		[process_kernel_time_ms],
+		[process_user_time_ms],
+
+		--columns from sys.dm_os_process_memory
+		[physical_memory_in_use_kb],
+		[large_page_allocations_kb],
+		[locked_page_allocations_kb],
+		[total_virtual_address_space_kb],
+		[virtual_address_space_reserved_kb],
+		[virtual_address_space_committed_kb],
+		[virtual_address_space_available_kb],
+		[page_fault_count],
+		[memory_utilization_percentage],
+		[available_commit_limit_kb],
+		[process_physical_memory_low],
+		[process_virtual_memory_low],
+
+		--columns from sys.dm_os_sys_memory
+		[total_physical_memory_kb],
+		[available_physical_memory_kb],
+		[total_page_file_kb],
+		[available_page_file_kb],
+		[system_cache_kb],
+		[kernel_paged_pool_kb],
+		[kernel_nonpaged_pool_kb],
+		[system_high_memory_signal_state],
+		[system_low_memory_signal_state],
+		[system_memory_state_desc],
+
+		--data from sys.dm_os_tasks, just for background tasks, aggregated to a single row
+		[NumBackgroundTasks],
+		[task__context_switches_count],
+		[task__pending_io_count],
+		[task__pending_io_byte_count],
+
+		--data from sys.dm_os_threads, for all threads, aggregated to a single row
+		[NumThreads],
+		[NumThreadsStartedBySQLServer],
+		[SumKernelTime],
+		[SumUsermodeTime],
+		[SumStackBytesCommitted],
+		[SumStackBytesUsed],
+
+		--data from sys.dm_db_session_space_usage, just for background spids, aggregated to a single row
+		[bkgdsess__user_objects_alloc_page_count],
+		[bkgdsess__user_objects_dealloc_page_count],
+		[bkgdsess__internal_objects_alloc_page_count],
+		[bkgdsess__internal_objects_dealloc_page_count],
+		[bkgdsess__user_objects_deferred_dealloc_page_count],
+
+		--data from sys.dm_db_task_space_usage, just for background tasks, aggregate to a single row
+		[bkgdtask__user_objects_alloc_page_count],
+		[bkgdtask__user_objects_dealloc_page_count],
+		[bkgdtask__internal_objects_alloc_page_count],
+		[bkgdtask__internal_objects_dealloc_page_count]
 	)
 	SELECT 
 		@UTCCaptureTime, 
 		@LocalCaptureTime, 
 		@lv__CurrentOsisID,
+
+		--metrics from sys.dm_os_sys_info (that are volatile enough to not be in ServerEye.dm_os_sys_info)
 		i.cpu_ticks, 
 		i.ms_ticks, 
 		i.committed_kb, 
@@ -268,8 +325,114 @@ BEGIN TRY
 		i.visible_target_kb, 
 		--i.bpool_visible, 
 		i.process_kernel_time_ms, 
-		i.process_user_time_ms
-	FROM sys.dm_os_sys_info i;
+		i.process_user_time_ms,
+		
+		--columns from sys.dm_os_process_memory
+		pm.physical_memory_in_use_kb,
+		pm.large_page_allocations_kb,
+		pm.locked_page_allocations_kb,
+		pm.total_virtual_address_space_kb,
+		pm.virtual_address_space_reserved_kb,
+		pm.virtual_address_space_committed_kb,
+		pm.virtual_address_space_available_kb,
+		pm.page_fault_count,
+		pm.memory_utilization_percentage,
+		pm.available_commit_limit_kb,
+		pm.process_physical_memory_low,
+		pm.process_virtual_memory_low,
+
+		--columns from sys.dm_os_sys_memory
+		sysm.total_physical_memory_kb,
+		sysm.available_physical_memory_kb,
+		sysm.total_page_file_kb,
+		sysm.available_page_file_kb,
+		sysm.system_cache_kb,
+		sysm.kernel_paged_pool_kb,
+		sysm.kernel_nonpaged_pool_kb,
+		sysm.system_high_memory_signal_state,
+		sysm.system_low_memory_signal_state,
+		sysm.system_memory_state_desc,
+
+		--data from sys.dm_os_tasks, just for background tasks, aggregated to a single row
+		tsk.NumBackgroundTasks,
+		tsk.task__context_switches_count,
+		tsk.task__pending_io_count,
+		tsk.task__pending_io_byte_count,
+
+		--data from sys.dm_os_threads, for all threads, aggregated to a single row
+		thr.NumThreads,
+		thr.NumThreadsStartedBySQLServer,
+		thr.SumKernelTime,
+		thr.SumUsermodeTime,
+		thr.SumStackBytesCommitted,
+		thr.SumStackBytesUsed,
+
+		--data from sys.dm_db_session_space_usage, just for background spids, aggregated to a single row
+		su.bkgdsess__user_objects_alloc_page_count,
+		su.bkgdsess__user_objects_dealloc_page_count,
+		su.bkgdsess__internal_objects_alloc_page_count,
+		su.bkgdsess__internal_objects_dealloc_page_count,
+		su.bkgdsess__user_objects_deferred_dealloc_page_count,
+
+		--data from sys.dm_db_task_space_usage, just for background tasks, aggregate to a single row
+		tu.bkgdtask__user_objects_alloc_page_count,
+		tu.bkgdtask__user_objects_dealloc_page_count,
+		tu.bkgdtask__internal_objects_alloc_page_count,
+		tu.bkgdtask__internal_objects_dealloc_page_count
+	FROM sys.dm_os_sys_info i
+		CROSS JOIN sys.dm_os_process_memory pm
+		CROSS JOIN sys.dm_os_sys_memory sysm
+		CROSS JOIN (
+			SELECT 
+				[NumBackgroundTasks] = COUNT(*),
+				[task__context_switches_count] = SUM(t.context_switches_count),
+				[task__pending_io_count] = SUM(t.pending_io_count),
+				[task__pending_io_byte_count] = SUM(t.pending_io_byte_count)
+			FROM sys.dm_os_tasks t
+				LEFT OUTER JOIN sys.dm_exec_sessions se
+					ON t.session_id = se.session_id
+			WHERE (t.session_id IS NULL
+				OR se.is_user_process = 0)
+			AND t.task_state <> 'DONE'
+		) tsk
+		CROSS JOIN (
+			SELECT 
+				[NumThreads] = COUNT(*),
+				[NumThreadsStartedBySQLServer] = SUM(CASE WHEN t.started_by_sqlservr = 1 THEN 1 ELSE 0 END),
+				[SumKernelTime] = SUM(t.kernel_time),
+				[SumUsermodeTime] = SUM(t.usermode_time),
+				[SumStackBytesCommitted] = SUM(t.stack_bytes_committed),
+				[SumStackBytesUsed] = SUM(t.stack_bytes_used)
+			FROM sys.dm_os_threads t
+		) thr
+		CROSS JOIN (
+			SELECT 
+				[bkgdsess__user_objects_alloc_page_count] = SUM(su.user_objects_alloc_page_count),
+				[bkgdsess__user_objects_dealloc_page_count] = SUM(su.user_objects_dealloc_page_count),
+				[bkgdsess__internal_objects_alloc_page_count] = SUM(su.internal_objects_alloc_page_count),
+				[bkgdsess__internal_objects_dealloc_page_count] = SUM(su.internal_objects_dealloc_page_count),
+				[bkgdsess__user_objects_deferred_dealloc_page_count] = SUM(su.user_objects_deferred_dealloc_page_count)
+			FROM sys.dm_db_session_space_usage su
+				INNER JOIN sys.dm_exec_sessions se
+					ON se.session_id = su.session_id
+			WHERE se.is_user_process = 0
+			AND su.database_id = 2
+		) su
+		CROSS JOIN (
+			SELECT 
+				[bkgdtask__user_objects_alloc_page_count] = SUM(t.user_objects_alloc_page_count),
+				[bkgdtask__user_objects_dealloc_page_count] = SUM(t.user_objects_dealloc_page_count),
+				[bkgdtask__internal_objects_alloc_page_count] = SUM(t.internal_objects_alloc_page_count),
+				[bkgdtask__internal_objects_dealloc_page_count] = SUM(t.internal_objects_dealloc_page_count)
+			FROM sys.dm_db_task_space_usage t
+				INNER JOIN sys.dm_exec_sessions se
+					ON se.session_id = t.session_id
+			WHERE se.is_user_process = 0
+			AND t.database_id = 2
+		) tu;
+
+
+
 
 
 	SET @errorloc = 'dm_db_file_space_usage';
@@ -302,6 +465,148 @@ BEGIN TRY
 		internal_object_reserved_page_count, 
 		mixed_extent_page_count
 	FROM tempdb.sys.dm_db_file_space_usage;
+
+	SET @errorloc = 'dm_os_memory_nodes';
+	INSERT INTO [ServerEye].[dm_os_memory_nodes](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[memory_node_id],
+		[virtual_address_space_reserved_kb],
+		[virtual_address_space_committed_kb],
+		[locked_page_allocations_kb],
+		[pages_kb],
+		[shared_memory_reserved_kb],
+		[shared_memory_committed_kb],
+		[cpu_affinity_mask],
+		[online_scheduler_mask],
+		[processor_group],
+		[foreign_committed_kb]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[memory_node_id],
+		[virtual_address_space_reserved_kb],
+		[virtual_address_space_committed_kb],
+		[locked_page_allocations_kb],
+		[pages_kb],
+		[shared_memory_reserved_kb],
+		[shared_memory_committed_kb],
+		[cpu_affinity_mask],
+		[online_scheduler_mask],
+		[processor_group],
+		[foreign_committed_kb]
+	FROM sys.dm_os_memory_nodes n;
+
+	SET @errorloc = 'dm_os_nodes';
+	INSERT INTO [ServerEye].[dm_os_nodes](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[node_id],
+		[node_state_desc],
+		[memory_node_id],
+		[cpu_affinity_mask],
+		[online_scheduler_count],
+		[idle_scheduler_count],
+		[active_worker_count],
+		[avg_load_balance],
+		[resource_monitor_state],
+		[online_scheduler_mask],
+		[processor_group]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		n.node_id,
+		n.node_state_desc,
+		n.memory_node_id,
+		n.cpu_affinity_mask,
+		n.online_scheduler_count,
+		n.idle_scheduler_count,
+		n.active_worker_count,
+		n.avg_load_balance,
+		n.resource_monitor_state,
+		n.online_scheduler_mask,
+		n.processor_group
+	FROM sys.dm_os_nodes n;
+
+	SET @errorloc = 'dm_os_schedulers';
+	INSERT INTO [ServerEye].[dm_os_schedulers](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[parent_node_id],
+		[scheduler_id],
+		[cpu_id],
+		[status],
+		[is_online],
+		[is_idle],
+		[preemptive_switches_count],
+		[context_switches_count],
+		[idle_switches_count],
+		[current_tasks_count],
+		[runnable_tasks_count],
+		[current_workers_count],
+		[active_workers_count],
+		[work_queue_count],
+		[pending_disk_io_count],
+		[load_factor],
+		[yield_count],
+		[last_timer_activity]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[parent_node_id],
+		[scheduler_id],
+		[cpu_id],
+		[status],
+		[is_online],
+		[is_idle],
+		[preemptive_switches_count],
+		[context_switches_count],
+		[idle_switches_count],
+		[current_tasks_count],
+		[runnable_tasks_count],
+		[current_workers_count],
+		[active_workers_count],
+		[work_queue_count],
+		[pending_disk_io_count],
+		[load_factor],
+		[yield_count],
+		[last_timer_activity]
+	FROM sys.dm_os_schedulers s;
+
+
+	INSERT INTO [ServerEye].[dm_os_workers](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[worker_address],
+		[is_preemptive],
+		[is_sick],
+		[is_in_cc_exception],
+		[is_fatal_exception],
+		[is_inside_catch],
+		[is_in_polling_io_completion_routine],
+		[context_switch_count],
+		[pending_io_count],
+		[pending_io_byte_count],
+		[tasks_processed_count]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[worker_address],
+		[is_preemptive],
+		[is_sick],
+		[is_in_cc_exception],
+		[is_fatal_exception],
+		[is_inside_catch],
+		[is_in_polling_io_completion_routine],
+		[context_switch_count],
+		[pending_io_count],
+		[pending_io_byte_count],
+		[tasks_processed_count]
+	FROM sys.dm_os_workers w;
 
 END TRY
 BEGIN CATCH

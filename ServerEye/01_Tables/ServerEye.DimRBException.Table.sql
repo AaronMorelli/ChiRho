@@ -19,16 +19,17 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: ServerEye.DimLatchClass.Table.sql
+	FILE NAME: ServerEye.DimRBException.Table.sql
 
-	TABLE NAME: ServerEye.DimLatchClass
+	TABLE NAME: ServerEye.DimRBException
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Snapshots DimLatchClass (in Low-frequency metrics)
+	PURPOSE: Stores unique error combinations from the EXCEPTION ring buffer, so that we can 
+	save space if there are a flood of exceptions.
 */
 SET ANSI_NULLS ON
 GO
@@ -36,26 +37,26 @@ SET QUOTED_IDENTIFIER ON
 GO
 SET ANSI_PADDING ON
 GO
-CREATE TABLE [ServerEye].[DimLatchClass](
-	[DimLatchClassID] [smallint] IDENTITY(1,1) NOT NULL,
-	[latch_class] [nvarchar](100) NOT NULL,
-	[IsBenign] [bit] NOT NULL,
-	[TimeAdded] [datetime] NOT NULL CONSTRAINT [DF_DimLatchClass_TimeAdded]  DEFAULT (GETDATE()),
-	[TimeAddedUTC] [datetime] NOT NULL CONSTRAINT [DF_DimLatchClass_TimeAddedUTC]  DEFAULT (GETUTCDATE()),
-PRIMARY KEY CLUSTERED 
+CREATE TABLE [ServerEye].[DimRBException](
+	[DimRBExceptionID]	[int] IDENTITY(1,1) NOT NULL,
+	[Error]				[int] NOT NULL,
+	[Severity]			[int] NOT NULL,
+	[State]				[int] NOT NULL,
+	[UserDefined]		[int] NOT NULL,
+	[Origin]			[int] NOT NULL,
+	[TimeAdded]			[datetime] NOT NULL,
+	[TimeAddedUTC]		[datetime] NOT NULL,
+ CONSTRAINT [PKDimRBException] PRIMARY KEY CLUSTERED 
 (
-	[DimLatchClassID] ASC
+	[DimRBExceptionID] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 GO
-CREATE UNIQUE NONCLUSTERED INDEX [AKLatchClass] ON [ServerEye].[DimLatchClass]
-(
-	[latch_class] ASC
-)
-INCLUDE ( 	
-	[DimLatchClassID],
-	[IsBenign],
-	[TimeAdded],
-	[TimeAddedUTC]
-) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+CREATE UNIQUE NONCLUSTERED INDEX [AKDimRBException] ON [ServerEye].[DimRBException](
+	[Error],
+	[Severity],
+	[State],
+	[UserDefined],
+	[Origin]
+);
 GO

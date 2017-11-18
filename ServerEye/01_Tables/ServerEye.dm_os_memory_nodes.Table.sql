@@ -19,16 +19,16 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: ServerEye.DimLatchClass.Table.sql
+	FILE NAME: ServerEye.dm_os_memory_nodes.Table.sql
 
-	TABLE NAME: ServerEye.DimLatchClass
+	TABLE NAME: ServerEye.dm_os_memory_nodes
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Snapshots DimLatchClass (in Low-frequency metrics)
+	PURPOSE: Snapshots sys.dm_os_memory_nodes (in High-frequency metrics)
 */
 SET ANSI_NULLS ON
 GO
@@ -36,26 +36,26 @@ SET QUOTED_IDENTIFIER ON
 GO
 SET ANSI_PADDING ON
 GO
-CREATE TABLE [ServerEye].[DimLatchClass](
-	[DimLatchClassID] [smallint] IDENTITY(1,1) NOT NULL,
-	[latch_class] [nvarchar](100) NOT NULL,
-	[IsBenign] [bit] NOT NULL,
-	[TimeAdded] [datetime] NOT NULL CONSTRAINT [DF_DimLatchClass_TimeAdded]  DEFAULT (GETDATE()),
-	[TimeAddedUTC] [datetime] NOT NULL CONSTRAINT [DF_DimLatchClass_TimeAddedUTC]  DEFAULT (GETUTCDATE()),
-PRIMARY KEY CLUSTERED 
+CREATE TABLE [ServerEye].[dm_os_memory_nodes](
+	[UTCCaptureTime]				[datetime] NOT NULL,
+	[LocalCaptureTime]				[datetime] NOT NULL,
+	[memory_node_id]				[smallint] NOT NULL,
+	[virtual_address_space_reserved_kb] [bigint] NOT NULL,
+	[virtual_address_space_committed_kb] [bigint] NOT NULL,
+	[locked_page_allocations_kb]	[bigint] NOT NULL,
+	[pages_kb]						[bigint] NOT NULL,
+	[shared_memory_reserved_kb]		[bigint] NOT NULL,
+	[shared_memory_committed_kb]	[bigint] NOT NULL,
+	[cpu_affinity_mask]				[bigint] NOT NULL,
+	[online_scheduler_mask]			[bigint] NOT NULL,
+	[processor_group]				[smallint] NOT NULL,
+	[foreign_committed_kb]			[bigint] NOT NULL,
+ CONSTRAINT [PKdm_os_memory_nodes] PRIMARY KEY CLUSTERED 
 (
-	[DimLatchClassID] ASC
+	[UTCCaptureTime] ASC,
+	[memory_node_id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 GO
-CREATE UNIQUE NONCLUSTERED INDEX [AKLatchClass] ON [ServerEye].[DimLatchClass]
-(
-	[latch_class] ASC
-)
-INCLUDE ( 	
-	[DimLatchClassID],
-	[IsBenign],
-	[TimeAdded],
-	[TimeAddedUTC]
-) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
-GO
+
+

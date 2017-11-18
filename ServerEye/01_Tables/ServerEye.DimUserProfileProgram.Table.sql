@@ -19,16 +19,16 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: ServerEye.DimLatchClass.Table.sql
+	FILE NAME: ServerEye.DimUserProfileProgram.Table.sql
 
-	TABLE NAME: ServerEye.DimLatchClass
+	TABLE NAME: ServerEye.DimUserProfileProgram
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Snapshots DimLatchClass (in Low-frequency metrics)
+	PURPOSE: Stores a unique combo of session attributes, essentially as a junk dimension
 */
 SET ANSI_NULLS ON
 GO
@@ -36,26 +36,24 @@ SET QUOTED_IDENTIFIER ON
 GO
 SET ANSI_PADDING ON
 GO
-CREATE TABLE [ServerEye].[DimLatchClass](
-	[DimLatchClassID] [smallint] IDENTITY(1,1) NOT NULL,
-	[latch_class] [nvarchar](100) NOT NULL,
-	[IsBenign] [bit] NOT NULL,
-	[TimeAdded] [datetime] NOT NULL CONSTRAINT [DF_DimLatchClass_TimeAdded]  DEFAULT (GETDATE()),
-	[TimeAddedUTC] [datetime] NOT NULL CONSTRAINT [DF_DimLatchClass_TimeAddedUTC]  DEFAULT (GETUTCDATE()),
-PRIMARY KEY CLUSTERED 
+CREATE TABLE [ServerEye].[DimUserProfileProgram](
+	[DimUserProfileProgramID]	[int] IDENTITY(1,1) NOT NULL,
+	[host_name]				[nvarchar](128) NOT NULL,
+	[program_name]			[nvarchar](128) NOT NULL,
+	[client_version]		[int] NOT NULL,
+	[client_interface_name] [nvarchar](32) NOT NULL,
+	[TimeAdded]				[datetime] NOT NULL,
+	[TimeAddedUTC]			[datetime] NOT NULL,
+ CONSTRAINT [PKDimUserProfileProgram] PRIMARY KEY CLUSTERED 
 (
-	[DimLatchClassID] ASC
+	[DimUserProfileProgramID] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 GO
-CREATE UNIQUE NONCLUSTERED INDEX [AKLatchClass] ON [ServerEye].[DimLatchClass]
-(
-	[latch_class] ASC
-)
-INCLUDE ( 	
-	[DimLatchClassID],
-	[IsBenign],
-	[TimeAdded],
-	[TimeAddedUTC]
-) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+CREATE UNIQUE NONCLUSTERED INDEX [AKDimUserProfileProgram] ON [ServerEye].[DimUserProfileProgram](
+	[host_name],
+	[program_name],
+	[client_version],
+	[client_interface_name]
+);
 GO

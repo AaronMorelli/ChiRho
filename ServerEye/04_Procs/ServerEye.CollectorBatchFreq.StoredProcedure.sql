@@ -45,14 +45,58 @@ To Execute
 (
 	@init				TINYINT,
 	@LocalCaptureTime	DATETIME, 
-	@UTCCaptureTime		DATETIME
+	@UTCCaptureTime		DATETIME,
+	@SQLServerStartTime	DATETIME
 )
 AS
 BEGIN
 	SET NOCOUNT ON;
 	SET XACT_ABORT ON;
 
-	
+	--Probably need a way to turn this off for larger systems.
+	INSERT INTO [ServerEye].[BufDescriptors] (
+		[UTCCaptureTime],
+		[database_id],
+		[file_id],
+		[allocation_unit_id],
+		[page_type],
+		[numa_node],
+		[NumModified],
+		[SumRowCount],
+		[SumFreeSpaceInBytes],
+		[NumRows]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		database_id,
+		file_id,
+		allocation_unit_id,
+		page_type,
+		numa_node,
+		NumModified = SUM(CASE WHEN is_modified = 1 THEN CONVERT(INT,1) ELSE CONVERT(INT,0) END),
+		SumRowCount = SUM(CONVERT(BIGINT,row_count)),
+		SumFreeSpaceInBytes = SUM(CONVERT(BIGINT,free_space_in_bytes)),
+		NumRows = COUNT(*)
+	FROM (
+		SELECT 
+			database_id = ISNULL(buf.database_id,-1),
+			file_id = ISNULL(buf.file_id,-1),
+			allocation_unit_id = CASE WHEN buf.database_id = 2 THEN -5 ELSE ISNULL(buf.allocation_unit_id,-1) END,
+			page_type = ISNULL(buf.page_type,''),
+			numa_node = ISNULL(buf.numa_node,-1),
+			buf.is_modified,
+			buf.row_count,
+			buf.free_space_in_bytes
+		FROM sys.dm_os_buffer_descriptors buf
+		WHERE buf.database_id NOT IN (1, 3, 4)
+		AND buf.page_type NOT IN ('BOOT_PAGE','FILEHEADER_PAGE','SYSCONFIG_PAGE')
+	) ss
+	GROUP BY database_id,
+		file_id,
+		allocation_unit_id,
+		page_type,
+		numa_node
+	HAVING COUNT(*) > 10*128;		--Num MB * 128 (pages) to filter down to just alloc units that are larger memory hogs. This should be a config option
 
 
 

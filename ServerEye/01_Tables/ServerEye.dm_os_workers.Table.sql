@@ -19,16 +19,16 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: ServerEye.DimLatchClass.Table.sql
+	FILE NAME: ServerEye.dm_os_workers.Table.sql
 
-	TABLE NAME: ServerEye.DimLatchClass
+	TABLE NAME: ServerEye.dm_os_workers
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Snapshots DimLatchClass (in Low-frequency metrics)
+	PURPOSE: Snapshots sys.dm_os_workers (in High-frequency metrics)
 */
 SET ANSI_NULLS ON
 GO
@@ -36,26 +36,26 @@ SET QUOTED_IDENTIFIER ON
 GO
 SET ANSI_PADDING ON
 GO
-CREATE TABLE [ServerEye].[DimLatchClass](
-	[DimLatchClassID] [smallint] IDENTITY(1,1) NOT NULL,
-	[latch_class] [nvarchar](100) NOT NULL,
-	[IsBenign] [bit] NOT NULL,
-	[TimeAdded] [datetime] NOT NULL CONSTRAINT [DF_DimLatchClass_TimeAdded]  DEFAULT (GETDATE()),
-	[TimeAddedUTC] [datetime] NOT NULL CONSTRAINT [DF_DimLatchClass_TimeAddedUTC]  DEFAULT (GETUTCDATE()),
-PRIMARY KEY CLUSTERED 
+CREATE TABLE [ServerEye].[dm_os_workers](
+	[UTCCaptureTime]		[datetime] NOT NULL,
+	[LocalCaptureTime]		[datetime] NOT NULL,
+	[worker_address]		[varbinary](8) NOT NULL,
+	[is_preemptive]			[bit] NULL,
+	[is_sick]				[bit] NULL,
+	[is_in_cc_exception]	[bit] NULL,
+	[is_fatal_exception]	[bit] NULL,
+	[is_inside_catch]		[bit] NULL,
+	[is_in_polling_io_completion_routine] [bit] NULL,
+	[context_switch_count]	[int] NOT NULL,
+	[pending_io_count]		[int] NOT NULL,
+	[pending_io_byte_count] [bigint] NOT NULL,
+	[tasks_processed_count] [int] NOT NULL,
+CONSTRAINT [PKdm_os_workers] PRIMARY KEY CLUSTERED 
 (
-	[DimLatchClassID] ASC
+	[UTCCaptureTime] ASC,
+	[worker_address] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 GO
-CREATE UNIQUE NONCLUSTERED INDEX [AKLatchClass] ON [ServerEye].[DimLatchClass]
-(
-	[latch_class] ASC
-)
-INCLUDE ( 	
-	[DimLatchClassID],
-	[IsBenign],
-	[TimeAdded],
-	[TimeAddedUTC]
-) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+SET ANSI_PADDING OFF
 GO

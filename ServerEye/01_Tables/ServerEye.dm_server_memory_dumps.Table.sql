@@ -19,16 +19,16 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: ServerEye.DimLatchClass.Table.sql
+	FILE NAME: ServerEye.dm_server_memory_dumps.Table.sql
 
-	TABLE NAME: ServerEye.DimLatchClass
+	TABLE NAME: ServerEye.dm_server_memory_dumps
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Snapshots DimLatchClass (in Low-frequency metrics)
+	PURPOSE: Records any memory dumps found in sys.dm_server_memory_dumps
 */
 SET ANSI_NULLS ON
 GO
@@ -36,26 +36,16 @@ SET QUOTED_IDENTIFIER ON
 GO
 SET ANSI_PADDING ON
 GO
-CREATE TABLE [ServerEye].[DimLatchClass](
-	[DimLatchClassID] [smallint] IDENTITY(1,1) NOT NULL,
-	[latch_class] [nvarchar](100) NOT NULL,
-	[IsBenign] [bit] NOT NULL,
-	[TimeAdded] [datetime] NOT NULL CONSTRAINT [DF_DimLatchClass_TimeAdded]  DEFAULT (GETDATE()),
-	[TimeAddedUTC] [datetime] NOT NULL CONSTRAINT [DF_DimLatchClass_TimeAddedUTC]  DEFAULT (GETUTCDATE()),
-PRIMARY KEY CLUSTERED 
+CREATE TABLE [ServerEye].[dm_server_memory_dumps](
+	[filename] [nvarchar](256) NOT NULL,
+	[creation_time] [datetimeoffset](7) NOT NULL,
+	[size_in_bytes] [bigint] NULL,
+CONSTRAINT [PKdm_server_memory_dumps] PRIMARY KEY CLUSTERED 
 (
-	[DimLatchClassID] ASC
+	[filename],
+	[creation_time]
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 GO
-CREATE UNIQUE NONCLUSTERED INDEX [AKLatchClass] ON [ServerEye].[DimLatchClass]
-(
-	[latch_class] ASC
-)
-INCLUDE ( 	
-	[DimLatchClassID],
-	[IsBenign],
-	[TimeAdded],
-	[TimeAddedUTC]
-) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
-GO
+
+

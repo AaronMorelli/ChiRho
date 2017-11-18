@@ -19,16 +19,16 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: ServerEye.DimLatchClass.Table.sql
+	FILE NAME: ServerEye.dm_os_schedulers.Table.sql
 
-	TABLE NAME: ServerEye.DimLatchClass
+	TABLE NAME: ServerEye.dm_os_schedulers
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Snapshots DimLatchClass (in Low-frequency metrics)
+	PURPOSE: Snapshots sys.dm_os_schedulers (in High-frequency metrics)
 */
 SET ANSI_NULLS ON
 GO
@@ -36,26 +36,31 @@ SET QUOTED_IDENTIFIER ON
 GO
 SET ANSI_PADDING ON
 GO
-CREATE TABLE [ServerEye].[DimLatchClass](
-	[DimLatchClassID] [smallint] IDENTITY(1,1) NOT NULL,
-	[latch_class] [nvarchar](100) NOT NULL,
-	[IsBenign] [bit] NOT NULL,
-	[TimeAdded] [datetime] NOT NULL CONSTRAINT [DF_DimLatchClass_TimeAdded]  DEFAULT (GETDATE()),
-	[TimeAddedUTC] [datetime] NOT NULL CONSTRAINT [DF_DimLatchClass_TimeAddedUTC]  DEFAULT (GETUTCDATE()),
-PRIMARY KEY CLUSTERED 
+CREATE TABLE [ServerEye].[dm_os_schedulers](
+	[UTCCaptureTime]			[datetime] NOT NULL,
+	[LocalCaptureTime]			[datetime] NOT NULL,
+	[parent_node_id]			[int] NOT NULL,
+	[scheduler_id]				[int] NOT NULL,
+	[cpu_id]					[int] NOT NULL,
+	[status]					[nvarchar](60) NOT NULL,
+	[is_online]					[bit] NOT NULL,
+	[is_idle]					[bit] NOT NULL,
+	[preemptive_switches_count] [int] NOT NULL,
+	[context_switches_count]	[int] NOT NULL,
+	[idle_switches_count]		[int] NOT NULL,
+	[current_tasks_count]		[int] NOT NULL,
+	[runnable_tasks_count]		[int] NOT NULL,
+	[current_workers_count]		[int] NOT NULL,
+	[active_workers_count]		[int] NOT NULL,
+	[work_queue_count]			[bigint] NOT NULL,
+	[pending_disk_io_count]		[int] NOT NULL,
+	[load_factor]				[int] NOT NULL,
+	[yield_count]				[int] NOT NULL,
+	[last_timer_activity]		[bigint] NOT NULL,
+CONSTRAINT [PKdm_os_schedulers] PRIMARY KEY CLUSTERED 
 (
-	[DimLatchClassID] ASC
+	[UTCCaptureTime] ASC,
+	[scheduler_id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
-GO
-CREATE UNIQUE NONCLUSTERED INDEX [AKLatchClass] ON [ServerEye].[DimLatchClass]
-(
-	[latch_class] ASC
-)
-INCLUDE ( 	
-	[DimLatchClassID],
-	[IsBenign],
-	[TimeAdded],
-	[TimeAddedUTC]
-) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 GO

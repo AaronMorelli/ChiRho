@@ -85,7 +85,11 @@ BEGIN
 	SELECT DISTINCT 
 		ls.latch_class, 
 		0
-	FROM sys.dm_os_latch_stats ls;
+	FROM sys.dm_os_latch_stats ls
+	WHERE NOT EXISTS (
+		SELECT * FROM ServerEye.DimLatchClass l
+		WHERE l.latch_class = ls.latch_class
+	);
 
 	INSERT INTO [ServerEye].[DimSpinlock] (
 		[SpinlockName],
@@ -94,7 +98,60 @@ BEGIN
 	SELECT DISTINCT
 		s.name,
 		0
-	FROM sys.dm_os_spinlock_stats s;
+	FROM sys.dm_os_spinlock_stats s
+	WHERE NOT EXISTS (
+		SELECT * FROM ServerEye.DimSpinlock dsl
+		WHERE dsl.SpinlockName = s.name
+	);
+
+	INSERT INTO [ServerEye].[DimDBVolume](
+		[volume_id],
+		[volume_mount_point],
+		[logical_volume_name],
+		[file_system_type],
+		[supports_compression],
+		[supports_alternate_streams],
+		[supports_sparse_files],
+		[is_read_only],
+		[is_compressed]
+	)
+	SELECT 
+		ss.volume_id,
+		ss.volume_mount_point,
+		ss.logical_volume_name,
+		ss.file_system_type,
+		ss.supports_compression,
+		ss.supports_alternate_streams,
+		ss.supports_sparse_files,
+		ss.is_read_only,
+		ss.is_compressed
+	FROM (
+		SELECT DISTINCT
+			[volume_id] = ISNULL(vs.volume_id,N'<null>'),
+			[volume_mount_point] = ISNULL(vs.volume_mount_point,N'<null>'),
+			[logical_volume_name] = ISNULL(vs.logical_volume_name,N'<null>'),
+			[file_system_type] = ISNULL(vs.file_system_type,N'<null>'),
+			[supports_compression] = ISNULL(vs.supports_compression,255),
+			[supports_alternate_streams] = ISNULL(vs.supports_alternate_streams,255),
+			[supports_sparse_files] = ISNULL(vs.supports_sparse_files,255),
+			[is_read_only] = ISNULL(vs.is_read_only,255),
+			[is_compressed] = ISNULL(vs.is_compressed,255)
+		FROM sys.master_files mf
+			CROSS APPLY sys.dm_os_volume_stats(mf.database_id, mf.file_id) vs
+	) ss
+	WHERE NOT EXISTS (
+		SELECT * 
+		FROM ServerEye.DimDBVolume dbv
+		WHERE ss.volume_id = dbv.volume_id
+		AND ss.volume_mount_point = dbv.volume_mount_point
+		AND ss.logical_volume_name = dbv.logical_volume_name
+		AND ss.file_system_type = dbv.file_system_type
+		AND ss.supports_compression = dbv.supports_compression
+		AND ss.supports_alternate_streams = dbv.supports_alternate_streams
+		AND ss.supports_sparse_files = dbv.supports_sparse_files
+		AND ss.is_read_only = dbv.is_read_only
+		AND ss.is_compressed = dbv.is_compressed
+	);
 
 	RETURN 0;
 END

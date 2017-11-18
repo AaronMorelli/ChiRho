@@ -19,9 +19,9 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: ServerEye.Ring_Buffer_Scheduler_Monitor.Table.sql
+	FILE NAME: ServerEye.RingBufferSchedulerMonitor.Table.sql
 
-	TABLE NAME: ServerEye.Ring_Buffer_Scheduler_Monitor
+	TABLE NAME: ServerEye.RingBufferSchedulerMonitor
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
@@ -36,7 +36,7 @@ SET QUOTED_IDENTIFIER ON
 GO
 SET ANSI_PADDING ON
 GO
-CREATE TABLE [ServerEye].[Ring_Buffer_Scheduler_Monitor](
+CREATE TABLE [ServerEye].[RingBufferSchedulerMonitor](
 	[SQLServerStartTime] [datetime] NOT NULL,
 	[RecordID] [bigint] NOT NULL,
 	[timestamp] [bigint] NOT NULL,
@@ -50,12 +50,12 @@ CREATE TABLE [ServerEye].[Ring_Buffer_Scheduler_Monitor](
 	[PageFaults] [int] NULL,
 	[WorkingSetDelta] [int] NULL,
 	[MemoryUtilization] [int] NULL,
- CONSTRAINT [PK_Ring_Buffer_Scheduler_Monitor] PRIMARY KEY NONCLUSTERED 
+ CONSTRAINT [PK_RingBufferSchedulerMonitor] PRIMARY KEY NONCLUSTERED 
 (
 	[SQLServerStartTime] ASC,
 	[RecordID] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 GO
-CREATE CLUSTERED INDEX CL1 ON [ServerEye].[Ring_Buffer_Scheduler_Monitor](UTCCaptureTime);
+CREATE CLUSTERED INDEX CL1 ON [ServerEye].[RingBufferSchedulerMonitor](UTCCaptureTime);
 GO

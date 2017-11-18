@@ -806,21 +806,25 @@ BEGIN TRY
 		SET @lv__ThisRC = -37;
 		SET @ErrorMessage = 'Exiting wrapper procedure due to exception-based abort';
 		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=@lv__TraceID, @Location='Exception exit', @Message=@ErrorMessage;
+
+		EXEC CoreXR.AbortTrace @Utility = N'AutoWho', @TraceID = @lv__TraceID, @AbortCode = @lv__EarlyAbort, @PreventAllDay = N'Y';
 	END
 	ELSE IF @lv__EarlyAbort IN (N'O', N'A')
 	BEGIN
 		SET @lv__ThisRC = -39;
 		SET @ErrorMessage = 'Exiting wrapper procedure due to manual abort, type: ' + @lv__EarlyAbort;
 		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=@lv__TraceID, @Location='Manual abort exit', @Message=@ErrorMessage;
+
+		--We don't need to abort this trace as it should have been aborted already
 	END
 	ELSE 
 	BEGIN
 		SET @lv__ThisRC = 0;
 		SET @ErrorMessage = 'AutoWho trace successfully completed.';
 		EXEC AutoWho.LogEvent @ProcID=@@PROCID, @EventCode=@lv__ThisRC, @TraceID=@lv__TraceID, @Location='Successful complete', @Message=@ErrorMessage;
-	END
 
-	EXEC CoreXR.StopTrace @Utility=N'AutoWho', @TraceID = @lv__TraceID, @AbortCode = @lv__EarlyAbort;
+		EXEC CoreXR.StopTrace @Utility=N'AutoWho', @TraceID = @lv__TraceID, @AbortCode = @lv__EarlyAbort;
+	END
 
 	IF @opt__ResolvePageLatches = N'Y' OR @opt__Enable8666 = N'Y'
 	BEGIN
