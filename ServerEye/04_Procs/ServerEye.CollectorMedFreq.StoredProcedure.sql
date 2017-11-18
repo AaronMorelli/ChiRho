@@ -218,7 +218,7 @@ BEGIN TRY
 			--I've seen dups come back, apparently b/c available bytes was in the middle of changing,
 			--hence the reason for not using DISTINCT logic here.
 		FROM (
-			SELECT
+			SELECT DISTINCT
 				[volume_id] = ISNULL(vs.volume_id,N'<null>'),
 				[volume_mount_point] = ISNULL(vs.volume_mount_point,N'<null>'),
 				[logical_volume_name] = ISNULL(vs.logical_volume_name,N'<null>'),
@@ -244,7 +244,8 @@ BEGIN TRY
 			AND ss.supports_alternate_streams = dbv.supports_alternate_streams
 			AND ss.supports_sparse_files = dbv.supports_sparse_files
 			AND ss.is_read_only = dbv.is_read_only
-			AND ss.is_compressed = dbv.is_compressed;
+			AND ss.is_compressed = dbv.is_compressed
+	WHERE ss.rn = 1;
 
 
 
@@ -264,6 +265,13 @@ BEGIN TRY
 		[local_net_address]		[varchar](48) NOT NULL,
 		[local_tcp_port]		[int] NOT NULL,
 
+		--metrics from sys.dm_exec_connections
+		[connect_time]			[datetime] NOT NULL,
+		[num_reads]				[int] NULL,
+		[num_writes]			[int] NULL,
+		[last_read]				[datetime] NULL,
+		[last_write]			[datetime] NULL,
+
 		--attributes from sys.dm_exec_sessions
 		[host_name]				[nvarchar](128) NOT NULL,
 		[program_name]			[nvarchar](128) NOT NULL,
@@ -278,13 +286,26 @@ BEGIN TRY
 		[group_id]				[int] NOT NULL,
 		[session_database_id]	[smallint] NOT NULL,
 
+		--metrics from dm_exec_sessions
+		[login_time]			[datetime] NOT NULL,
+		[last_request_start_time] [datetime] NOT NULL,
+		[last_request_end_time] [datetime] NULL,
+		[cpu_time]				[int] NULL,
+		[reads]					[bigint] NULL,
+		[writes]				[bigint] NULL,
+		[logical_reads]			[bigint] NULL,
+
 		--attributes from sys.dm_exec_requests
 		[request_database_id]	[smallint] NOT NULL,
-		[request_user_id]		[int] NOT NULL
+		[request_user_id]		[int] NOT NULL,
+
+		--metrics from dm_exec_requests
+		[start_time]			[datetime] NULL
 	);
 
 	SET @errorloc = N'#ConnProfileTemp1';
 	INSERT INTO #ConnProfileTemp1 (
+		--attributes from sys.dm_exec_connections
 		[net_transport],
 		[protocol_type],
 		[protocol_version],
@@ -296,6 +317,15 @@ BEGIN TRY
 		[client_net_address],
 		[local_net_address],
 		[local_tcp_port],
+
+		--metrics from sys.dm_exec_connections
+		[connect_time],
+		[num_reads],
+		[num_writes],
+		[last_read],
+		[last_write],
+
+		--attributes from sys.dm_exec_sessions
 		[host_name],
 		[program_name],
 		[client_version],
@@ -308,38 +338,68 @@ BEGIN TRY
 		[original_login_name],
 		[group_id],
 		[session_database_id],
+
+		--metrics from dm_exec_sessions
+		[login_time],
+		[last_request_start_time],
+		[last_request_end_time],
+		[cpu_time],
+		[reads],
+		[writes],
+		[logical_reads],
+
+		--attributes from sys.dm_exec_requests
 		[request_database_id],
-		[request_user_id]
+		[request_user_id],
+
+		--metrics from dm_exec_requests
+		[start_time]
 	)
 	--All of the fields without null-wrappers were NOT NULL on a table definition that I SELECT INTO'd the below query
-	SELECT DISTINCT
-		c.net_transport,	--not nullable
-		ISNULL(c.protocol_type,@lv__nullstring),
-		ISNULL(c.protocol_version,@lv__nullint),
-		ISNULL(c.endpoint_id,@lv__nullint),
-		c.encrypt_option,	--ditto
-		c.auth_scheme,		--
-		c.node_affinity,	--
-		ISNULL(c.net_packet_size,@lv__nullint),
-		ISNULL(c.client_net_address,@lv__nullstring),
-		ISNULL(c.local_net_address,@lv__nullstring),
-		ISNULL(c.local_tcp_port,@lv__nullint),
+	SELECT
+		[net_transport] = c.net_transport,	--not nullable
+		[protocol_type] = ISNULL(c.protocol_type,@lv__nullstring),
+		[protocol_version] = ISNULL(c.protocol_version,@lv__nullint),
+		[endpoint_id] = ISNULL(c.endpoint_id,@lv__nullint),
+		[encrypt_option] = c.encrypt_option,	--ditto
+		[auth_scheme] = c.auth_scheme,		--
+		[node_affinity] = c.node_affinity,	--
+		[net_packet_size] = ISNULL(c.net_packet_size,@lv__nullint),
+		[client_net_address] = ISNULL(c.client_net_address,@lv__nullstring),
+		[local_net_address] = ISNULL(c.local_net_address,@lv__nullstring),
+		[local_tcp_port] = ISNULL(c.local_tcp_port,@lv__nullint),
 
-		ISNULL(s.host_name,@lv__nullstring),
-		ISNULL(s.program_name,@lv__nullstring),
-		ISNULL(s.client_version,@lv__nullint),
-		ISNULL(s.client_interface_name,@lv__nullstring),
-		s.security_id,		--not nullable
-		s.login_name,		--
-		ISNULL(s.nt_domain,@lv__nullstring),
-		ISNULL(s.nt_user_name,@lv__nullstring),
-		s.original_security_id,	--
-		s.original_login_name,	--
-		s.group_id,				--
+		[connect_time] = c.connect_time,
+		[num_reads] = c.num_reads,
+		[num_writes] = c.num_writes,
+		[last_read] = c.last_read,
+		[last_write] = c.last_write,
+		
+		[host_name] = ISNULL(s.host_name,@lv__nullstring),
+		[program_name] = ISNULL(s.program_name,@lv__nullstring),
+		[client_version] = ISNULL(s.client_version,@lv__nullint),
+		[client_interface_name] = ISNULL(s.client_interface_name,@lv__nullstring),
+		[security_id] =s.security_id,		--not nullable
+		[login_name] = s.login_name,		--
+		[nt_domain] = ISNULL(s.nt_domain,@lv__nullstring),
+		[nt_user_name] = ISNULL(s.nt_user_name,@lv__nullstring),
+		[original_security_id] = s.original_security_id,	--
+		[original_login_name] = s.original_login_name,	--
+		[group_id] = s.group_id,				--
 		[session_database_id] = s.database_id,	--
 
+		[login_time] = s.login_time,
+		[last_request_start_time] = s.last_request_start_time,
+		[last_request_end_time] = s.last_request_end_time,
+		[cpu_time] = s.cpu_time,
+		[reads] = s.reads,
+		[writes] = s.writes,
+		[logical_reads] = s.logical_reads,
+
 		[request_database_id] = ISNULL(r.database_id, @lv__nullsmallint),
-		[request_user_id] = ISNULL(r.user_id,@lv__nullint)
+		[request_user_id] = ISNULL(r.user_id,@lv__nullint),
+
+		[start_time] = r.start_time
 	FROM sys.dm_exec_connections c
 		INNER JOIN sys.dm_exec_sessions s
 			ON c.session_id = s.session_id	--also join on c.most_recent_session_id
@@ -497,6 +557,7 @@ BEGIN TRY
 		AND ss.request_user_id = d.request_user_id
 	);
 
+	
 	SET @errorloc = N'Fact ConnectionProfile';
 	INSERT INTO [ServerEye].[ConnectionProfile](
 		[UTCCaptureTime],
@@ -538,32 +599,32 @@ BEGIN TRY
 		dupp.DimUserProfileProgramID,
 		dupl.DimUserProfileLoginID,
 
-		[conn__connect_time_min] = MIN(ss.conn__connect_time),
-		[conn__connect_time_max] = MAX(ss.conn__connect_time),
-		[conn__num_reads_sum] = SUM(ss.conn__num_reads),
-		[conn__num_reads_max] = MAX(ss.conn__num_reads),
-		[conn__num_writes_sum] = SUM(ss.conn__num_writes),
-		[conn__num_writes_max] = MAX(ss.conn__num_writes),
-		[conn__last_read_min] = MIN(ss.conn__last_read),
-		[conn__last_read_max] = MAX(ss.conn__last_read),
-		[conn__last_write_min] = MIN(ss.conn__last_write),
-		[conn__last_write_max] = MAX(ss.conn__last_write),
-		[sess__login_time_min] = MIN(ss.sess__login_time),
-		[sess__login_time_max] = MAX(ss.sess__login_time),
-		[sess__last_request_start_time_min] = MIN(ss.sess__last_request_start_time),
-		[sess__last_request_start_time_max] = MAX(ss.sess__last_request_start_time),
-		[sess__last_request_end_time_min] = MIN(ss.sess__last_request_end_time),
-		[sess__last_request_end_time_max] = MAX(ss.sess__last_request_end_time),
-		[sess__cpu_time_sum] = SUM(ss.sess__cpu_time),
-		[sess__cpu_time_max] = MAX(ss.sess__cpu_time),
-		[sess__reads_sum] = SUM(ss.sess__reads),
-		[sess__reads_max] = MAX(ss.sess__reads),
-		[sess__writes_sum] = SUM(ss.sess__writes),
-		[sess__writes_max] = MAX(ss.sess__writes),
-		[sess__logical_reads_sum] = SUM(ss.sess__logical_reads),
-		[sess__logical_reads_max] = MAX(ss.sess__logical_reads),
-		[rqst__start_time_min] = MIN(ss.rqst__start_time),
-		[rqst__start_time_max] = MAX(ss.rqst__start_time)
+		[conn__connect_time_min] = MIN(ss.connect_time),
+		[conn__connect_time_max] = MAX(ss.connect_time),
+		[conn__num_reads_sum] = SUM(ss.num_reads),
+		[conn__num_reads_max] = MAX(ss.num_reads),
+		[conn__num_writes_sum] = SUM(ss.num_writes),
+		[conn__num_writes_max] = MAX(ss.num_writes),
+		[conn__last_read_min] = MIN(ss.last_read),
+		[conn__last_read_max] = MAX(ss.last_read),
+		[conn__last_write_min] = MIN(ss.last_write),
+		[conn__last_write_max] = MAX(ss.last_write),
+		[sess__login_time_min] = MIN(ss.login_time),
+		[sess__login_time_max] = MAX(ss.login_time),
+		[sess__last_request_start_time_min] = MIN(ss.last_request_start_time),
+		[sess__last_request_start_time_max] = MAX(ss.last_request_start_time),
+		[sess__last_request_end_time_min] = MIN(ss.last_request_end_time),
+		[sess__last_request_end_time_max] = MAX(ss.last_request_end_time),
+		[sess__cpu_time_sum] = SUM(ss.cpu_time),
+		[sess__cpu_time_max] = MAX(ss.cpu_time),
+		[sess__reads_sum] = SUM(ss.reads),
+		[sess__reads_max] = MAX(ss.reads),
+		[sess__writes_sum] = SUM(ss.writes),
+		[sess__writes_max] = MAX(ss.writes),
+		[sess__logical_reads_sum] = SUM(ss.logical_reads),
+		[sess__logical_reads_max] = MAX(ss.logical_reads),
+		[rqst__start_time_min] = MIN(ss.start_time),
+		[rqst__start_time_max] = MAX(ss.start_time)
 	FROM 
 		ServerEye.DimUserProfileConn dupc
 			INNER hash JOIN 
@@ -576,54 +637,50 @@ BEGIN TRY
 
 					(
 					SELECT 
-						c.net_transport,	--not nullable
-						[protocol_type] = ISNULL(c.protocol_type,@lv__nullstring),
-						[protocol_version] = ISNULL(c.protocol_version,@lv__nullint),
-						[endpoint_id] = ISNULL(c.endpoint_id,@lv__nullint),
-						c.encrypt_option,	--ditto
-						c.auth_scheme,		--
-						c.node_affinity,	--
-						[net_packet_size] = ISNULL(c.net_packet_size,@lv__nullint),
-						[client_net_address] = ISNULL(c.client_net_address,@lv__nullstring),
-						[local_net_address] = ISNULL(c.local_net_address,@lv__nullstring),
-						[local_tcp_port] = ISNULL(c.local_tcp_port,@lv__nullint),
+						t.net_transport,
+						t.protocol_type,
+						t.protocol_version,
+						t.endpoint_id,
+						t.encrypt_option,
+						t.auth_scheme,
+						t.node_affinity,
+						t.net_packet_size,
+						t.client_net_address,
+						t.local_net_address,
+						t.local_tcp_port,
 
-						[conn__connect_time] = c.connect_time,
-						[conn__num_reads] = c.num_reads,
-						[conn__num_writes] = c.num_writes,
-						[conn__last_read] = c.last_read,
-						[conn__last_write] = c.last_write,
+						t.connect_time,
+						t.num_reads,
+						t.num_writes,
+						t.last_read,
+						t.last_write,
 
-						[host_name] = ISNULL(s.host_name,@lv__nullstring),
-						[program_name] = ISNULL(s.program_name,@lv__nullstring),
-						[client_version] = ISNULL(s.client_version,@lv__nullint),
-						[client_interface_name] = ISNULL(s.client_interface_name,@lv__nullstring),
-						s.security_id,		--not nullable
-						s.login_name,		--
-						[nt_domain] = ISNULL(s.nt_domain,@lv__nullstring),
-						[nt_user_name] = ISNULL(s.nt_user_name,@lv__nullstring),
-						s.original_security_id,	--
-						s.original_login_name,	--
-						s.group_id,				--
-						[session_database_id] = s.database_id,	--
+						t.host_name,
+						t.program_name,
+						t.client_version,
+						t.client_interface_name,
+						t.security_id,
+						t.login_name,
+						t.nt_domain,
+						t.nt_user_name,
+						t.original_security_id,
+						t.original_login_name,
+						t.group_id,
+						t.session_database_id,
 
-						[sess__login_time] = s.login_time,
-						[sess__last_request_start_time] = s.last_request_start_time,
-						[sess__last_request_end_time] = s.last_request_end_time,
-						[sess__cpu_time] = s.cpu_time,
-						[sess__reads] = s.reads,
-						[sess__writes] = s.writes,
-						[sess__logical_reads] = s.logical_reads,
+						t.login_time,
+						t.last_request_start_time,
+						t.last_request_end_time,
+						t.cpu_time,
+						t.reads,
+						t.writes,
+						t.logical_reads,
 
-						[request_database_id] = ISNULL(r.database_id, @lv__nullsmallint),
-						[request_user_id] = ISNULL(r.user_id,@lv__nullint),
+						t.request_database_id,
+						t.request_user_id,
 
-						[rqst__start_time] = r.start_time
-					FROM sys.dm_exec_connections c
-						INNER JOIN sys.dm_exec_sessions s
-							ON c.session_id = s.session_id
-						LEFT OUTER JOIN sys.dm_exec_requests r
-							ON c.session_id = r.session_id
+						t.start_time
+					FROM #ConnProfileTemp1 t
 				) ss
 
 				ON ss.security_id = dupl.security_id
@@ -653,8 +710,10 @@ BEGIN TRY
 		AND ss.client_net_address = dupc.client_net_address
 		AND ss.local_net_address = dupc.local_net_address
 		AND ss.local_tcp_port = dupc.local_tcp_port
-
-		OPTION(FORCE ORDER);
+	GROUP BY dupc.DimUserProfileConnID,
+		dupp.DimUserProfileProgramID,
+		dupl.DimUserProfileLoginID
+	OPTION(FORCE ORDER);
 
 	RETURN 0;
 END TRY

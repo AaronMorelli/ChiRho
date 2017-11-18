@@ -458,6 +458,10 @@ BEGIN TRY
 		SET @lv__MediumFreqThisRun = 0;
 		SET @lv__LowFreqThisRun = 0;
 		SET @lv__BatchFreqThisRun = 0;
+		SET @lv__HighFrequencySuccessful = 0;
+		SET @lv__MediumFrequencySuccessful = 0;
+		SET @lv__LowFrequencySuccessful = 0;
+		SET @lv__BatchFrequencySuccessful = 0;
 		SET @lv__RunWasSuccessful = 0;
 		SET @lv__ExceptionThisRun = 0;
 
@@ -501,7 +505,7 @@ BEGIN TRY
 		BEGIN CATCH
 			IF @@TRANCOUNT > 0 ROLLBACK;
 
-			SET @lv__HighFrequencySuccessful = 0;
+			SET @lv__HighFrequencySuccessful = -1;
 
 			SET @ErrorMessage = 'Executor: ServerEye CollectorHiFreq procedure generated an exception: Error Number: ' + 
 				CONVERT(VARCHAR(20), ERROR_NUMBER()) + '; Error Message: ' + ERROR_MESSAGE();
@@ -523,7 +527,7 @@ BEGIN TRY
 			BEGIN CATCH
 				IF @@TRANCOUNT > 0 ROLLBACK;
 
-				SET @lv__MediumFrequencySuccessful = 0;
+				SET @lv__MediumFrequencySuccessful = -1;
 
 				SET @ErrorMessage = 'Executor: ServerEye CollectorMedFreq procedure generated an exception: Error Number: ' + 
 					CONVERT(VARCHAR(20), ERROR_NUMBER()) + '; Error Message: ' + ERROR_MESSAGE();
@@ -547,7 +551,7 @@ BEGIN TRY
 			BEGIN CATCH
 				IF @@TRANCOUNT > 0 ROLLBACK;
 
-				SET @lv__LowFrequencySuccessful = 0;
+				SET @lv__LowFrequencySuccessful = -1;
 
 				SET @ErrorMessage = 'Executor: ServerEye CollectorLowFreq procedure generated an exception: Error Number: ' + 
 					CONVERT(VARCHAR(20), ERROR_NUMBER()) + '; Error Message: ' + ERROR_MESSAGE();
@@ -570,7 +574,7 @@ BEGIN TRY
 			BEGIN CATCH
 				IF @@TRANCOUNT > 0 ROLLBACK;
 
-				SET @lv__BatchFrequencySuccessful = 0;
+				SET @lv__BatchFrequencySuccessful = -1;
 
 				SET @ErrorMessage = 'Executor: ServerEye CollectorBatchFreq procedure generated an exception: Error Number: ' + 
 					CONVERT(VARCHAR(20), ERROR_NUMBER()) + '; Error Message: ' + ERROR_MESSAGE();
@@ -588,6 +592,16 @@ BEGIN TRY
 		BEGIN
 			SET @lv__SuccessiveExceptions = 0;
 		END
+
+		SET @ErrorMessage = 'Hi succ: ' + ISNULL(CONVERT(varchar(20),@lv__HighFrequencySuccessful),'<null>') + '
+Med This Run: ' + ISNULL(CONVERT(varchar(20),@lv__MediumFreqThisRun),'<null>') + '
+Med Succ: ' + ISNULL(CONVERT(varchar(20),@lv__MediumFrequencySuccessful),'<null>') + '
+Low This Run: ' + ISNULL(CONVERT(varchar(20),@lv__LowFreqThisRun),'<null>') + '
+Low Succ: ' + ISNULL(CONVERT(varchar(20),@lv__LowFrequencySuccessful),'<null>') + '
+Batch This Run: ' + ISNULL(CONVERT(varchar(20),@lv__BatchFreqThisRun),'<null>') + '
+Batch Succ: ' + ISNULL(CONVERT(varchar(20),@lv__BatchFrequencySuccessful),'<null>')
+;
+	EXEC ServerEye.LogEvent @ProcID=@@PROCID, @EventCode=1, @TraceID=NULL, @Location='Collection Success Statusii', @Message=@ErrorMessage;
 
 		SET @lv__RunWasSuccessful = CASE WHEN @lv__HighFrequencySuccessful = 1
 										AND (
@@ -640,11 +654,19 @@ BEGIN TRY
 			UPDATE targ 
 			SET PrevSuccessfulUTCCaptureTime = hi.UTCCaptureTime,
 
-				--We only set the prev-successful times for these 3 fields when the CURRENT capture
-				--actually ran the medium/low/batch code. 
-				PrevSuccessfulMedium = CASE WHEN @lv__MediumFrequencySuccessful = 1 THEN md.UTCCaptureTime ELSE NULL END,
-				PrevSuccessfulLow = CASE WHEN @lv__LowFrequencySuccessful = 1 THEN lo.UTCCaptureTime ELSE NULL END,
-				PrevSuccessfulBatch = CASE WHEN @lv__BatchFrequencySuccessful = 1 THEN b.UTCCaptureTime ELSE NULL END
+				/*
+					NOPE, NOPE, changing my mind on this
+						(Old)We only set the prev-successful times for these 3 fields when the CURRENT capture
+						actually ran the medium/low/batch code.(/Old)
+
+					Every capture has a pointer to the previous successful collection of each type. The goal here
+					is to optimize the viewer procs (and any other consumers of the data) so that instead of having
+					to calculate the "Previous Successful X", they already have a correct pointer and can join
+					in the correct previous data as needed.
+				*/
+				PrevSuccessfulMedium = md.UTCCaptureTime,
+				PrevSuccessfulLow = lo.UTCCaptureTime,
+				PrevSuccessfulBatch = b.UTCCaptureTime
 			FROM ServerEye.CaptureTimes targ
 				OUTER APPLY (
 					SELECT TOP 1

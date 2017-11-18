@@ -240,40 +240,6 @@ BEGIN TRY
 	END	--IF @osisNULL IS NULL
 
 	SET @errorloc = 'osis5'
-	INSERT INTO ServerEye.SysInfoSingleRow (
-		UTCCaptureTime, 
-		LocalCaptureTime, 
-		StableOSIID, 
-		cpu_ticks, 
-		ms_ticks, 
-		committed_kb, 
-		--bpool_committed, 
-		committed_target_kb, 
-		--bpool_commit_target, 
-		visible_target_kb, 
-		--bpool_visible, 
-		process_kernel_time_ms, 
-		process_user_time_ms
-	)
-	SELECT 
-		@UTCCaptureTime, 
-		@LocalCaptureTime, 
-		@lv__CurrentOsisID,
-		i.cpu_ticks, 
-		i.ms_ticks, 
-		i.committed_kb, 
-		--i.bpool_committed, 
-		i.committed_target_kb,
-		--i.bpool_commit_target, 
-		i.visible_target_kb, 
-		--i.bpool_visible, 
-		i.process_kernel_time_ms, 
-		i.process_user_time_ms
-	FROM sys.dm_os_sys_info i;
-
-
-
-
 	INSERT INTO [ServerEye].[SysInfoSingleRow](
 		[UTCCaptureTime],
 		[LocalCaptureTime],
@@ -283,11 +249,11 @@ BEGIN TRY
 		[cpu_ticks],
 		[ms_ticks],
 		[committed_kb],
-		[bpool_committed],
+		--[bpool_committed],
 		[committed_target_kb],
-		[bpool_commit_target],
+		--[bpool_commit_target],
 		[visible_target_kb],
-		[bpool_visible],
+		--[bpool_visible],
 		[process_kernel_time_ms],
 		[process_user_time_ms],
 
@@ -348,6 +314,8 @@ BEGIN TRY
 		@UTCCaptureTime, 
 		@LocalCaptureTime, 
 		@lv__CurrentOsisID,
+
+		--metrics from sys.dm_os_sys_info (that are volatile enough to not be in ServerEye.dm_os_sys_info)
 		i.cpu_ticks, 
 		i.ms_ticks, 
 		i.committed_kb, 
@@ -358,7 +326,8 @@ BEGIN TRY
 		--i.bpool_visible, 
 		i.process_kernel_time_ms, 
 		i.process_user_time_ms,
-
+		
+		--columns from sys.dm_os_process_memory
 		pm.physical_memory_in_use_kb,
 		pm.large_page_allocations_kb,
 		pm.locked_page_allocations_kb,
@@ -372,6 +341,7 @@ BEGIN TRY
 		pm.process_physical_memory_low,
 		pm.process_virtual_memory_low,
 
+		--columns from sys.dm_os_sys_memory
 		sysm.total_physical_memory_kb,
 		sysm.available_physical_memory_kb,
 		sysm.total_page_file_kb,
@@ -383,11 +353,13 @@ BEGIN TRY
 		sysm.system_low_memory_signal_state,
 		sysm.system_memory_state_desc,
 
+		--data from sys.dm_os_tasks, just for background tasks, aggregated to a single row
 		tsk.NumBackgroundTasks,
 		tsk.task__context_switches_count,
 		tsk.task__pending_io_count,
 		tsk.task__pending_io_byte_count,
 
+		--data from sys.dm_os_threads, for all threads, aggregated to a single row
 		thr.NumThreads,
 		thr.NumThreadsStartedBySQLServer,
 		thr.SumKernelTime,
@@ -395,12 +367,14 @@ BEGIN TRY
 		thr.SumStackBytesCommitted,
 		thr.SumStackBytesUsed,
 
+		--data from sys.dm_db_session_space_usage, just for background spids, aggregated to a single row
 		su.bkgdsess__user_objects_alloc_page_count,
 		su.bkgdsess__user_objects_dealloc_page_count,
 		su.bkgdsess__internal_objects_alloc_page_count,
 		su.bkgdsess__internal_objects_dealloc_page_count,
 		su.bkgdsess__user_objects_deferred_dealloc_page_count,
 
+		--data from sys.dm_db_task_space_usage, just for background tasks, aggregate to a single row
 		tu.bkgdtask__user_objects_alloc_page_count,
 		tu.bkgdtask__user_objects_dealloc_page_count,
 		tu.bkgdtask__internal_objects_alloc_page_count,
@@ -524,7 +498,7 @@ BEGIN TRY
 		[foreign_committed_kb]
 	FROM sys.dm_os_memory_nodes n;
 
-
+	SET @errorloc = 'dm_os_nodes';
 	INSERT INTO [ServerEye].[dm_os_nodes](
 		[UTCCaptureTime],
 		[LocalCaptureTime],
@@ -555,6 +529,84 @@ BEGIN TRY
 		n.online_scheduler_mask,
 		n.processor_group
 	FROM sys.dm_os_nodes n;
+
+	SET @errorloc = 'dm_os_schedulers';
+	INSERT INTO [ServerEye].[dm_os_schedulers](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[parent_node_id],
+		[scheduler_id],
+		[cpu_id],
+		[status],
+		[is_online],
+		[is_idle],
+		[preemptive_switches_count],
+		[context_switches_count],
+		[idle_switches_count],
+		[current_tasks_count],
+		[runnable_tasks_count],
+		[current_workers_count],
+		[active_workers_count],
+		[work_queue_count],
+		[pending_disk_io_count],
+		[load_factor],
+		[yield_count],
+		[last_timer_activity]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[parent_node_id],
+		[scheduler_id],
+		[cpu_id],
+		[status],
+		[is_online],
+		[is_idle],
+		[preemptive_switches_count],
+		[context_switches_count],
+		[idle_switches_count],
+		[current_tasks_count],
+		[runnable_tasks_count],
+		[current_workers_count],
+		[active_workers_count],
+		[work_queue_count],
+		[pending_disk_io_count],
+		[load_factor],
+		[yield_count],
+		[last_timer_activity]
+	FROM sys.dm_os_schedulers s;
+
+
+	INSERT INTO [ServerEye].[dm_os_workers](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[worker_address],
+		[is_preemptive],
+		[is_sick],
+		[is_in_cc_exception],
+		[is_fatal_exception],
+		[is_inside_catch],
+		[is_in_polling_io_completion_routine],
+		[context_switch_count],
+		[pending_io_count],
+		[pending_io_byte_count],
+		[tasks_processed_count]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[worker_address],
+		[is_preemptive],
+		[is_sick],
+		[is_in_cc_exception],
+		[is_fatal_exception],
+		[is_inside_catch],
+		[is_in_polling_io_completion_routine],
+		[context_switch_count],
+		[pending_io_count],
+		[pending_io_byte_count],
+		[tasks_processed_count]
+	FROM sys.dm_os_workers w;
 
 END TRY
 BEGIN CATCH

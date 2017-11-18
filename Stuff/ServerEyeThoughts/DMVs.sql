@@ -58,8 +58,9 @@ SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE
 ******** Priority 2 ********
 COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_memory_nodes
 COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_nodes
-	SELECT * FROM sys.dm_os_schedulers
-	SELECT * FROM sys.dm_os_workers
+COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_schedulers
+COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_workers
+
 	SELECT * FROM sys.dm_os_memory_clerks order by type
 	SELECT * FROM sys.dm_os_memory_cache_clock_hands
 ******** Priority 2 ********

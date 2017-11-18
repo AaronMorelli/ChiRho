@@ -67,7 +67,7 @@ BEGIN
 		[NumRows]
 	)
 	SELECT 
-		@UTCCaptureTime
+		@UTCCaptureTime,
 		database_id,
 		file_id,
 		allocation_unit_id,
@@ -96,7 +96,7 @@ BEGIN
 		allocation_unit_id,
 		page_type,
 		numa_node
-	HAVING COUNT(*) > 10*128		--Num MB * 128 (pages) to filter down to just alloc units that are larger memory hogs. This should be a config option
+	HAVING COUNT(*) > 10*128;		--Num MB * 128 (pages) to filter down to just alloc units that are larger memory hogs. This should be a config option
 
 
 
