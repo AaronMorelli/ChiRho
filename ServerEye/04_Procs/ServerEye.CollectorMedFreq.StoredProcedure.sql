@@ -715,6 +715,310 @@ BEGIN TRY
 		dupl.DimUserProfileLoginID
 	OPTION(FORCE ORDER);
 
+
+	--dm_os_memory_clerks
+	SET @errorloc = N'dm_os_memory_clerks';
+	INSERT INTO [ServerEye].[dm_os_memory_clerks](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[DimMemoryTrackerID],
+		[memory_node_id],
+		[sum_pages_kb],
+		[sum_virtual_memory_reserved_kb],
+		[sum_virtual_memory_committed_kb],
+		[sum_awe_allocated_kb],
+		[sum_shared_memory_reserved_kb],
+		[sum_shared_memory_committed_kb]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		mem.DimMemoryTrackerID,
+		ss.memory_node_id,
+		sum_pages_kb = SUM(ss.pages_kb),
+		sum_virtual_memory_reserved_kb = SUM(ss.virtual_memory_reserved_kb),
+		sum_virtual_memory_committed_kb = SUM(ss.virtual_memory_committed_kb),
+		sum_awe_allocated_kb = SUM(ss.awe_allocated_kb),
+		sum_shared_memory_reserved_kb = SUM(ss.shared_memory_reserved_kb),
+		sum_shared_memory_committed_kb = SUM(ss.shared_memory_committed_kb)
+	FROM (
+		SELECT 
+			[type] = t.type,
+			[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+						WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+							THEN 'ObjPerm - <dbname>'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+							THEN 'ACRUserStore'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+							THEN 'SecCtxtACRUserStore'
+						ELSE t.name END,
+			t.memory_node_id,
+			t.pages_kb,
+			t.virtual_memory_reserved_kb,
+			t.virtual_memory_committed_kb,
+			t.awe_allocated_kb,
+			t.shared_memory_reserved_kb,
+			t.shared_memory_committed_kb
+		FROM sys.dm_os_memory_clerks t
+	) ss
+		INNER JOIN ServerEye.DimMemoryTracker mem
+			ON mem.type = ss.type
+			AND mem.name = ss.name
+	WHERE mem.IsInClerks = 1
+	GROUP BY mem.DimMemoryTrackerID,
+		ss.memory_node_id;
+
+	SET @errorloc = N'dm_os_memory_cache_clock_hands';
+	INSERT INTO [ServerEye].[dm_os_memory_cache_clock_hands](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[DimMemoryTrackerID],
+		[memory_node_id],
+		[clock_hand],
+		[sum_status_is_suspended],
+		[sum_status_is_running],
+		[sum_rounds_count],
+		[sum_removed_all_rounds_count],
+		[sum_updated_last_round_count],
+		[sum_removed_last_round_count]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		mem.DimMemoryTrackerID,
+		ss.memory_node_id,
+		ss.clock_hand,
+		sum_status_is_suspended = SUM(ss.status_is_suspended),
+		sum_status_is_running = SUM(ss.status_is_running),
+		sum_rounds_count = SUM(ss.rounds_count),
+		sum_removed_all_rounds_count = SUM(ss.removed_all_rounds_count),
+		sum_updated_last_round_count = SUM(ss.updated_last_round_count),
+		sum_removed_last_round_count = SUM(ss.removed_last_round_count)
+	FROM (
+		SELECT 
+			[type] = t.type,
+			[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+						WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+							THEN 'ObjPerm - <dbname>'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+							THEN 'ACRUserStore'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+							THEN 'SecCtxtACRUserStore'
+						ELSE t.name END,
+			cl.memory_node_id,
+			t.clock_hand,
+			[status_is_suspended] = CASE WHEN t.clock_status = 'SUSPENDED' THEN 1 ELSE 0 END,
+			[status_is_running] = CASE WHEN t.clock_status = 'RUNNING' THEN 1 ELSE 0 END,
+			t.rounds_count,
+			t.removed_all_rounds_count,
+			t.updated_last_round_count,
+			t.removed_last_round_count
+		FROM sys.dm_os_memory_cache_clock_hands t	--all of these appear to be in memclerks
+			INNER JOIN sys.dm_os_memory_clerks cl
+				ON t.cache_address = cl.memory_clerk_address
+	) ss
+		INNER JOIN ServerEye.DimMemoryTracker mem
+			ON mem.type = ss.type
+			AND mem.name = ss.name
+	WHERE mem.IsInClockHands = 1
+	GROUP BY mem.DimMemoryTrackerID,
+		ss.memory_node_id,
+		ss.clock_hand;
+
+	SET @errorloc = N'dm_os_memory_cache_counters';
+	INSERT INTO [ServerEye].[dm_os_memory_cache_counters](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[DimMemoryTrackerID],
+		[memory_node_id],
+		[sum_pages_kb],
+		[sum_pages_in_use_kb],
+		[sum_entries_count],
+		[sum_entries_in_use_count]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		mem.DimMemoryTrackerID,
+		ss.memory_node_id,
+
+		sum_pages_kb = SUM(ss.pages_kb),
+		sum_pages_in_use_kb = SUM(ss.pages_in_use_kb),
+		sum_entries_count = SUM(ss.entries_count),
+		sum_entries_in_use_count = SUM(ss.entries_in_use_count)
+	FROM (
+		SELECT 
+			[type] = t.type,
+			[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+						WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+							THEN 'ObjPerm - <dbname>'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+							THEN 'ACRUserStore'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+							THEN 'SecCtxtACRUserStore'
+						ELSE t.name END,
+			cl.memory_node_id,
+			t.pages_kb,
+			t.pages_in_use_kb,
+			t.entries_count,
+			t.entries_in_use_count
+		FROM sys.dm_os_memory_cache_counters t
+			INNER JOIN sys.dm_os_memory_clerks cl
+				ON t.cache_address = cl.memory_clerk_address
+	) ss
+		INNER JOIN ServerEye.DimMemoryTracker mem
+			ON mem.type = ss.type
+			AND mem.name = ss.name
+	WHERE mem.IsInCacheCounters = 1
+	GROUP BY mem.DimMemoryTrackerID,
+		ss.memory_node_id;
+
+
+	SET @errorloc = N'dm_os_memory_cache_hash_tables';
+	INSERT INTO [ServerEye].[dm_os_memory_cache_hash_tables](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[DimMemoryTrackerID],
+		[memory_node_id],
+		[table_level],
+		[sum_buckets_count],
+		[sum_buckets_in_use_count],
+		[min_buckets_min_length],
+		[max_buckets_max_length],
+		[avg_buckets_avg_length],
+		[max_buckets_max_length_ever],
+		[sum_hits_count],
+		[sum_misses_count],
+		[avg_buckets_avg_scan_hit_length],
+		[avg_buckets_avg_scan_miss_length]
+	)
+	SELECT 
+		mem.DimMemoryTrackerID,
+		ss.memory_node_id,
+		ss.table_level,
+
+		[sum_buckets_count] = SUM(ss.buckets_count),
+		[sum_buckets_in_use_count] = SUM(ss.buckets_in_use_count),
+		[min_buckets_min_length] = MIN(ss.buckets_min_length),
+		[max_buckets_max_length] = MAX(ss.buckets_max_length),
+		[avg_buckets_avg_length] = CONVERT(DECIMAL(11,2),AVG(ss.buckets_avg_length*1.)),
+		[max_buckets_max_length_ever] = MAX(ss.buckets_max_length_ever),
+		[sum_hits_count] = SUM(ss.hits_count),
+		[sum_misses_count] = SUM(ss.misses_count),
+		[avg_buckets_avg_scan_hit_length] = CONVERT(DECIMAL(11,2),AVG(ss.buckets_avg_scan_hit_length*1.)),
+		[avg_buckets_avg_scan_miss_length] = CONVERT(DECIMAL(11,2),AVG(ss.buckets_avg_scan_miss_length*1.))
+	FROM (
+		SELECT 
+			[type] = t.type,
+			[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+						WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+							THEN 'ObjPerm - <dbname>'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+							THEN 'ACRUserStore'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+							THEN 'SecCtxtACRUserStore'
+						ELSE t.name END,
+			cl.memory_node_id,
+			t.table_level,
+			t.buckets_count,
+			t.buckets_in_use_count,
+			t.buckets_min_length,
+			t.buckets_max_length,
+			t.buckets_avg_length,
+			t.buckets_max_length_ever,
+			t.hits_count,
+			t.misses_count,
+			t.buckets_avg_scan_hit_length,
+			t.buckets_avg_scan_miss_length
+		FROM sys.dm_os_memory_cache_hash_tables t	--all of these appear to be in mem clerks
+			INNER JOIN sys.dm_os_memory_clerks cl
+				ON t.cache_address = cl.memory_clerk_address
+	) ss
+		INNER JOIN ServerEye.DimMemoryTracker mem
+			ON mem.type = ss.type
+			AND mem.name = ss.name
+	WHERE mem.IsInCacheHashTables = 1
+	GROUP BY mem.DimMemoryTrackerID,
+		ss.memory_node_id,
+		ss.table_level;
+
+
+	SET @errorloc = N'dm_os_memory_pools';
+	INSERT INTO [ServerEye].[dm_os_memory_pools](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[DimMemoryTrackerID],
+		[memory_node_id],
+		[sum_max_free_entries_count],
+		[sum_free_entries_count],
+		[sum_removed_in_all_rounds_count]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		mem.DimMemoryTrackerID,
+		ss.memory_node_id,
+
+		[sum_max_free_entries_count] = SUM(ss.max_free_entries_count),
+		[sum_free_entries_count] = SUM(ss.free_entries_count),
+		[sum_removed_in_all_rounds_count] = SUM(ss.removed_in_all_rounds_count)
+	FROM (
+		SELECT 
+			[type] = t.type,
+			[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+						WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+							THEN 'ObjPerm - <dbname>'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+							THEN 'ACRUserStore'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+							THEN 'SecCtxtACRUserStore'
+						ELSE t.name END,
+			cl.memory_node_id,
+			t.max_free_entries_count,
+			t.free_entries_count,
+			t.removed_in_all_rounds_count
+		FROM sys.dm_os_memory_pools t
+			INNER JOIN sys.dm_os_memory_clerks cl
+				ON t.memory_pool_address = cl.memory_clerk_address
+	) ss
+		INNER JOIN ServerEye.DimMemoryTracker mem
+			ON mem.type = ss.type
+			AND mem.name = ss.name
+	WHERE mem.IsInPools = 1
+	GROUP BY mem.DimMemoryTrackerID,
+		ss.memory_node_id;
+
+	SET @errorloc = N'dm_os_hosts';
+	INSERT INTO [ServerEye].[dm_os_hosts](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[DimMemoryTrackerID],
+		[memory_node_id],
+		[enqueued_tasks_count],
+		[active_tasks_count],
+		[completed_ios_count],
+		[completed_ios_in_bytes],
+		[active_ios_count]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		mem.DimMemoryTrackerID,
+		cl.memory_node_id,
+		t.enqueued_tasks_count,
+		t.active_tasks_count,
+		t.completed_ios_count,
+		t.completed_ios_in_bytes,
+		t.active_ios_count
+	FROM sys.dm_os_hosts t
+		INNER JOIN sys.dm_os_memory_clerks cl
+			ON t.default_memory_clerk_address = cl.memory_clerk_address
+		INNER JOIN ServerEye.DimMemoryTracker mem
+			ON mem.type = t.type
+			AND mem.name = t.name
+	WHERE mem.IsInHosts = 1;
+
+
 	RETURN 0;
 END TRY
 BEGIN CATCH

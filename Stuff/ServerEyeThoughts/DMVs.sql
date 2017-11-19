@@ -61,29 +61,18 @@ COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_nodes
 COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_schedulers
 COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_workers
 
-	SELECT * FROM sys.dm_os_memory_clerks order by type
-	SELECT * FROM sys.dm_os_memory_cache_clock_hands
+COMPLETE MED-FREQ		SELECT * FROM sys.dm_os_memory_clerks
+COMPLETE MED-FREQ		SELECT * FROM sys.dm_os_memory_cache_clock_hands
+COMPLETE MED-FREQ		SELECT * FROM sys.dm_os_memory_cache_counters
+COMPLETE MED-FREQ		SELECT * FROM sys.dm_os_memory_cache_hash_tables
+COMPLETE MED-FREQ		SELECT * FROM sys.dm_os_memory_pools
+COMPLETE MED-FREQ		SELECT * FROM sys.dm_os_hosts
 ******** Priority 2 ********
 
 
 ******** Priority 3 ********
 	--Misc
-	
-	exec sp_server_diagnostics						--Any value here? this runs as an XE session. Some of the info it collects is useful, other info is redundant
-
-	--CPU
-
-	--Memory
-	SELECT * FROM sys.dm_os_memory_broker_clerks
-
-
-
-
-******** Priority 3 ********
-
-
-******** Priority 4 ********
-	--Misc
+	exec sp_server_diagnostics
 	SELECT * FROM sys.dm_resource_governor_resource_pool_volumes
 	SELECT * FROM sys.dm_resource_governor_resource_pools
 	SELECT * FROM sys.dm_resource_governor_workload_groups
@@ -98,10 +87,9 @@ COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_workers
 	--Memory
 	SELECT * FROM sys.dm_exec_query_memory_grants		--agg by pools or groups or whatever?
 	SELECT * FROM sys.dm_exec_query_resource_semaphores
+	SELECT * FROM sys.dm_os_memory_broker_clerks
 	SELECT * FROM sys.dm_os_memory_brokers
-	SELECT * FROM sys.dm_os_memory_cache_counters
-	SELECT * FROM sys.dm_os_memory_cache_hash_tables
-	SELECT * FROM sys.dm_os_memory_pools
+	
 
 	--query stats module
 	SELECT * FROM sys.dm_exec_procedure_stats
@@ -134,7 +122,7 @@ COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_workers
 	select * from sys.server_event_session_fields
 	select * from sys.server_event_session_targets
 	SELECT * FROM sys.dm_xe_session_targets		--is there any value here?
-******** Priority 4 ********
+******** Priority 3 ********
 
 */
 
@@ -407,7 +395,7 @@ SELECT * FROM sys.dm_os_cluster_nodes
 SELECT * FROM sys.dm_os_cluster_properties
 SELECT * FROM sys.dm_os_dispatcher_pools
 SELECT * FROM sys.dm_os_dispatchers
-SELECT * FROM sys.dm_os_hosts
+
 SELECT * FROM sys.dm_os_loaded_modules
 SELECT * FROM sys.dm_os_server_diagnostics_log_configurations
 SELECT * FROM sys.dm_db_objects_disabled_on_compatibility_level_change

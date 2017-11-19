@@ -153,6 +153,230 @@ BEGIN
 		AND ss.is_compressed = dbv.is_compressed
 	);
 
+	/* Populate ServerEye.DimMemoryTracker from these DMVs
+
+		sys.dm_os_memory_clerks
+		sys.dm_os_memory_cache_clock_hands
+		sys.dm_os_memory_cache_counters
+		sys.dm_os_memory_cache_hash_tables
+		sys.dm_os_memory_pools
+		sys.dm_os_hosts
+
+	*/
+	IF OBJECT_ID('tempdb..#MemoryTrackers') IS NOT NULL DROP TABLE #MemoryTrackers;
+	CREATE TABLE #MemoryTrackers (
+		MemoryTrackerType NVARCHAR(128) NOT NULL,
+		MemoryTrackerName NVARCHAR(128) NOT NULL,
+		IsInClerks INT NOT NULL,
+		IsInClockHands INT NOT NULL,
+		IsInCacheCounters INT NOT NULL,
+		IsInCacheHashTables INT NOT NULL,
+		IsInPools INT NOT NULL,
+		IsInHosts INT NOT NULL
+	);
+	
+	INSERT INTO #MemoryTrackers (
+		MemoryTrackerType,
+		MemoryTrackerName,
+		IsInClerks,
+		IsInClockHands,
+		IsInCacheCounters,
+		IsInCacheHashTables,
+		IsInPools,
+		IsInHosts
+	)
+	SELECT 
+		cl.type,
+		cl.name,
+		[IsInClerks] = 1,
+		[IsInClockHands] = 0,
+		[IsInCacheCounters] = 0,
+		[IsInCacheHashTables] = 0,
+		[IsInPools] = 0,
+		[IsInHosts] = 0
+	FROM (
+		SELECT DISTINCT
+			[type] = t.type,
+			[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+						WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+							THEN 'ObjPerm - <dbname>'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+							THEN 'ACRUserStore'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+							THEN 'SecCtxtACRUserStore'
+						ELSE t.name END
+		FROM sys.dm_os_memory_clerks t
+	) cl
+
+	UNION ALL 
+
+	SELECT 
+		ch.type, 
+		ch.name,
+		[IsInClerks] = 0,
+		[IsInClockHands] = 1,
+		[IsInCacheCounters] = 0,
+		[IsInCacheHashTables] = 0,
+		[IsInPools] = 0,
+		[IsInHosts] = 0
+	FROM (
+		SELECT DISTINCT
+			[type] = t.type,
+			[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+						WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+							THEN 'ObjPerm - <dbname>'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+							THEN 'ACRUserStore'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+							THEN 'SecCtxtACRUserStore'
+						ELSE t.name END
+		FROM sys.dm_os_memory_cache_clock_hands t
+	) ch
+
+	UNION ALL
+
+	SELECT 
+		cc.type, 
+		cc.name,
+		[IsInClerks] = 0,
+		[IsInClockHands] = 0,
+		[IsInCacheCounters] = 1,
+		[IsInCacheHashTables] = 0,
+		[IsInPools] = 0,
+		[IsInHosts] = 0
+	FROM (
+		SELECT DISTINCT
+			[type] = t.type,
+			[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+						WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+							THEN 'ObjPerm - <dbname>'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+							THEN 'ACRUserStore'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+							THEN 'SecCtxtACRUserStore'
+						ELSE t.name END
+		FROM sys.dm_os_memory_cache_counters t
+	) cc
+
+	UNION ALL
+
+	SELECT 
+		ht.type, 
+		ht.name,
+		[IsInClerks] = 0,
+		[IsInClockHands] = 0,
+		[IsInCacheCounters] = 0,
+		[IsInCacheHashTables] = 1,
+		[IsInPools] = 0,
+		[IsInHosts] = 0
+	FROM (
+		SELECT DISTINCT
+			[type] = t.type,
+			[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+						WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+							THEN 'ObjPerm - <dbname>'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+							THEN 'ACRUserStore'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+							THEN 'SecCtxtACRUserStore'
+						ELSE t.name END
+		FROM sys.dm_os_memory_cache_hash_tables t
+	) ht
+
+	UNION ALL
+
+	SELECT 
+		mp.type, 
+		mp.name,
+		[IsInClerks] = 0,
+		[IsInClockHands] = 0,
+		[IsInCacheCounters] = 0,
+		[IsInCacheHashTables] = 0,
+		[IsInPools] = 1,
+		[IsInHosts] = 0
+	FROM (
+		SELECT DISTINCT
+			t.type, 
+			t.name
+		FROM sys.dm_os_memory_pools t
+	) mp
+
+	UNION ALL 
+
+	SELECT 
+		h.type, 
+		h.name,
+		[IsInClerks] = 0,
+		[IsInClockHands] = 0,
+		[IsInCacheCounters] = 0,
+		[IsInCacheHashTables] = 0,
+		[IsInPools] = 0,
+		[IsInHosts] = 1
+	FROM (
+		SELECT DISTINCT
+			h.type,
+			h.name
+		FROM sys.dm_os_hosts h
+	) h;
+
+		
+	MERGE [ServerEye].[DimMemoryTracker] AS tgt
+	USING (
+		SELECT 
+			t.MemoryTrackerType,
+			t.MemoryTrackerName,
+			[IsInClerks] = MAX(t.IsInClerks),
+			[IsInClockHands] = MAX(t.IsInClockHands),
+			[IsInCacheCounters] = MAX(t.IsInCacheCounters),
+			[IsInCacheHashTables] = MAX(t.IsInCacheHashTables),
+			[IsInPools] = MAX(t.IsInPools),
+			[IsInHosts] = MAX(t.IsInHosts)
+		FROM #MemoryTrackers t
+		GROUP BY t.MemoryTrackerType,
+			t.MemoryTrackerName
+	) src
+		ON src.MemoryTrackerType = tgt.type
+		AND src.MemoryTrackerName = tgt.name
+	WHEN NOT MATCHED BY TARGET THEN INSERT (
+		[type],
+		[name],
+
+		[IsInClerks],
+		[IsInClockHands],
+		[IsInCacheCounters],
+		[IsInCacheHashTables],
+		[IsInPools],
+		[IsInHosts]
+		)
+	VALUES (
+		src.MemoryTrackerType,
+		src.MemoryTrackerName,
+		src.IsInClerks,
+		src.IsInClockHands,
+		src.IsInCacheCounters,
+		src.IsInCacheHashTables,
+		src.IsInPools,
+		src.IsInHosts
+	)
+	WHEN MATCHED 
+	AND (
+		tgt.IsInClerks <> src.IsInClerks
+		OR tgt.IsInClockHands <> src.IsInClockHands
+		OR tgt.IsInCacheCounters <> src.IsInCacheCounters
+		OR tgt.IsInCacheHashTables <> src.IsInCacheHashTables
+		OR tgt.IsInPools <> src.IsInPools
+		OR tgt.IsInHosts <> src.IsInHosts
+	)
+	THEN UPDATE 
+	SET tgt.IsInClerks = src.IsInClerks,
+		tgt.IsInClockHands = src.IsInClockHands,
+		tgt.IsInCacheCounters = src.IsInCacheCounters,
+		tgt.IsInCacheHashTables = src.IsInCacheHashTables,
+		tgt.IsInPools = src.IsInPools,
+		tgt.IsInHosts = src.IsInHosts;
+
+
+
 	RETURN 0;
 END
 GO

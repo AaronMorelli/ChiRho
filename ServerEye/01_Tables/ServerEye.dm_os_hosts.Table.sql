@@ -19,43 +19,34 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: ServerEye.dm_os_workers.Table.sql
+	FILE NAME: ServerEye.dm_os_hosts.Table.sql
 
-	TABLE NAME: ServerEye.dm_os_workers
+	TABLE NAME: ServerEye.dm_os_hosts
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Snapshots sys.dm_os_workers (in High-frequency metrics)
+	PURPOSE: Snapshots sys.dm_os_hosts (in Med-frequency metrics)
 */
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-SET ANSI_PADDING ON
-GO
-CREATE TABLE [ServerEye].[dm_os_workers](
-	[UTCCaptureTime]		[datetime] NOT NULL,
-	[LocalCaptureTime]		[datetime] NOT NULL,
-	[worker_address]		[varbinary](8) NOT NULL,
-	[is_preemptive]			[bit] NULL,
-	[is_sick]				[bit] NULL,
-	[is_in_cc_exception]	[bit] NULL,
-	[is_fatal_exception]	[bit] NULL,
-	[is_inside_catch]		[bit] NULL,
-	[is_in_polling_io_completion_routine] [bit] NULL,
-	[context_switch_count]	[int] NOT NULL,
-	[pending_io_count]		[int] NOT NULL,
-	[pending_io_byte_count] [bigint] NOT NULL,
-	[tasks_processed_count] [int] NOT NULL,
-CONSTRAINT [PKdm_os_workers] PRIMARY KEY CLUSTERED 
+CREATE TABLE [ServerEye].[dm_os_hosts](
+	[UTCCaptureTime] [datetime] NOT NULL,
+	[LocalCaptureTime] [datetime] NOT NULL,
+	[DimMemoryTrackerID] [smallint] NOT NULL,
+	[memory_node_id] [smallint] NOT NULL,
+	[enqueued_tasks_count] [int] NULL,
+	[active_tasks_count] [int] NULL,
+	[completed_ios_count] [int] NULL,
+	[completed_ios_in_bytes] [bigint] NULL,
+	[active_ios_count] [int] NULL,
+ CONSTRAINT [PKdm_os_hosts] PRIMARY KEY CLUSTERED 
 (
 	[UTCCaptureTime] ASC,
-	[worker_address] ASC
+	[DimMemoryTrackerID] ASC,
+	[memory_node_id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 GO
-SET ANSI_PADDING OFF
-GO
+
+
