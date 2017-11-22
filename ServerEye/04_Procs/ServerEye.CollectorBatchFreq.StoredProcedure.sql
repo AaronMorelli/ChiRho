@@ -272,6 +272,10 @@ BEGIN
 			ON i.index_handle = g.index_handle;
 
 
+	--TODO: surround with try-catch
+	EXEC ServerEye.CollectorBatchFreqPlanCache @init = @init, @LocalCaptureTime = @LocalCaptureTime, @UTCCaptureTime = @UTCCaptureTime,
+										@SQLServerStartTime	= @SQLServerStartTime;
+
 
 	--Probably need a way to turn this off for larger systems.
 	INSERT INTO [ServerEye].[BufDescriptors] (
