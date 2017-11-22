@@ -57,6 +57,19 @@ CREATE TABLE [ServerEye].[dm_os_schedulers](
 	[load_factor]				[int] NOT NULL,
 	[yield_count]				[int] NOT NULL,
 	[last_timer_activity]		[bigint] NOT NULL,
+
+	--aggregated attributes from dm_os_workers
+	[sum_is_preemptive]			[int] NOT NULL,
+	[sum_is_sick]				[int] NOT NULL,
+	[sum_is_in_cc_exception]	[int] NOT NULL,
+	[sum_is_fatal_exception]	[int] NOT NULL,
+	[sum_is_inside_catch]		[int] NOT NULL,
+	[sum_is_in_polling_io_completion_routine] [int] NOT NULL,
+	[sum_context_switch_count]	[bigint] NOT NULL,
+	[sum_pending_io_count]		[bigint] NOT NULL,
+	[sum_pending_io_byte_count] [bigint] NOT NULL,
+	[sum_tasks_processed_count] [bigint] NOT NULL,
+	[NumWorkers]				[int] NOT NULL
 CONSTRAINT [PKdm_os_schedulers] PRIMARY KEY CLUSTERED 
 (
 	[UTCCaptureTime] ASC,

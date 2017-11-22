@@ -63,12 +63,34 @@ BEGIN
 	--To prevent this proc from damaging the installation after it has already been run, check for existing data.
 	IF EXISTS (SELECT * FROM ServerEye.Options)
 		OR EXISTS (SELECT * FROM ServerEye.UserCollectionOptions)
+		OR EXISTS (SELECT * 
+					FROM ServerEye.DatabaseInclusion di
+						INNER JOIN sys.databases d
+							ON di.DBName = d.name
+					WHERE NOT (di.InclusionType = N'IndexStats'
+							AND di.DBName = DB_NAME()
+							)
+					)
 	BEGIN
 		RAISERROR('The ServerEye configuration tables are not empty. You must clear these tables first before this procedure will insert config data', 16,1);
 		RETURN -2;
 	END
 
-
+	IF NOT EXISTS (
+		SELECT * 
+			FROM ServerEye.DatabaseInclusion di
+				INNER JOIN sys.databases d
+					ON di.DBName = d.name
+			WHERE di.InclusionType = N'IndexStats'
+			AND di.DBName = DB_NAME()
+	)
+	BEGIN
+		INSERT INTO ServerEye.DatabaseInclusion (
+			DBName,
+			InclusionType
+		)
+		SELECT DB_NAME(), 'IndexStats';
+	END
 
 	--Options
 	EXEC ServerEye.ResetOptions; 

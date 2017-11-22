@@ -530,6 +530,34 @@ BEGIN TRY
 		n.processor_group
 	FROM sys.dm_os_nodes n;
 
+	SET @errorloc = 'dm_os_nodes';
+	INSERT INTO [ServerEye].[dm_os_memory_broker_clerks](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[clerk_name],
+		[total_kb],
+		[simulated_kb],
+		[simulation_benefit],
+		[internal_benefit],
+		[external_benefit],
+		[value_of_memory],
+		[periodic_freed_kb],
+		[internal_freed_kb]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[clerk_name],
+		[total_kb],
+		[simulated_kb],
+		[simulation_benefit],
+		[internal_benefit],
+		[external_benefit],
+		[value_of_memory],
+		[periodic_freed_kb],
+		[internal_freed_kb]
+	FROM sys.dm_os_memory_broker_clerks m;
+	
 	SET @errorloc = 'dm_os_schedulers';
 	INSERT INTO [ServerEye].[dm_os_schedulers](
 		[UTCCaptureTime],
@@ -551,7 +579,19 @@ BEGIN TRY
 		[pending_disk_io_count],
 		[load_factor],
 		[yield_count],
-		[last_timer_activity]
+		[last_timer_activity],
+
+		[sum_is_preemptive],
+		[sum_is_sick],
+		[sum_is_in_cc_exception],
+		[sum_is_fatal_exception],
+		[sum_is_inside_catch],
+		[sum_is_in_polling_io_completion_routine],
+		[sum_context_switch_count],
+		[sum_pending_io_count],
+		[sum_pending_io_byte_count],
+		[sum_tasks_processed_count],
+		[NumWorkers]
 	)
 	SELECT 
 		@UTCCaptureTime,
@@ -573,40 +613,58 @@ BEGIN TRY
 		[pending_disk_io_count],
 		[load_factor],
 		[yield_count],
-		[last_timer_activity]
-	FROM sys.dm_os_schedulers s;
+		[last_timer_activity],
+
+		[sum_is_preemptive] = ISNULL(w.sum_is_preemptive,0),
+		[sum_is_sick] = ISNULL(w.sum_is_sick,0),
+		[sum_is_in_cc_exception] = ISNULL(w.sum_is_in_cc_exception,0),
+		[sum_is_fatal_exception] = ISNULL(w.sum_is_fatal_exception,0),
+		[sum_is_inside_catch] = ISNULL(w.sum_is_inside_catch,0),
+		[sum_is_in_polling_io_completion_routine] = ISNULL(w.sum_is_in_polling_io_completion_routine,0),
+		[sum_context_switch_count] = ISNULL(w.sum_context_switch_count,0),
+		[sum_pending_io_count] = ISNULL(w.sum_pending_io_count,0),
+		[sum_pending_io_byte_count] = ISNULL(w.sum_pending_io_byte_count,0),
+		[sum_tasks_processed_count] = ISNULL(w.sum_tasks_processed_count,0),
+		[NumWorkers] = ISNULL(w.NumWorkers,0)
+	FROM sys.dm_os_schedulers s
+		LEFT OUTER JOIN (
+		SELECT 
+			w.scheduler_address,
+			[sum_is_preemptive] = SUM(CASE WHEN w.is_preemptive = 1 THEN 1 ELSE 0 END),
+			[sum_is_sick] = SUM(CASE WHEN w.is_sick = 1 THEN 1 ELSE 0 END),
+			[sum_is_in_cc_exception] = SUM(CASE WHEN w.is_in_cc_exception = 1 THEN 1 ELSE 0 END),
+			[sum_is_fatal_exception] = SUM(CASE WHEN w.is_fatal_exception = 1 THEN 1 ELSE 0 END),
+			[sum_is_inside_catch] = SUM(CASE WHEN w.is_inside_catch = 1 THEN 1 ELSE 0 END),
+			[sum_is_in_polling_io_completion_routine] = SUM(CASE WHEN w.is_in_polling_io_completion_routine = 1 THEN 1 ELSE 0 END),
+			[sum_context_switch_count] = SUM(w.context_switch_count),
+			[sum_pending_io_count] = SUM(w.pending_io_count),
+			[sum_pending_io_byte_count] = SUM(w.pending_io_byte_count),
+			[sum_tasks_processed_count] = SUM(w.tasks_processed_count),
+			NumWorkers = COUNT(*)
+		FROM sys.dm_os_workers w
+		GROUP BY w.scheduler_address
+		) w
+			ON w.scheduler_address = s.scheduler_address;
 
 
-	INSERT INTO [ServerEye].[dm_os_workers](
+	SET @errorloc = 'Hi-Freq Perfmon';
+	INSERT INTO [ServerEye].[FactPerformanceCounter](
 		[UTCCaptureTime],
-		[LocalCaptureTime],
-		[worker_address],
-		[is_preemptive],
-		[is_sick],
-		[is_in_cc_exception],
-		[is_fatal_exception],
-		[is_inside_catch],
-		[is_in_polling_io_completion_routine],
-		[context_switch_count],
-		[pending_io_count],
-		[pending_io_byte_count],
-		[tasks_processed_count]
+		[DimPerformanceCounterID],
+		[cntr_value]
 	)
 	SELECT 
 		@UTCCaptureTime,
-		@LocalCaptureTime,
-		[worker_address],
-		[is_preemptive],
-		[is_sick],
-		[is_in_cc_exception],
-		[is_fatal_exception],
-		[is_inside_catch],
-		[is_in_polling_io_completion_routine],
-		[context_switch_count],
-		[pending_io_count],
-		[pending_io_byte_count],
-		[tasks_processed_count]
-	FROM sys.dm_os_workers w;
+		dpc.DimPerformanceCounterID,
+		pc.cntr_value
+	FROM ServerEye.DimPerformanceCounter dpc
+		INNER hash JOIN
+		sys.dm_os_performance_counters pc
+			ON dpc.object_name = pc.object_name
+			AND dpc.counter_name = pc.counter_name
+			AND dpc.instance_name = pc.instance_name
+	WHERE dpc.CounterFrequency = 1		--Hi-freq code
+	OPTION(FORCE ORDER);
 
 END TRY
 BEGIN CATCH

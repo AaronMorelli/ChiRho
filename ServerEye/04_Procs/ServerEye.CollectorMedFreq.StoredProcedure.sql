@@ -565,6 +565,7 @@ BEGIN TRY
 		[DimUserProfileConnID],
 		[DimUserProfileProgramID],
 		[DimUserProfileLoginID],
+		[NumRows],
 		[conn__connect_time_min],
 		[conn__connect_time_max],
 		[conn__num_reads_sum],
@@ -599,6 +600,7 @@ BEGIN TRY
 		dupp.DimUserProfileProgramID,
 		dupl.DimUserProfileLoginID,
 
+		[NumRows] = COUNT(*),
 		[conn__connect_time_min] = MIN(ss.connect_time),
 		[conn__connect_time_max] = MAX(ss.connect_time),
 		[conn__num_reads_sum] = SUM(ss.num_reads),
@@ -713,6 +715,784 @@ BEGIN TRY
 	GROUP BY dupc.DimUserProfileConnID,
 		dupp.DimUserProfileProgramID,
 		dupl.DimUserProfileLoginID
+	OPTION(FORCE ORDER);
+
+
+	--dm_os_memory_clerks
+	SET @errorloc = N'dm_os_memory_clerks';
+	INSERT INTO [ServerEye].[dm_os_memory_clerks](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[DimMemoryTrackerID],
+		[memory_node_id],
+		[NumUniqueClerks],
+		[sum_pages_kb],
+		[sum_virtual_memory_reserved_kb],
+		[sum_virtual_memory_committed_kb],
+		[sum_awe_allocated_kb],
+		[sum_shared_memory_reserved_kb],
+		[sum_shared_memory_committed_kb]
+	)
+	SELECT 
+		ss2.UTCCaptureTime,
+		ss2.LocalCaptureTime,
+		ss2.DimMemoryTrackerID,
+		ss2.memory_node_id,
+		ss2.NumRows,
+		ss2.sum_pages_kb,
+		ss2.sum_virtual_memory_reserved_kb,
+		ss2.sum_virtual_memory_committed_kb,
+		ss2.sum_awe_allocated_kb,
+		ss2.sum_shared_memory_reserved_kb,
+		ss2.sum_shared_memory_committed_kb
+	FROM (
+		SELECT 
+			[UTCCaptureTime] = @UTCCaptureTime,
+			[LocalCaptureTime] = @LocalCaptureTime,
+			mem.DimMemoryTrackerID,
+			ss.memory_node_id,
+			NumRows = COUNT(*),
+			sum_pages_kb = SUM(ss.pages_kb),
+			sum_virtual_memory_reserved_kb = SUM(ss.virtual_memory_reserved_kb),
+			sum_virtual_memory_committed_kb = SUM(ss.virtual_memory_committed_kb),
+			sum_awe_allocated_kb = SUM(ss.awe_allocated_kb),
+			sum_shared_memory_reserved_kb = SUM(ss.shared_memory_reserved_kb),
+			sum_shared_memory_committed_kb = SUM(ss.shared_memory_committed_kb)
+		FROM (
+			SELECT 
+				[type] = t.type,
+				[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+							WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+								THEN 'ObjPerm - <dbname>'
+							WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+								THEN 'ACRUserStore'
+							WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+								THEN 'SecCtxtACRUserStore'
+							ELSE t.name END,
+				t.memory_node_id,
+				t.pages_kb,
+				t.virtual_memory_reserved_kb,
+				t.virtual_memory_committed_kb,
+				t.awe_allocated_kb,
+				t.shared_memory_reserved_kb,
+				t.shared_memory_committed_kb
+			FROM sys.dm_os_memory_clerks t
+		) ss
+			INNER JOIN ServerEye.DimMemoryTracker mem
+				ON mem.type = ss.type
+				AND mem.name = ss.name
+		WHERE mem.IsInClerks = 1
+		GROUP BY mem.DimMemoryTrackerID,
+			ss.memory_node_id
+	) ss2
+	WHERE ISNULL(ss2.sum_pages_kb,0) > 0
+	OR ISNULL(ss2.sum_virtual_memory_reserved_kb,0) > 0
+	OR ISNULL(ss2.sum_virtual_memory_committed_kb,0) > 0
+	OR ISNULL(ss2.sum_awe_allocated_kb,0) > 0
+	OR ISNULL(ss2.sum_shared_memory_reserved_kb,0) > 0
+	OR ISNULL(ss2.sum_shared_memory_committed_kb,0) > 0;
+
+	SET @errorloc = N'dm_os_memory_cache_clock_hands';
+	INSERT INTO [ServerEye].[dm_os_memory_cache_clock_hands](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[DimMemoryTrackerID],
+		[memory_node_id],
+		[clock_hand],
+		[NumUniqueRows],
+		[sum_status_is_suspended],
+		[sum_status_is_running],
+		[sum_rounds_count],
+		[sum_removed_all_rounds_count],
+		[sum_updated_last_round_count],
+		[sum_removed_last_round_count]
+	)
+	SELECT 
+		ss2.UTCCaptureTime,
+		ss2.LocalCaptureTime,
+		ss2.DimMemoryTrackerID,
+		ss2.memory_node_id,
+		ss2.clock_hand,
+		ss2.NumRows,
+		ss2.sum_status_is_suspended,
+		ss2.sum_status_is_running,
+		ss2.sum_rounds_count,
+		ss2.sum_removed_all_rounds_count,
+		ss2.sum_updated_last_round_count,
+		ss2.sum_removed_last_round_count
+	FROM (
+		SELECT 
+			[UTCCaptureTime] = @UTCCaptureTime,
+			[LocalCaptureTime] = @LocalCaptureTime,
+			mem.DimMemoryTrackerID,
+			ss.memory_node_id,
+			ss.clock_hand,
+			NumRows = COUNT(*),
+			sum_status_is_suspended = SUM(ss.status_is_suspended),
+			sum_status_is_running = SUM(ss.status_is_running),
+			sum_rounds_count = SUM(ss.rounds_count),
+			sum_removed_all_rounds_count = SUM(ss.removed_all_rounds_count),
+			sum_updated_last_round_count = SUM(ss.updated_last_round_count),
+			sum_removed_last_round_count = SUM(ss.removed_last_round_count)
+		FROM (
+			SELECT 
+				[type] = t.type,
+				[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+							WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+								THEN 'ObjPerm - <dbname>'
+							WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+								THEN 'ACRUserStore'
+							WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+								THEN 'SecCtxtACRUserStore'
+							ELSE t.name END,
+				cl.memory_node_id,
+				t.clock_hand,
+				[status_is_suspended] = CASE WHEN t.clock_status = 'SUSPENDED' THEN 1 ELSE 0 END,
+				[status_is_running] = CASE WHEN t.clock_status = 'RUNNING' THEN 1 ELSE 0 END,
+				t.rounds_count,
+				t.removed_all_rounds_count,
+				t.updated_last_round_count,
+				t.removed_last_round_count
+			FROM sys.dm_os_memory_cache_clock_hands t	--all of these appear to be in memclerks
+				INNER JOIN sys.dm_os_memory_clerks cl
+					ON t.cache_address = cl.memory_clerk_address
+		) ss
+			INNER JOIN ServerEye.DimMemoryTracker mem
+				ON mem.type = ss.type
+				AND mem.name = ss.name
+		WHERE mem.IsInClockHands = 1
+		GROUP BY mem.DimMemoryTrackerID,
+			ss.memory_node_id,
+			ss.clock_hand
+	) ss2
+	WHERE ISNULL(ss2.sum_rounds_count,0) > 0
+	OR ISNULL(ss2.sum_removed_all_rounds_count,0) > 0
+	OR ISNULL(ss2.sum_updated_last_round_count,0) > 0
+	OR ISNULL(ss2.sum_removed_last_round_count,0) > 0;
+
+	SET @errorloc = N'dm_os_memory_cache_counters';
+	INSERT INTO [ServerEye].[dm_os_memory_cache_counters](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[DimMemoryTrackerID],
+		[memory_node_id],
+		[NumUniqueRows],
+		[sum_pages_kb],
+		[sum_pages_in_use_kb],
+		[sum_entries_count],
+		[sum_entries_in_use_count]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		mem.DimMemoryTrackerID,
+		ss.memory_node_id,
+		NumRows = COUNT(*),
+		sum_pages_kb = SUM(ss.pages_kb),
+		sum_pages_in_use_kb = SUM(ss.pages_in_use_kb),
+		sum_entries_count = SUM(ss.entries_count),
+		sum_entries_in_use_count = SUM(ss.entries_in_use_count)
+	FROM (
+		SELECT 
+			[type] = t.type,
+			[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+						WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+							THEN 'ObjPerm - <dbname>'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+							THEN 'ACRUserStore'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+							THEN 'SecCtxtACRUserStore'
+						ELSE t.name END,
+			cl.memory_node_id,
+			t.pages_kb,
+			t.pages_in_use_kb,
+			t.entries_count,
+			t.entries_in_use_count
+		FROM sys.dm_os_memory_cache_counters t
+			INNER JOIN sys.dm_os_memory_clerks cl
+				ON t.cache_address = cl.memory_clerk_address
+	) ss
+		INNER JOIN ServerEye.DimMemoryTracker mem
+			ON mem.type = ss.type
+			AND mem.name = ss.name
+	WHERE mem.IsInCacheCounters = 1
+	GROUP BY mem.DimMemoryTrackerID,
+		ss.memory_node_id;
+
+
+	SET @errorloc = N'dm_os_memory_cache_hash_tables';
+	INSERT INTO [ServerEye].[dm_os_memory_cache_hash_tables](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[DimMemoryTrackerID],
+		[memory_node_id],
+		[table_level],
+		[NumUniqueRows],
+		[sum_buckets_count],
+		[sum_buckets_in_use_count],
+		[min_buckets_min_length],
+		[max_buckets_max_length],
+		[avg_buckets_avg_length],
+		[max_buckets_max_length_ever],
+		[sum_hits_count],
+		[sum_misses_count],
+		[avg_buckets_avg_scan_hit_length],
+		[avg_buckets_avg_scan_miss_length]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		mem.DimMemoryTrackerID,
+		ss.memory_node_id,
+		ss.table_level,
+		[NumRows] = COUNT(*),
+		[sum_buckets_count] = SUM(ss.buckets_count),
+		[sum_buckets_in_use_count] = SUM(ss.buckets_in_use_count),
+		[min_buckets_min_length] = MIN(ss.buckets_min_length),
+		[max_buckets_max_length] = MAX(ss.buckets_max_length),
+		[avg_buckets_avg_length] = CONVERT(DECIMAL(11,2),AVG(ss.buckets_avg_length*1.)),
+		[max_buckets_max_length_ever] = MAX(ss.buckets_max_length_ever),
+		[sum_hits_count] = SUM(ss.hits_count),
+		[sum_misses_count] = SUM(ss.misses_count),
+		[avg_buckets_avg_scan_hit_length] = CONVERT(DECIMAL(11,2),AVG(ss.buckets_avg_scan_hit_length*1.)),
+		[avg_buckets_avg_scan_miss_length] = CONVERT(DECIMAL(11,2),AVG(ss.buckets_avg_scan_miss_length*1.))
+	FROM (
+		SELECT 
+			[type] = t.type,
+			[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+						WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+							THEN 'ObjPerm - <dbname>'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+							THEN 'ACRUserStore'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+							THEN 'SecCtxtACRUserStore'
+						ELSE t.name END,
+			cl.memory_node_id,
+			t.table_level,
+			t.buckets_count,
+			t.buckets_in_use_count,
+			t.buckets_min_length,
+			t.buckets_max_length,
+			t.buckets_avg_length,
+			t.buckets_max_length_ever,
+			t.hits_count,
+			t.misses_count,
+			t.buckets_avg_scan_hit_length,
+			t.buckets_avg_scan_miss_length
+		FROM sys.dm_os_memory_cache_hash_tables t	--all of these appear to be in mem clerks
+			INNER JOIN sys.dm_os_memory_clerks cl
+				ON t.cache_address = cl.memory_clerk_address
+	) ss
+		INNER JOIN ServerEye.DimMemoryTracker mem
+			ON mem.type = ss.type
+			AND mem.name = ss.name
+	WHERE mem.IsInCacheHashTables = 1
+	GROUP BY mem.DimMemoryTrackerID,
+		ss.memory_node_id,
+		ss.table_level;
+
+
+	SET @errorloc = N'dm_os_memory_pools';
+	INSERT INTO [ServerEye].[dm_os_memory_pools](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[DimMemoryTrackerID],
+		[memory_node_id],
+		[NumUniqueRows],
+		[sum_max_free_entries_count],
+		[sum_free_entries_count],
+		[sum_removed_in_all_rounds_count]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		mem.DimMemoryTrackerID,
+		ss.memory_node_id,
+		[NumUniqueRows] = COUNT(*),
+		[sum_max_free_entries_count] = SUM(ss.max_free_entries_count),
+		[sum_free_entries_count] = SUM(ss.free_entries_count),
+		[sum_removed_in_all_rounds_count] = SUM(ss.removed_in_all_rounds_count)
+	FROM (
+		SELECT 
+			[type] = t.type,
+			[name] = CASE WHEN t.type = 'USERSTORE_DBMETADATA' THEN '<dbname>' 
+						WHEN t.type = 'USERSTORE_OBJPERM' AND t.name LIKE 'ObjPerm%'
+							THEN 'ObjPerm - <dbname>'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'ACRUserStore%'
+							THEN 'ACRUserStore'
+						WHEN t.type = 'USERSTORE_TOKENPERM' AND t.name LIKE 'SecCtxtACRUserStore%'
+							THEN 'SecCtxtACRUserStore'
+						ELSE t.name END,
+			cl.memory_node_id,
+			t.max_free_entries_count,
+			t.free_entries_count,
+			t.removed_in_all_rounds_count
+		FROM sys.dm_os_memory_pools t
+			INNER JOIN sys.dm_os_memory_clerks cl
+				ON t.memory_pool_address = cl.memory_clerk_address
+	) ss
+		INNER JOIN ServerEye.DimMemoryTracker mem
+			ON mem.type = ss.type
+			AND mem.name = ss.name
+	WHERE mem.IsInPools = 1
+	GROUP BY mem.DimMemoryTrackerID,
+		ss.memory_node_id;
+
+	SET @errorloc = N'dm_os_hosts';
+	INSERT INTO [ServerEye].[dm_os_hosts](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[DimMemoryTrackerID],
+		[memory_node_id],
+		[enqueued_tasks_count],
+		[active_tasks_count],
+		[completed_ios_count],
+		[completed_ios_in_bytes],
+		[active_ios_count]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		mem.DimMemoryTrackerID,
+		cl.memory_node_id,
+		t.enqueued_tasks_count,
+		t.active_tasks_count,
+		t.completed_ios_count,
+		t.completed_ios_in_bytes,
+		t.active_ios_count
+	FROM sys.dm_os_hosts t
+		INNER JOIN sys.dm_os_memory_clerks cl
+			ON t.default_memory_clerk_address = cl.memory_clerk_address
+		INNER JOIN ServerEye.DimMemoryTracker mem
+			ON mem.type = t.type
+			AND mem.name = t.name
+	WHERE mem.IsInHosts = 1;
+
+
+	SET @errorloc = N'dm_os_memory_brokers';
+	INSERT INTO [ServerEye].[dm_os_memory_brokers](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[pool_id],
+		[memory_broker_type],
+		[allocations_kb],
+		[allocations_kb_per_sec],
+		[predicted_allocations_kb],
+		[target_allocations_kb],
+		[future_allocations_kb],
+		[overall_limit_kb],
+		[last_notification]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[pool_id],
+		[memory_broker_type],
+		[allocations_kb],
+		[allocations_kb_per_sec],
+		[predicted_allocations_kb],
+		[target_allocations_kb],
+		[future_allocations_kb],
+		[overall_limit_kb],
+		[last_notification]
+	FROM sys.dm_os_memory_brokers;
+
+
+	SET @errorloc = N'dm_exec_query_resource_semaphores';
+	INSERT INTO [ServerEye].[dm_exec_query_resource_semaphores](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[pool_id],
+		[resource_semaphore_id],
+		[target_memory_kb],
+		[max_target_memory_kb],
+		[total_memory_kb],
+		[available_memory_kb],
+		[granted_memory_kb],
+		[used_memory_kb],
+		[grantee_count],
+		[waiter_count],
+		[timeout_error_count],
+		[forced_grant_count],
+
+		[NumGrantRows],
+		[sum_dop],
+		[earliest_request_time],
+		[longest_granted_delay_sec],
+		[sum_requested_memory_kb],
+		[max_requested_memory_kb],
+		[sum_required_memory_kb],
+		[max_required_memory_kb],
+		[sum_max_used_memory_kb],
+		[max_max_used_memory_kb],
+		[sum_wait_time_ms],
+		[max_wait_time_ms],
+		[num_is_small]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		ISNULL(s.[pool_id],-1),				--technically a null-able field though I don't expect any
+		ISNULL(s.[resource_semaphore_id],-1),	--ditto
+		[target_memory_kb],
+		[max_target_memory_kb],
+		[total_memory_kb],
+		[available_memory_kb],
+		[granted_memory_kb],
+		[used_memory_kb],
+		[grantee_count],
+		[waiter_count],
+		[timeout_error_count],
+		[forced_grant_count],
+
+		[NumGrantRows] = mg.NumRows,
+		[sum_dop] = mg.sum_dop,
+		[earliest_request_time] = mg.earliest_request_time,
+		[longest_granted_delay_sec] = mg.longest_granted_delay_sec,
+		[sum_requested_memory_kb] = mg.sum_requested_memory_kb,
+		[max_requested_memory_kb] = mg.max_requested_memory_kb,
+		[sum_required_memory_kb] = mg.sum_required_memory_kb,
+		[max_required_memory_kb] = mg.max_required_memory_kb,
+		[sum_max_used_memory_kb] = mg.sum_max_used_memory_kb,
+		[max_max_used_memory_kb] = mg.max_max_used_memory_kb,
+		[sum_wait_time_ms] = mg.sum_wait_time_ms,
+		[max_wait_time_ms] = mg.max_wait_time_ms,
+		[num_is_small] = mg.num_is_small
+
+	FROM dm_exec_query_resource_semaphores s
+		LEFT OUTER JOIN (
+			SELECT 
+				m.pool_id,
+				m.resource_semaphore_id,
+				NumRows = COUNT(*),
+				sum_dop = SUM(m.dop),
+				earliest_request_time = MIN(m.request_time),
+				longest_granted_delay_sec = MAX(DATEDIFF(SECOND, m.request_time, m.grant_time)),
+				sum_requested_memory_kb = SUM(m.requested_memory_kb),
+				max_requested_memory_kb = MAX(m.requested_memory_kb),
+				sum_required_memory_kb = SUM(m.required_memory_kb),
+				max_required_memory_kb = MAX(m.required_memory_kb),
+				sum_max_used_memory_kb = SUM(m.max_used_memory_kb),
+				max_max_used_memory_kb = MAX(m.max_used_memory_kb),
+				sum_wait_time_ms = SUM(m.wait_time_ms),
+				max_wait_time_ms = MAX(m.wait_time_ms),
+
+				num_is_small = SUM(CONVERT(INT,m.is_small))
+			FROM sys.dm_exec_query_memory_grants m
+			GROUP BY m.pool_id, m.resource_semaphore_id
+		) mg
+			ON s.pool_id = mg.pool_id
+			AND s.resource_semaphore_id = mg.resource_semaphore_id;
+
+
+
+	SET @errorloc = N'dm_resource_governor_resource_pools';
+	INSERT INTO [ServerEye].[dm_resource_governor_resource_pools](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[pool_id],
+		[name],
+		[statistics_start_time],
+		[total_cpu_usage_ms],
+		[cache_memory_kb],
+		[compile_memory_kb],
+		[used_memgrant_kb],
+		[total_memgrant_count],
+		[total_memgrant_timeout_count],
+		[active_memgrant_count],
+		[active_memgrant_kb],
+		[memgrant_waiter_count],
+		[max_memory_kb],
+		[used_memory_kb],
+		[target_memory_kb],
+		[out_of_memory_count],
+		[min_cpu_percent],
+		[max_cpu_percent],
+		[min_memory_percent],
+		[max_memory_percent],
+		[cap_cpu_percent],
+		[min_iops_per_volume],
+		[max_iops_per_volume],
+		[read_io_queued_total],
+		[read_io_issued_total],
+		[read_io_completed_total],
+		[read_io_throttled_total],
+		[read_bytes_total],
+		[read_io_stall_total_ms],
+		[read_io_stall_queued_ms],
+		[write_io_queued_total],
+		[write_io_issued_total],
+		[write_io_completed_total],
+		[write_io_throttled_total],
+		[write_bytes_total],
+		[write_io_stall_total_ms],
+		[write_io_stall_queued_ms],
+		[io_issue_violations_total],
+		[io_issue_delay_total_ms]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[pool_id],
+		[name],
+		[statistics_start_time],
+		[total_cpu_usage_ms],
+		[cache_memory_kb],
+		[compile_memory_kb],
+		[used_memgrant_kb],
+		[total_memgrant_count],
+		[total_memgrant_timeout_count],
+		[active_memgrant_count],
+		[active_memgrant_kb],
+		[memgrant_waiter_count],
+		[max_memory_kb],
+		[used_memory_kb],
+		[target_memory_kb],
+		[out_of_memory_count],
+		[min_cpu_percent],
+		[max_cpu_percent],
+		[min_memory_percent],
+		[max_memory_percent],
+		[cap_cpu_percent],
+		[min_iops_per_volume],
+		[max_iops_per_volume],
+		[read_io_queued_total],
+		[read_io_issued_total],
+		[read_io_completed_total],
+		[read_io_throttled_total],
+		[read_bytes_total],
+		[read_io_stall_total_ms],
+		[read_io_stall_queued_ms],
+		[write_io_queued_total],
+		[write_io_issued_total],
+		[write_io_completed_total],
+		[write_io_throttled_total],
+		[write_bytes_total],
+		[write_io_stall_total_ms],
+		[write_io_stall_queued_ms],
+		[io_issue_violations_total],
+		[io_issue_delay_total_ms]
+	FROM sys.dm_resource_governor_resource_pools p;
+
+
+	SET @errorloc = N'dm_resource_governor_resource_pool_volumes';
+	INSERT INTO [ServerEye].[dm_resource_governor_resource_pool_volumes](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[pool_id],
+		[volume_name],
+		[read_io_queued_total],
+		[read_io_issued_total],
+		[read_io_completed_total],
+		[read_io_throttled_total],
+		[read_bytes_total],
+		[read_io_stall_total_ms],
+		[read_io_stall_queued_ms],
+		[write_io_queued_total],
+		[write_io_issued_total],
+		[write_io_completed_total],
+		[write_io_throttled_total],
+		[write_bytes_total],
+		[write_io_stall_total_ms],
+		[write_io_stall_queued_ms],
+		[io_issue_violations_total],
+		[io_issue_delay_total_ms]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[pool_id],
+		[volume_name],
+		[read_io_queued_total],
+		[read_io_issued_total],
+		[read_io_completed_total],
+		[read_io_throttled_total],
+		[read_bytes_total],
+		[read_io_stall_total_ms],
+		[read_io_stall_queued_ms],
+		[write_io_queued_total],
+		[write_io_issued_total],
+		[write_io_completed_total],
+		[write_io_throttled_total],
+		[write_bytes_total],
+		[write_io_stall_total_ms],
+		[write_io_stall_queued_ms],
+		[io_issue_violations_total],
+		[io_issue_delay_total_ms]
+	FROM sys.dm_resource_governor_resource_pool_volumes;
+
+	SET @errorloc = N'dm_resource_governor_workload_groups';
+	INSERT INTO [ServerEye].[dm_resource_governor_workload_groups](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[group_id],
+		[name],
+		[pool_id],
+		[statistics_start_time],
+		[total_request_count],
+		[total_queued_request_count],
+		[active_request_count],
+		[queued_request_count],
+		[total_cpu_limit_violation_count],
+		[total_cpu_usage_ms],
+		[max_request_cpu_time_ms],
+		[blocked_task_count],
+		[total_lock_wait_count],
+		[total_lock_wait_time_ms],
+		[total_query_optimization_count],
+		[total_suboptimal_plan_generation_count],
+		[total_reduced_memgrant_count],
+		[max_request_grant_memory_kb],
+		[active_parallel_thread_count],
+		[importance],
+		[request_max_memory_grant_percent],
+		[request_max_cpu_time_sec],
+		[request_memory_grant_timeout_sec],
+		[group_max_requests],
+		[max_dop],
+		[effective_max_dop]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[group_id],
+		[name],
+		[pool_id],
+		[statistics_start_time],
+		[total_request_count],
+		[total_queued_request_count],
+		[active_request_count],
+		[queued_request_count],
+		[total_cpu_limit_violation_count],
+		[total_cpu_usage_ms],
+		[max_request_cpu_time_ms],
+		[blocked_task_count],
+		[total_lock_wait_count],
+		[total_lock_wait_time_ms],
+		[total_query_optimization_count],
+		[total_suboptimal_plan_generation_count],
+		[total_reduced_memgrant_count],
+		[max_request_grant_memory_kb],
+		[active_parallel_thread_count],
+		[importance],
+		[request_max_memory_grant_percent],
+		[request_max_cpu_time_sec],
+		[request_memory_grant_timeout_sec],
+		[group_max_requests],
+		[max_dop],
+		[effective_max_dop]
+	FROM dm_resource_governor_workload_groups;
+
+	SET @errorloc = N'sys.traces';
+	INSERT INTO [ServerEye].[systraces](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[id],
+		[status],
+		[path],
+		[max_size],
+		[stop_time],
+		[max_files],
+		[is_rowset],
+		[is_rollover],
+		[is_shutdown],
+		[is_default],
+		[buffer_count],
+		[buffer_size],
+		[file_position],
+		[reader_spid],
+		[start_time],
+		[last_event_time],
+		[event_count],
+		[dropped_event_count]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[id],
+		[status],
+		[path],
+		[max_size],
+		[stop_time],
+		[max_files],
+		[is_rowset],
+		[is_rollover],
+		[is_shutdown],
+		[is_default],
+		[buffer_count],
+		[buffer_size],
+		[file_position],
+		[reader_spid],
+		[start_time],
+		[last_event_time],
+		[event_count],
+		[dropped_event_count]
+	FROM sys.traces;
+
+	SET @errorloc = N'sys.traces';
+	INSERT INTO [ServerEye].[dm_xe_sessions](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[address],
+		[name],
+		[pending_buffers],
+		[total_regular_buffers],
+		[regular_buffer_size],
+		[total_large_buffers],
+		[large_buffer_size],
+		[total_buffer_size],
+		[buffer_policy_flags],
+		[buffer_policy_desc],
+		[flags],
+		[flag_desc],
+		[dropped_event_count],
+		[dropped_buffer_count],
+		[blocked_event_fire_time],
+		[create_time],
+		[largest_event_dropped_size],
+		[session_source]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[address],
+		[name],
+		[pending_buffers],
+		[total_regular_buffers],
+		[regular_buffer_size],
+		[total_large_buffers],
+		[large_buffer_size],
+		[total_buffer_size],
+		[buffer_policy_flags],
+		[buffer_policy_desc],
+		[flags],
+		[flag_desc],
+		[dropped_event_count],
+		[dropped_buffer_count],
+		[blocked_event_fire_time],
+		[create_time],
+		[largest_event_dropped_size],
+		[session_source]
+	FROM sys.dm_xe_sessions s;
+
+
+	SET @errorloc = 'Med-Freq Perfmon';
+	INSERT INTO [ServerEye].[FactPerformanceCounter](
+		[UTCCaptureTime],
+		[DimPerformanceCounterID],
+		[cntr_value]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		dpc.DimPerformanceCounterID,
+		pc.cntr_value
+	FROM ServerEye.DimPerformanceCounter dpc
+		INNER hash JOIN
+		sys.dm_os_performance_counters pc
+			ON dpc.object_name = pc.object_name
+			AND dpc.counter_name = pc.counter_name
+			AND dpc.instance_name = pc.instance_name
+	WHERE dpc.CounterFrequency = 2		--Med-freq code
 	OPTION(FORCE ORDER);
 
 	RETURN 0;

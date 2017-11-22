@@ -11,22 +11,18 @@ order by o.type, o.name
 
 /* DMVs (this query was run on a SQL 2014 instance)
 
-******** Priority 1 ********
-COMPLETE HI-FREQ		--Aggregate these into a single row and place together in a Single-Row table
-						SELECT * FROM sys.dm_os_sys_info
-						SELECT * FROM sys.dm_os_process_memory
-						SELECT * FROM sys.dm_os_sys_memory
-						Aggregated data from: sys.dm_os_tasks, sys.dm_os_threads, sys.dm_db_session_space_usage, sys.dm_db_task_space_usage
+SELECT * FROM sys.dm_os_performance_counters
+	This runs in both Hi-Freq and Med-Freq (could extend to Low/Batch freq but currently don't see a value/need)
 
-COMPLETE HI-FREQ		SELECT * FROM sys.dm_db_file_space_usage		--for tempdb usage (though could do for all DBs)
+******** High Frequency Metrics ********
+--Aggregate these into a single row and place together in a Single-Row table
+SELECT * FROM sys.dm_os_sys_info
+SELECT * FROM sys.dm_os_process_memory
+SELECT * FROM sys.dm_os_sys_memory
+Aggregated data from: sys.dm_os_tasks, sys.dm_os_threads, sys.dm_db_session_space_usage, sys.dm_db_task_space_usage
 
-COMPLETE MED-FREQ		DB/file stats  (sys.databases, sys.master_files, sys.database_files, DBCC SQLPERF(LOGSPACE))
+SELECT * FROM sys.dm_db_file_space_usage		--for tempdb usage (though could do for all DBs)
 
-COMPLETE LOW-FREQ		SELECT * FROM sys.dm_io_virtual_file_stats
-COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_wait_stats
-COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_latch_stats
-COMPLETE LOW-FREQ		SELECT * FROM sys.dm_os_spinlock_stats
-COMPLETE LOW-FREQ		SELECT * FROM sys.dm_server_memory_dumps
 SELECT * FROM sys.dm_os_ring_buffers			--only certain ring buffers are higher priority
 			DONE Connectivity
 			DONE Exception
@@ -39,69 +35,70 @@ SELECT * FROM sys.dm_os_ring_buffers			--only certain ring buffers are higher pr
 				Resource_Monitor	
 				XE_Log
 
-COMPLETE MED-FREQ		SELECT * FROM sys.dm_os_volume_stats		--This is available starting with SQL 2008 R2 SP1
-COMPLETE BATCH-FREQ		SELECT * FROM sys.dm_os_buffer_descriptors
-COMPLETE MED-FREQ		Connections profile from dm_exec_requests, dm_exec_sessions, dm_exec_connections
-COMPLETE LOW-FREQ		SELECT * FROM sys.dm_tran_top_version_generators
-
-***BIGGEST TODO STILL IS PERF COUNTERS***
-	SELECT * FROM sys.dm_os_performance_counters	--only certain counters are truly important. Need the perf counter table and some prioritization scheme.
-
+SELECT * FROM sys.dm_os_memory_nodes
+SELECT * FROM sys.dm_os_nodes
+SELECT * FROM sys.dm_os_memory_broker_clerks
+SELECT * FROM sys.dm_os_schedulers
+SELECT * FROM sys.dm_os_workers		(aggregated into 1 row per scheduler)
+******** High Frequency Metrics ********
 
 
-SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE) to get log usage 
-		--Which SQL version was this released in? Is there a workaround for older versions?
+******** Medium Frequency Metrics ********
+DB/file stats  (sys.databases, sys.master_files, sys.database_files, DBCC SQLPERF(LOGSPACE))
+SELECT * FROM sys.dm_os_volume_stats		--This is available starting with SQL 2008 R2 SP1
+Connections profile from dm_exec_requests, dm_exec_sessions, dm_exec_connections
 
-******** Priority 1 ********
+SELECT * FROM sys.dm_os_memory_clerks
+SELECT * FROM sys.dm_os_memory_cache_clock_hands
+SELECT * FROM sys.dm_os_memory_cache_counters
+SELECT * FROM sys.dm_os_memory_cache_hash_tables
+SELECT * FROM sys.dm_os_memory_pools
+SELECT * FROM sys.dm_os_hosts
+SELECT * FROM sys.dm_resource_governor_resource_pool_volumes
+SELECT * FROM sys.dm_resource_governor_resource_pools
+SELECT * FROM sys.dm_resource_governor_workload_groups
 
-
-******** Priority 2 ********
-COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_memory_nodes
-COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_nodes
-COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_schedulers
-COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_workers
-
-	SELECT * FROM sys.dm_os_memory_clerks order by type
-	SELECT * FROM sys.dm_os_memory_cache_clock_hands
-******** Priority 2 ********
-
-
-******** Priority 3 ********
-	--Misc
+SELECT * FROM sys.dm_exec_query_resource_semaphores
+	SELECT * FROM sys.dm_exec_query_memory_grants	--aggregated to 1 row per resource semaphore row
 	
-	exec sp_server_diagnostics						--Any value here? this runs as an XE session. Some of the info it collects is useful, other info is redundant
+SELECT * FROM sys.dm_os_memory_brokers
 
-	--CPU
-
-	--Memory
-	SELECT * FROM sys.dm_os_memory_broker_clerks
-
+SELECT * FROM sys.traces
+SELECT * FROM sys.dm_xe_sessions
+******** Medium Frequency Metrics ********
 
 
+******** Low Frequency Metrics ********
+SELECT * FROM sys.dm_io_virtual_file_stats
+SELECT * FROM sys.dm_os_wait_stats
+SELECT * FROM sys.dm_os_latch_stats
+SELECT * FROM sys.dm_os_spinlock_stats
+SELECT * FROM sys.dm_server_memory_dumps
+SELECT * FROM sys.dm_tran_top_version_generators
 
-******** Priority 3 ********
+******** Low Frequency Metrics ********
 
 
-******** Priority 4 ********
+
+******** Batch Frequency Metrics ********
+SELECT * FROM sys.dm_db_index_usage_stats
+SELECT * FROM sys.dm_db_index_operational_stats
+SELECT * FROM sys.dm_os_buffer_descriptors
+SELECT * FROM sys.dm_db_missing_index_details
+SELECT * FROM sys.dm_db_missing_index_group_stats
+SELECT * FROM sys.dm_db_missing_index_groups
+SELECT * FROM sys.dm_db_missing_index_columns
+******** Batch Frequency Metrics ********
+
+
+
+******** Still Considering for inclusion ********
 	--Misc
-	SELECT * FROM sys.dm_resource_governor_resource_pool_volumes
-	SELECT * FROM sys.dm_resource_governor_resource_pools
-	SELECT * FROM sys.dm_resource_governor_workload_groups
-	SELECT * FROM sys.dm_server_services		--so we can easily show which services are up and running and since when.
-	SELECT * FROM sys.dm_tcp_listener_states	--only display when something is wrong!
+	exec sp_server_diagnostics
+	
 	sp_readerrorlog
 	exec sp_enumerrorlogs
-	select * from sys.configurations		--any value here?
-	select * from sys.sysprocesses			--any value here?
 
-
-	--Memory
-	SELECT * FROM sys.dm_exec_query_memory_grants		--agg by pools or groups or whatever?
-	SELECT * FROM sys.dm_exec_query_resource_semaphores
-	SELECT * FROM sys.dm_os_memory_brokers
-	SELECT * FROM sys.dm_os_memory_cache_counters
-	SELECT * FROM sys.dm_os_memory_cache_hash_tables
-	SELECT * FROM sys.dm_os_memory_pools
 
 	--query stats module
 	SELECT * FROM sys.dm_exec_procedure_stats
@@ -109,32 +106,15 @@ COMPLETE HI-FREQ		SELECT * FROM sys.dm_os_workers
 	SELECT * FROM sys.dm_exec_trigger_stats
 	SELECT * FROM sys.dm_exec_cached_plans
 
-
-	--DB details
-	select * from sys.indexes 
-	SELECT * FROM sys.dm_db_missing_index_details
-	SELECT * FROM sys.dm_db_missing_index_group_stats
-	SELECT * FROM sys.dm_db_missing_index_groups
-	SELECT * FROM sys.dm_db_index_usage_stats
-	SELECT * FROM sys.dm_db_index_operational_stats
-	SELECT * FROM sys.dm_db_index_physical_stats
-	SELECT * FROM sys.dm_db_missing_index_columns
-	SELECT * FROM sys.dm_db_database_page_allocations
-	SELECT * FROM sys.dm_db_stats_properties
-	SELECT * FROM sys.dm_db_stats_properties_internal
-
-
-	--traces
-	select * from sys.traces
-	SELECT * FROM sys.dm_xe_sessions			--this is probably the more useful XE view here
-
-	select * from sys.server_event_sessions		--this is the definition, not the execution state
-	select * from sys.server_event_session_actions
-	select * from sys.server_event_session_events
-	select * from sys.server_event_session_fields
-	select * from sys.server_event_session_targets
-	SELECT * FROM sys.dm_xe_session_targets		--is there any value here?
-******** Priority 4 ********
+	msdb stuff
+		Agent
+			dbo.agent_datetime	scalar func
+			sp_enum_sqlagent_subsystems
+			sp_enum_sqlagent_subsystems_internal
+			sqlagent_info
+			suspect_pages
+			job runtime & history (so that sp_xr_jobmatrix could be pointed to this instead of msdb
+******** Still Considering for inclusion ********
 
 */
 
@@ -369,6 +349,7 @@ SELECT * FROM sys.dm_exec_query_plan
 SELECT * FROM sys.dm_exec_sql_text
 SELECT * FROM sys.dm_exec_text_query_plan
 SELECT * FROM sys.dm_exec_xml_handles(null)
+select * from sys.sysprocesses
 
 SELECT * FROM sys.dm_tran_active_snapshot_database_transactions
 SELECT * FROM sys.dm_tran_active_transactions
@@ -382,6 +363,11 @@ SELECT * FROM sys.dm_tran_transactions_snapshot
 
 
 --No need right now, miscellaneous reasons.
+SELECT * FROM sys.dm_db_log_space_usage		I'm already using DBCC SQLPERF(LOGSPACE) to get log usage 
+		--Which SQL version was this released in? Is there a workaround for older versions?
+SELECT * FROM sys.dm_server_services		--so we can easily show which services are up and running and since when.
+SELECT * FROM sys.dm_tcp_listener_states	--only display when something is wrong!
+select * from sys.configurations
 SELECT * FROM sys.dm_db_partition_stats		--toyed with the idea of triggering a query when observing DB growth, but there's just not much additional value here
 	select * from sys.partitions			--beyond the manual research we can do when a DB grows significantly. 
 	select * from sys.allocation_units
@@ -407,7 +393,7 @@ SELECT * FROM sys.dm_os_cluster_nodes
 SELECT * FROM sys.dm_os_cluster_properties
 SELECT * FROM sys.dm_os_dispatcher_pools
 SELECT * FROM sys.dm_os_dispatchers
-SELECT * FROM sys.dm_os_hosts
+
 SELECT * FROM sys.dm_os_loaded_modules
 SELECT * FROM sys.dm_os_server_diagnostics_log_configurations
 SELECT * FROM sys.dm_db_objects_disabled_on_compatibility_level_change
@@ -426,6 +412,19 @@ SELECT * FROM sys.dm_xe_object_columns
 SELECT * FROM sys.dm_xe_session_event_actions
 SELECT * FROM sys.dm_xe_session_events
 SELECT * FROM sys.dm_xe_session_object_columns
+
+select * from sys.server_event_sessions		--this is the definition, not the execution state
+select * from sys.server_event_session_actions
+select * from sys.server_event_session_events
+select * from sys.server_event_session_fields
+select * from sys.server_event_session_targets
+SELECT * FROM sys.dm_xe_session_targets
+
+SELECT * FROM sys.dm_db_database_page_allocations(db_id(), null,null,null,null)
+SELECT * FROM sys.dm_db_stats_properties
+	SELECT * FROM sys.dm_db_stats_properties_internal
+SELECT * FROM sys.dm_db_index_physical_stats
+select * from sys.indexes 
 */
 
 

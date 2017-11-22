@@ -42,6 +42,7 @@ CREATE TABLE [ServerEye].[ConnectionProfile](
 	[DimUserProfileConnID] [int] NOT NULL,
 	[DimUserProfileProgramID] [int] NOT NULL,
 	[DimUserProfileLoginID]	[int] NOT NULL,
+	[NumRows] [int] NOT NULL,
 	[conn__connect_time_min] [datetime] NOT NULL,
 	[conn__connect_time_max] [datetime] NOT NULL,
 	[conn__num_reads_sum] [bigint] NULL,

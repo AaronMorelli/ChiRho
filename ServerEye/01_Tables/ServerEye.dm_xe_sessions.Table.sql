@@ -19,43 +19,42 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: ServerEye.dm_os_workers.Table.sql
+	FILE NAME: ServerEye.dm_xe_sessions.Table.sql
 
-	TABLE NAME: ServerEye.dm_os_workers
+	TABLE NAME: ServerEye.dm_xe_sessions
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Snapshots sys.dm_os_workers (in High-frequency metrics)
+	PURPOSE: Snapshots sys.dm_xe_sessions (in Med-frequency metrics)
 */
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-SET ANSI_PADDING ON
-GO
-CREATE TABLE [ServerEye].[dm_os_workers](
-	[UTCCaptureTime]		[datetime] NOT NULL,
-	[LocalCaptureTime]		[datetime] NOT NULL,
-	[worker_address]		[varbinary](8) NOT NULL,
-	[is_preemptive]			[bit] NULL,
-	[is_sick]				[bit] NULL,
-	[is_in_cc_exception]	[bit] NULL,
-	[is_fatal_exception]	[bit] NULL,
-	[is_inside_catch]		[bit] NULL,
-	[is_in_polling_io_completion_routine] [bit] NULL,
-	[context_switch_count]	[int] NOT NULL,
-	[pending_io_count]		[int] NOT NULL,
-	[pending_io_byte_count] [bigint] NOT NULL,
-	[tasks_processed_count] [int] NOT NULL,
-CONSTRAINT [PKdm_os_workers] PRIMARY KEY CLUSTERED 
+CREATE TABLE [ServerEye].[dm_xe_sessions](
+	[UTCCaptureTime] [datetime] NOT NULL,
+	[LocalCaptureTime] [datetime] NOT NULL,
+	[address] [varbinary](8) NOT NULL,
+	[name] [nvarchar](256) NOT NULL,
+	[pending_buffers] [int] NOT NULL,
+	[total_regular_buffers] [int] NOT NULL,
+	[regular_buffer_size] [bigint] NOT NULL,
+	[total_large_buffers] [int] NOT NULL,
+	[large_buffer_size] [bigint] NOT NULL,
+	[total_buffer_size] [bigint] NOT NULL,
+	[buffer_policy_flags] [int] NOT NULL,
+	[buffer_policy_desc] [nvarchar](256) NOT NULL,
+	[flags] [int] NOT NULL,
+	[flag_desc] [nvarchar](256) NOT NULL,
+	[dropped_event_count] [int] NOT NULL,
+	[dropped_buffer_count] [int] NOT NULL,
+	[blocked_event_fire_time] [int] NOT NULL,
+	[create_time] [datetime] NOT NULL,
+	[largest_event_dropped_size] [int] NOT NULL,
+	[session_source] [nvarchar](256) NOT NULL,
+ CONSTRAINT [PKdm_xe_sessions] PRIMARY KEY CLUSTERED 
 (
 	[UTCCaptureTime] ASC,
-	[worker_address] ASC
+	[name] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
-GO
-SET ANSI_PADDING OFF
 GO
