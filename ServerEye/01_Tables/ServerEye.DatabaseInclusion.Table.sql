@@ -19,33 +19,30 @@
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: ServerEye.dm_os_memory_pools.Table.sql
+	FILE NAME: ServerEye.DatabaseInclusion.Table.sql
 
-	TABLE NAME: ServerEye.dm_os_memory_pools
+	TABLE NAME: ServerEye.DatabaseInclusion
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
 					@sqlcrossjoin
 					sqlcrossjoin.wordpress.com
 
-	PURPOSE: Snapshots sys.dm_os_memory_pools (in Med-frequency metrics)
+	PURPOSE: Stores a configurable list of database names and inclusion types so that the administrator of ChiRho can
+		choose which databases are included in certain collections. For example, data from dm_db_index_operational_stats
+		and dm_db_index_usage_stats is only gathered for databases in this table. 
 */
-CREATE TABLE [ServerEye].[dm_os_memory_pools](
-	[UTCCaptureTime] [datetime] NOT NULL,
-	[LocalCaptureTime] [datetime] NOT NULL,
-	[DimMemoryTrackerID] [smallint] NOT NULL,
-	[memory_node_id] [smallint] NOT NULL,
-	[NumUniqueRows] [int] NOT NULL,
-	[sum_max_free_entries_count] [bigint] NULL,
-	[sum_free_entries_count] [bigint] NULL,
-	[sum_removed_in_all_rounds_count] [bigint] NULL,
- CONSTRAINT [PKdm_os_memory_pools] PRIMARY KEY CLUSTERED 
+CREATE TABLE [ServerEye].[DatabaseInclusion](
+	[DBName] [nvarchar](128) NOT NULL,
+	[InclusionType] [nvarchar](20) NOT NULL,
+ CONSTRAINT [PKDatabaseInclusion] PRIMARY KEY CLUSTERED 
 (
-	[UTCCaptureTime] ASC,
-	[DimMemoryTrackerID] ASC,
-	[memory_node_id] ASC
+	[DBName] ASC,
+	[InclusionType] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 GO
-
-
+ALTER TABLE [ServerEye].[DatabaseInclusion]  WITH CHECK ADD  CONSTRAINT [CK_DatabaseInclusion_InclusionType] CHECK  (([InclusionType]=N'IndexStats'))
+GO
+ALTER TABLE [ServerEye].[DatabaseInclusion] CHECK CONSTRAINT [CK_DatabaseInclusion_InclusionType]
+GO

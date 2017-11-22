@@ -53,6 +53,226 @@ BEGIN
 	SET NOCOUNT ON;
 	SET XACT_ABORT ON;
 
+	
+
+	IF EXISTS (
+		SELECT * 
+		FROM sys.databases d
+			INNER JOIN ServerEye.DatabaseInclusion dbi
+				ON d.name = dbi.DBName
+		WHERE dbi.InclusionType = 'IndexStats'
+	)
+	BEGIN
+		INSERT INTO [ServerEye].[dm_db_index_usage_stats](
+			[UTCCaptureTime],
+			[LocalCaptureTime],
+			[database_id],
+			[object_id],
+			[index_id],
+			[user_seeks],
+			[user_scans],
+			[user_lookups],
+			[user_updates],
+			[last_user_seek],
+			[last_user_scan],
+			[last_user_lookup],
+			[last_user_update],
+			[system_seeks],
+			[system_scans],
+			[system_lookups],
+			[system_updates],
+			[last_system_seek],
+			[last_system_scan],
+			[last_system_lookup],
+			[last_system_update]
+		)
+		SELECT 
+			@UTCCaptureTime,
+			@LocalCaptureTime,
+			u.[database_id],
+			[object_id],
+			[index_id],
+			[user_seeks],
+			[user_scans],
+			[user_lookups],
+			[user_updates],
+			[last_user_seek],
+			[last_user_scan],
+			[last_user_lookup],
+			[last_user_update],
+			[system_seeks],
+			[system_scans],
+			[system_lookups],
+			[system_updates],
+			[last_system_seek],
+			[last_system_scan],
+			[last_system_lookup],
+			[last_system_update]
+		FROM sys.databases d
+			INNER JOIN ServerEye.DatabaseInclusion dbi
+				ON d.name = dbi.DBName
+			INNER JOIN sys.dm_db_index_usage_stats u
+				ON d.database_id = u.database_id
+		WHERE dbi.InclusionType = 'IndexStats';
+
+
+		INSERT INTO [ServerEye].[dm_db_index_operational_stats](
+			[UTCCaptureTime],
+			[LocalCaptureTime],
+			[database_id],
+			[object_id],
+			[index_id],
+			[partition_number],
+			[leaf_insert_count],
+			[leaf_delete_count],
+			[leaf_update_count],
+			[leaf_ghost_count],
+			[nonleaf_insert_count],
+			[nonleaf_delete_count],
+			[nonleaf_update_count],
+			[leaf_allocation_count],
+			[nonleaf_allocation_count],
+			[leaf_page_merge_count],
+			[nonleaf_page_merge_count],
+			[range_scan_count],
+			[singleton_lookup_count],
+			[forwarded_fetch_count],
+			[lob_fetch_in_pages],
+			[lob_fetch_in_bytes],
+			[lob_orphan_create_count],
+			[lob_orphan_insert_count],
+			[row_overflow_fetch_in_pages],
+			[row_overflow_fetch_in_bytes],
+			[column_value_push_off_row_count],
+			[column_value_pull_in_row_count],
+			[row_lock_count],
+			[row_lock_wait_count],
+			[row_lock_wait_in_ms],
+			[page_lock_count],
+			[page_lock_wait_count],
+			[page_lock_wait_in_ms],
+			[index_lock_promotion_attempt_count],
+			[index_lock_promotion_count],
+			[page_latch_wait_count],
+			[page_latch_wait_in_ms],
+			[page_io_latch_wait_count],
+			[page_io_latch_wait_in_ms],
+			[tree_page_latch_wait_count],
+			[tree_page_latch_wait_in_ms],
+			[tree_page_io_latch_wait_count],
+			[tree_page_io_latch_wait_in_ms],
+			[page_compression_attempt_count],
+			[page_compression_success_count]
+		)
+		SELECT 
+			@UTCCaptureTime,
+			@LocalCaptureTime,
+			ixop.[database_id],
+			[object_id],
+			[index_id],
+			[partition_number],
+			[leaf_insert_count],
+			[leaf_delete_count],
+			[leaf_update_count],
+			[leaf_ghost_count],
+			[nonleaf_insert_count],
+			[nonleaf_delete_count],
+			[nonleaf_update_count],
+			[leaf_allocation_count],
+			[nonleaf_allocation_count],
+			[leaf_page_merge_count],
+			[nonleaf_page_merge_count],
+			[range_scan_count],
+			[singleton_lookup_count],
+			[forwarded_fetch_count],
+			[lob_fetch_in_pages],
+			[lob_fetch_in_bytes],
+			[lob_orphan_create_count],
+			[lob_orphan_insert_count],
+			[row_overflow_fetch_in_pages],
+			[row_overflow_fetch_in_bytes],
+			[column_value_push_off_row_count],
+			[column_value_pull_in_row_count],
+			[row_lock_count],
+			[row_lock_wait_count],
+			[row_lock_wait_in_ms],
+			[page_lock_count],
+			[page_lock_wait_count],
+			[page_lock_wait_in_ms],
+			[index_lock_promotion_attempt_count],
+			[index_lock_promotion_count],
+			[page_latch_wait_count],
+			[page_latch_wait_in_ms],
+			[page_io_latch_wait_count],
+			[page_io_latch_wait_in_ms],
+			[tree_page_latch_wait_count],
+			[tree_page_latch_wait_in_ms],
+			[tree_page_io_latch_wait_count],
+			[tree_page_io_latch_wait_in_ms],
+			[page_compression_attempt_count],
+			[page_compression_success_count]
+		FROM sys.databases d
+				INNER JOIN ServerEye.DatabaseInclusion dbi
+					ON d.name = dbi.DBName
+				CROSS APPLY sys.dm_db_index_operational_stats(d.database_id, NULL, NULL, NULL) ixop
+		WHERE dbi.InclusionType = 'IndexStats';
+	END
+
+	INSERT INTO [ServerEye].[MissingIndexes](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[group_handle],
+		[index_handle],
+		[database_id],
+		[object_id],
+		[equality_columns],
+		[inequality_columns],
+		[included_columns],
+		[unique_compiles],
+		[user_seeks],
+		[user_scans],
+		[last_user_seek],
+		[last_user_scan],
+		[avg_total_user_cost],
+		[avg_user_impact],
+		[system_seeks],
+		[system_scans],
+		[last_system_seek],
+		[last_system_scan],
+		[avg_total_system_cost],
+		[avg_system_impact]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[group_handle],
+		g.[index_handle],
+		[database_id],
+		[object_id],
+		[equality_columns],
+		[inequality_columns],
+		[included_columns],
+		[unique_compiles],
+		[user_seeks],
+		[user_scans],
+		[last_user_seek],
+		[last_user_scan],
+		[avg_total_user_cost],
+		[avg_user_impact],
+		[system_seeks],
+		[system_scans],
+		[last_system_seek],
+		[last_system_scan],
+		[avg_total_system_cost],
+		[avg_system_impact]
+	FROM sys.dm_db_missing_index_groups g
+		INNER JOIN sys.dm_db_missing_index_group_stats gs
+			ON g.index_group_handle = gs.group_handle
+		INNER JOIN sys.dm_db_missing_index_details i
+			ON i.index_handle = g.index_handle;
+
+
+
 	--Probably need a way to turn this off for larger systems.
 	INSERT INTO [ServerEye].[BufDescriptors] (
 		[UTCCaptureTime],

@@ -12,42 +12,34 @@ order by pc.object_name, pc.counter_name, pc.instance_name
 
 /* This was run on a SQL 2014 instance
 
+NOTE: I'm going to include lots to start, and after I get some runtime in the field will selectively disable stuff that is redundant with the DMVs I'm already collecting.
 
-Priority 1
------------
+
+Hi Frequency
+-------------------------------------------------------------------------
+SQLServer:SQL Statistics                	SQL Attention rate                                          	                                                                                
 SQLServer:SQL Statistics                	Batch Requests/sec                                          	                                                                                
-SQLServer:SQL Statistics                	Auto-Param Attempts/sec                                     	                                                                                
 SQLServer:SQL Statistics                	SQL Compilations/sec                                        	                                                                                
 SQLServer:SQL Statistics                	SQL Re-Compilations/sec                                     	                                                                                
-SQLServer:Transactions                  	Free Space in tempdb (KB)                                   	                                                                                
-SQLServer:Transactions                  	Longest Transaction Running Time                            	                                                                                
 SQLServer:Transactions                  	Transactions                                                	                                                                                
-SQLServer:Transactions                  	Version Store Size (KB)                                     	                                                                                
-SQLServer:Batch Resp Statistics				all of them. Every 5 minutes? See below for the full list
+SQLServer:General Statistics            	Transactions                                                	                                                                                
 SQLServer:Buffer Manager                	Background writer pages/sec                                 	                                                                                
-SQLServer:Buffer Manager                	Buffer cache hit ratio                                      	                                                                                
-SQLServer:Buffer Manager                	Buffer cache hit ratio base                                 	                                                                                
 SQLServer:Buffer Manager                	Checkpoint pages/sec                                        	                                                                                
 SQLServer:Buffer Manager                	Lazy writes/sec                                             	                                                                                
-SQLServer:Buffer Manager                	Page life expectancy                                        	                                                                                
 SQLServer:Buffer Manager                	Page lookups/sec                                            	                                                                                
 SQLServer:Buffer Manager                	Page reads/sec                                              	                                                                                
 SQLServer:Buffer Manager                	Page writes/sec                                             	                                                                                
 SQLServer:Buffer Manager                	Readahead pages/sec                                         	                                                                                
 SQLServer:Buffer Manager                	Readahead time/sec                                          	                                                                                
-SQLServer:Buffer Manager                	Target pages                                                	                                                                                
-SQLServer:Buffer Node                   	Database pages                                              	000                                                                             
-SQLServer:Buffer Node                   	Page life expectancy                                        	000                                                                             
-SQLServer:General Statistics            	Active Temp Tables                                          	                                                                                
+SQLServer:Buffer Manager                	Free list stalls/sec                                        	                                                                                
 SQLServer:General Statistics            	Connection Reset/sec                                        	                                                                                
-SQLServer:General Statistics            	Logical Connections                                         	                                                                                
+SQLServer:SQL Errors                    	Errors/sec                                                  	_Total                                                                          
+SQLServer:SQL Errors                    	Errors/sec                                                  	DB Offline Errors                                                               
+SQLServer:SQL Errors                    	Errors/sec                                                  	Info Errors                                                                     
+SQLServer:SQL Errors                    	Errors/sec                                                  	Kill Connection Errors                                                          
+SQLServer:SQL Errors                    	Errors/sec                                                  	User Errors                                                                     
 SQLServer:General Statistics            	Logins/sec                                                  	                                                                                
 SQLServer:General Statistics            	Logouts/sec                                                 	                                                                                
-SQLServer:General Statistics            	Processes blocked                                           	                                                                                
-SQLServer:General Statistics            	Temp Tables Creation Rate                                   	                                                                                
-SQLServer:General Statistics            	Temp Tables For Destruction                                 	                                                                                
-SQLServer:General Statistics            	Transactions                                                	                                                                                
-SQLServer:General Statistics            	User Connections                                            	                                                                                
 SQLServer:Resource Pool Stats           	CPU control effect %                                        	default                                                                         
 SQLServer:Resource Pool Stats           	CPU control effect %                                        	internal                                                                        
 SQLServer:Resource Pool Stats           	CPU usage %                                                 	default                                                                         
@@ -76,71 +68,63 @@ SQLServer:Resource Pool Stats           	Avg Disk Write IO (ms)                 
 SQLServer:Resource Pool Stats           	Avg Disk Write IO (ms)                                      	internal                                                                        
 SQLServer:Resource Pool Stats           	Avg Disk Write IO (ms) Base                                 	default                                                                         
 SQLServer:Resource Pool Stats           	Avg Disk Write IO (ms) Base                                 	internal                                                                        
-
-
-
-
-Priority 2
-----------
-SQLServer:SQL Statistics                	SQL Attention rate                                          	                                                                                
-SQLServer:SQL Errors                    	Errors/sec                                                  	_Total                                                                          
-SQLServer:SQL Errors                    	Errors/sec                                                  	DB Offline Errors                                                               
-SQLServer:SQL Errors                    	Errors/sec                                                  	Info Errors                                                                     
-SQLServer:SQL Errors                    	Errors/sec                                                  	Kill Connection Errors                                                          
-SQLServer:SQL Errors                    	Errors/sec                                                  	User Errors                                                                     
-SQLServer:Transactions                  	NonSnapshot Version Transactions                            	                                                                                
-SQLServer:Transactions                  	Snapshot Transactions                                       	                                                                                
-SQLServer:Transactions                  	Update Snapshot Transactions                                	                                                                                
-SQLServer:Transactions                  	Version Cleanup rate (KB/s)                                 	                                                                                
-SQLServer:Transactions                  	Version Generation rate (KB/s)    
-
-SQLServer:Transactions                  	Version Store unit count                                    	                                                                                
-SQLServer:Transactions                  	Version Store unit creation                                 	                                                                                
-SQLServer:Transactions                  	Version Store unit truncation                               	                                                                                
-SQLServer:Buffer Manager                	Database pages                                              	                                                                                
-SQLServer:Buffer Manager                	Free list stalls/sec                                        	                                                                                
 SQLServer:Buffer Node                   	Local node page lookups/sec                                 	000                                                                             
 SQLServer:Buffer Node                   	Remote node page lookups/sec                                	000                                                                             
-SQLServer:Access Methods                	Workfiles Created/sec                                       	                                                                                
-SQLServer:Access Methods                	Worktables Created/sec                                      	                                                                                
-SQLServer:Access Methods                	Worktables From Cache Base                                  	                                                                                
-SQLServer:Access Methods                	Worktables From Cache Ratio                                 	                                                                                
-SQLServer:Resource Pool Stats           	Active memory grant amount (KB)                             	default                                                                         
-SQLServer:Resource Pool Stats           	Active memory grant amount (KB)                             	internal                                                                        
-SQLServer:Resource Pool Stats           	Active memory grants count                                  	default                                                                         
-SQLServer:Resource Pool Stats           	Active memory grants count                                  	internal                                                                        
-SQLServer:Resource Pool Stats           	Cache memory target (KB)                                    	default                                                                         
-SQLServer:Resource Pool Stats           	Cache memory target (KB)                                    	internal                                                                        
-SQLServer:Resource Pool Stats           	Compile memory target (KB)                                  	default                                                                         
-SQLServer:Resource Pool Stats           	Compile memory target (KB)                                  	internal                                                                        
-SQLServer:Resource Pool Stats           	Max memory (KB)                                             	default                                                                         
-SQLServer:Resource Pool Stats           	Max memory (KB)                                             	internal                                                                        
 SQLServer:Resource Pool Stats           	Memory grant timeouts/sec                                   	default                                                                         
 SQLServer:Resource Pool Stats           	Memory grant timeouts/sec                                   	internal                                                                        
 SQLServer:Resource Pool Stats           	Memory grants/sec                                           	default                                                                         
 SQLServer:Resource Pool Stats           	Memory grants/sec                                           	internal                                                                        
+SQLServer:Workload Group Stats          	Active parallel threads                                     	default                                                                         
+SQLServer:Workload Group Stats          	Active parallel threads                                     	internal                                                                        
+SQLServer:Workload Group Stats          	Active requests                                             	default                                                                         
+SQLServer:Workload Group Stats          	Active requests                                             	internal                                                                        
+SQLServer:Workload Group Stats          	Blocked tasks                                               	default                                                                         
+SQLServer:Workload Group Stats          	Blocked tasks                                               	internal                                                                        
+SQLServer:Workload Group Stats          	CPU usage %                                                 	default                                                                         
+SQLServer:Workload Group Stats          	CPU usage %                                                 	internal                                                                        
+SQLServer:Workload Group Stats          	CPU usage % base                                            	default                                                                         
+SQLServer:Workload Group Stats          	CPU usage % base                                            	internal                                                                        
+SQLServer:Workload Group Stats          	Requests completed/sec                                      	default                                                                         
+SQLServer:Workload Group Stats          	Requests completed/sec                                      	internal                                                                        
+SQLServer:Workload Group Stats          	Queued requests                                             	default                                                                         
+SQLServer:Workload Group Stats          	Queued requests                                             	internal                                                                        
+SQLServer:Latches                       	Average Latch Wait Time (ms)                                	                                                                                
+SQLServer:Latches                       	Average Latch Wait Time Base                                	                                                                                
+SQLServer:Latches                       	Latch Waits/sec                                             	                                                                                
+SQLServer:Latches                       	Total Latch Wait Time (ms)                                  	                                                                                
+SQLServer:Locks                         	Number of Deadlocks/sec                                     	_Total                                                                          
+SQLServer:Locks                         	Lock Requests/sec                                           	_Total                                                                          
+SQLServer:Locks                         	Lock Timeouts (timeout > 0)/sec                             	_Total                                                                          
+SQLServer:Locks                         	Lock Timeouts/sec                                           	_Total                                                                          
+SQLServer:Locks                         	Lock Waits/sec                                              	_Total                                                                          
+
+
+
+Mezzanine Frequency
+-------------------------------------------------------------------------
+SQLServer:Buffer Manager                	Buffer cache hit ratio                                      	                                                                                
+SQLServer:Buffer Manager                	Buffer cache hit ratio base                                 	                                                                                
+SQLServer:Buffer Manager                	Page life expectancy                                        	                                                                                
+SQLServer:Buffer Manager                	Target pages                                                	                                                                                
+SQLServer:Buffer Node                   	Database pages                                              	000                                                                             
+SQLServer:Buffer Node                   	Page life expectancy                                        	000                                                                             
+SQLServer:General Statistics            	Logical Connections                                         	                                                                                
+SQLServer:General Statistics            	User Connections                                            	                                                                                
+SQLServer:General Statistics            	Processes blocked                                           	                                                                                
 SQLServer:Resource Pool Stats           	Pending memory grants count                                 	default                                                                         
 SQLServer:Resource Pool Stats           	Pending memory grants count                                 	internal                                                                        
-SQLServer:Resource Pool Stats           	Query exec memory target (KB)                               	default                                                                         
-SQLServer:Resource Pool Stats           	Query exec memory target (KB)                               	internal                                                                        
-SQLServer:Resource Pool Stats           	Target memory (KB)                                          	default                                                                         
-SQLServer:Resource Pool Stats           	Target memory (KB)                                          	internal                                                                        
-SQLServer:Resource Pool Stats           	Used memory (KB)                                            	default                                                                         
-SQLServer:Resource Pool Stats           	Used memory (KB)                                            	internal                                                                        
-SQLServer:SQL Statistics                	Failed Auto-Params/sec                                      	                                                                                
-SQLServer:SQL Statistics                	Forced Parameterizations/sec                                	                                                                                
-SQLServer:SQL Statistics                	Guided plan executions/sec                                  	                                                                                
-SQLServer:SQL Statistics                	Misguided plan executions/sec                               	                                                                                
-SQLServer:SQL Statistics                	Safe Auto-Params/sec                                        	                                                                                
-SQLServer:SQL Statistics                	Unsafe Auto-Params/sec                                      	                                                                                
-
-
-
-
-
-Lower Priority
----------------
+SQLServer:Memory Manager                	Memory Grants Outstanding                                   	                                                                                
+SQLServer:Memory Manager                	Memory Grants Pending                                       	                                                                                
+SQLServer:General Statistics            	Active Temp Tables                                          	                                                                                
+SQLServer:General Statistics            	Temp Tables Creation Rate                                   	                                                                                
+SQLServer:General Statistics            	Temp Tables For Destruction                                 	                                                                                
+SQLServer:Access Methods                	Workfiles Created/sec                                       	                                                                                
+SQLServer:Access Methods                	Worktables Created/sec                                      	                                                                                
+SQLServer:Access Methods                	Worktables From Cache Base                                  	                                                                                
+SQLServer:Access Methods                	Worktables From Cache Ratio                                 	                                                                                
+SQLServer:Buffer Manager                	Database pages                                              	                                                                                
 SQLServer:Access Methods                	Forwarded Records/sec                                       	                                                                                
+SQLServer:Access Methods                	Skipped Ghosted Records/sec                                 	                                                                                
 SQLServer:Access Methods                	Mixed page allocations/sec                                  	                                                                                
 SQLServer:Access Methods                	Extent Deallocations/sec                                    	                                                                                
 SQLServer:Access Methods                	Extents Allocated/sec                                       	                                                                                
@@ -152,36 +136,75 @@ SQLServer:Access Methods                	Pages compressed/sec
 SQLServer:Access Methods                	Pages Allocated/sec                                         	                                                                                
 SQLServer:Access Methods                	Probe Scans/sec                                             	                                                                                
 SQLServer:Access Methods                	Range Scans/sec                                             	                                                                                
-
-
+SQLServer:Transactions                  	Update conflict ratio                                       	                                                                                
+SQLServer:Transactions                  	Update conflict ratio base                                  	                                                                                
+SQLServer:Transactions                  	Version Cleanup rate (KB/s)                                 	                                                                                
+SQLServer:Transactions                  	Version Generation rate (KB/s)    
+SQLServer:Memory Broker Clerks          	Periodic evictions (pages)                                  	Buffer Pool                                                                     
+SQLServer:Memory Broker Clerks          	Periodic evictions (pages)                                  	Column store object pool                                                        
+SQLServer:Memory Broker Clerks          	Pressure evictions (pages/sec)                              	Buffer Pool                                                                     
+SQLServer:Memory Broker Clerks          	Pressure evictions (pages/sec)                              	Column store object pool                                                        
+SQLServer:SQL Statistics                	Auto-Param Attempts/sec                                     	                                                                                
+SQLServer:SQL Statistics                	Failed Auto-Params/sec                                      	                                                                                
+SQLServer:SQL Statistics                	Forced Parameterizations/sec                                	                                                                                
+SQLServer:SQL Statistics                	Guided plan executions/sec                                  	                                                                                
+SQLServer:SQL Statistics                	Misguided plan executions/sec                               	                                                                                
+SQLServer:SQL Statistics                	Safe Auto-Params/sec                                        	                                                                                
+SQLServer:SQL Statistics                	Unsafe Auto-Params/sec                                      	                                                                                
+SQLServer:Workload Group Stats          	Query optimizations/sec                                     	default                                                                         
+SQLServer:Workload Group Stats          	Query optimizations/sec                                     	internal                                                                        
+SQLServer:Workload Group Stats          	Suboptimal plans/sec                                        	default                                                                         
+SQLServer:Workload Group Stats          	Suboptimal plans/sec                                        	internal                                                                        
+SQLServer:Workload Group Stats          	Reduced memory grants/sec                                   	default                                                                         
+SQLServer:Workload Group Stats          	Reduced memory grants/sec                                   	internal                                                                        
+SQLServer:Latches                       	Number of SuperLatches                                      	                                                                                
+SQLServer:Latches                       	SuperLatch Demotions/sec                                    	                                                                                
+SQLServer:Latches                       	SuperLatch Promotions/sec                                   	                                                                                
 SQLServer:Exec Statistics               	DTC calls                                                   	Average execution time (ms)                                                     
 SQLServer:Exec Statistics               	DTC calls                                                   	Cumulative execution time (ms) per second                                       
 SQLServer:Exec Statistics               	DTC calls                                                   	Execs in progress                                                               
 SQLServer:Exec Statistics               	DTC calls                                                   	Execs started per second                                                        
-SQLServer:Exec Statistics               	Distributed Query                                           	Average execution time (ms)                                                     
-SQLServer:Exec Statistics               	Distributed Query                                           	Cumulative execution time (ms) per second                                       
-SQLServer:Exec Statistics               	Distributed Query                                           	Execs in progress                                                               
-SQLServer:Exec Statistics               	Distributed Query                                           	Execs started per second                                                        
-
 SQLServer:Exec Statistics               	OLEDB calls                                                 	Average execution time (ms)                                                     
 SQLServer:Exec Statistics               	OLEDB calls                                                 	Cumulative execution time (ms) per second                                       
 SQLServer:Exec Statistics               	OLEDB calls                                                 	Execs in progress                                                               
 SQLServer:Exec Statistics               	OLEDB calls                                                 	Execs started per second                                                        
 
 
+
+Medium Frequency
+-------------------------------------------------------------------------
+SQLServer:Batch Resp Statistics				all of them. Every 5 minutes? See below for the full list
+SQLServer:Transactions                  	Free Space in tempdb (KB)                                   	                                                                                
+SQLServer:Transactions                  	Longest Transaction Running Time                            	                                                                                
+SQLServer:Transactions                  	Version Store Size (KB)                                     	                                                                                
+SQLServer:Transactions                  	NonSnapshot Version Transactions                            	                                                                                
+SQLServer:Transactions                  	Snapshot Transactions                                       	                                                                                
+SQLServer:Transactions                  	Update Snapshot Transactions                                	                                                                                
+SQLServer:Transactions                  	Version Store unit count                                    	                                                                                
+SQLServer:Transactions                  	Version Store unit creation                                 	                                                                                
+SQLServer:Transactions                  	Version Store unit truncation                               	                                                                                
+SQLServer:Resource Pool Stats           	Active memory grant amount (KB)                             	default                                                                         
+SQLServer:Resource Pool Stats           	Active memory grant amount (KB)                             	internal                                                                        
+SQLServer:Resource Pool Stats           	Active memory grants count                                  	default                                                                         
+SQLServer:Resource Pool Stats           	Active memory grants count                                  	internal                                                                        
+SQLServer:Resource Pool Stats           	Cache memory target (KB)                                    	default                                                                         
+SQLServer:Resource Pool Stats           	Cache memory target (KB)                                    	internal                                                                        
+SQLServer:Resource Pool Stats           	Compile memory target (KB)                                  	default                                                                         
+SQLServer:Resource Pool Stats           	Compile memory target (KB)                                  	internal                                                                        
+SQLServer:Resource Pool Stats           	Max memory (KB)                                             	default                                                                         
+SQLServer:Resource Pool Stats           	Max memory (KB)                                             	internal                                                                        
+SQLServer:Exec Statistics               	Distributed Query                                           	Average execution time (ms)                                                     
+SQLServer:Exec Statistics               	Distributed Query                                           	Cumulative execution time (ms) per second                                       
+SQLServer:Exec Statistics               	Distributed Query                                           	Execs in progress                                                               
+SQLServer:Exec Statistics               	Distributed Query                                           	Execs started per second                                                        
 SQLServer:Memory Broker Clerks          	Internal benefit                                            	Buffer Pool                                                                     
 SQLServer:Memory Broker Clerks          	Internal benefit                                            	Column store object pool                                                        
 SQLServer:Memory Broker Clerks          	Memory broker clerk size                                    	Buffer Pool                                                                     
 SQLServer:Memory Broker Clerks          	Memory broker clerk size                                    	Column store object pool                                                        
-SQLServer:Memory Broker Clerks          	Periodic evictions (pages)                                  	Buffer Pool                                                                     
-SQLServer:Memory Broker Clerks          	Periodic evictions (pages)                                  	Column store object pool                                                        
-SQLServer:Memory Broker Clerks          	Pressure evictions (pages/sec)                              	Buffer Pool                                                                     
-SQLServer:Memory Broker Clerks          	Pressure evictions (pages/sec)                              	Column store object pool                                                        
 SQLServer:Memory Broker Clerks          	Simulation benefit                                          	Buffer Pool                                                                     
 SQLServer:Memory Broker Clerks          	Simulation benefit                                          	Column store object pool                                                        
 SQLServer:Memory Broker Clerks          	Simulation size                                             	Buffer Pool                                                                     
 SQLServer:Memory Broker Clerks          	Simulation size                                             	Column store object pool     
-
 SQLServer:Memory Manager                	Connection Memory (KB)                                      	                                                                                
 SQLServer:Memory Manager                	Database Cache Memory (KB)                                  	                                                                                
 SQLServer:Memory Manager                	External benefit of memory                                  	                                                                                
@@ -194,8 +217,12 @@ SQLServer:Memory Manager                	Lock Owner Blocks
 SQLServer:Memory Manager                	Lock Owner Blocks Allocated                                 	                                                                                
 SQLServer:Memory Manager                	Log Pool Memory (KB)                                        	                                                                                
 SQLServer:Memory Manager                	Maximum Workspace Memory (KB)                               	                                                                                
-SQLServer:Memory Manager                	Memory Grants Outstanding                                   	                                                                                
-SQLServer:Memory Manager                	Memory Grants Pending                                       	                                                                                
+SQLServer:Resource Pool Stats           	Query exec memory target (KB)                               	default                                                                         
+SQLServer:Resource Pool Stats           	Query exec memory target (KB)                               	internal                                                                        
+SQLServer:Resource Pool Stats           	Target memory (KB)                                          	default                                                                         
+SQLServer:Resource Pool Stats           	Target memory (KB)                                          	internal                                                                        
+SQLServer:Resource Pool Stats           	Used memory (KB)                                            	default                                                                         
+SQLServer:Resource Pool Stats           	Used memory (KB)                                            	internal                                                                        
 SQLServer:Memory Manager                	Optimizer Memory (KB)                                       	                                                                                
 SQLServer:Memory Manager                	Reserved Server Memory (KB)                                 	                                                                                
 SQLServer:Memory Manager                	SQL Cache Memory (KB)                                       	                                                                                
@@ -208,71 +235,36 @@ SQLServer:Memory Node                   	Free Node Memory (KB)                  
 SQLServer:Memory Node                   	Stolen Node Memory (KB)                                     	000                                                                             
 SQLServer:Memory Node                   	Target Node Memory (KB)                                     	000                                                                             
 SQLServer:Memory Node                   	Total Node Memory (KB)                                      	000                                                                             
-
-SQLServer:Plan Cache                    	Cache Hit Ratio                                             	_Total                                                                          
-SQLServer:Plan Cache                    	Cache Hit Ratio                                             	Bound Trees                                                                     
-SQLServer:Plan Cache                    	Cache Hit Ratio                                             	Extended Stored Procedures                                                      
-SQLServer:Plan Cache                    	Cache Hit Ratio                                             	Object Plans                                                                    
-SQLServer:Plan Cache                    	Cache Hit Ratio                                             	SQL Plans                                                                       
-SQLServer:Plan Cache                    	Cache Hit Ratio                                             	Temporary Tables & Table Variables                                              
-SQLServer:Plan Cache                    	Cache Hit Ratio Base                                        	_Total                                                                          
-SQLServer:Plan Cache                    	Cache Hit Ratio Base                                        	Bound Trees                                                                     
-SQLServer:Plan Cache                    	Cache Hit Ratio Base                                        	Extended Stored Procedures                                                      
-SQLServer:Plan Cache                    	Cache Hit Ratio Base                                        	Object Plans                                                                    
-SQLServer:Plan Cache                    	Cache Hit Ratio Base                                        	SQL Plans                                                                       
-SQLServer:Plan Cache                    	Cache Hit Ratio Base                                        	Temporary Tables & Table Variables                                              
 SQLServer:Plan Cache                    	Cache Object Counts                                         	_Total                                                                          
 SQLServer:Plan Cache                    	Cache Object Counts                                         	Bound Trees                                                                     
 SQLServer:Plan Cache                    	Cache Object Counts                                         	Extended Stored Procedures                                                      
 SQLServer:Plan Cache                    	Cache Object Counts                                         	Object Plans                                                                    
 SQLServer:Plan Cache                    	Cache Object Counts                                         	SQL Plans                                                                       
 SQLServer:Plan Cache                    	Cache Object Counts                                         	Temporary Tables & Table Variables                                              
-SQLServer:Plan Cache                    	Cache Objects in use                                        	_Total                                                                          
-SQLServer:Plan Cache                    	Cache Objects in use                                        	Bound Trees                                                                     
-SQLServer:Plan Cache                    	Cache Objects in use                                        	Extended Stored Procedures                                                      
-SQLServer:Plan Cache                    	Cache Objects in use                                        	Object Plans                                                                    
-SQLServer:Plan Cache                    	Cache Objects in use                                        	SQL Plans                                                                       
-SQLServer:Plan Cache                    	Cache Objects in use                                        	Temporary Tables & Table Variables                                              
 SQLServer:Plan Cache                    	Cache Pages                                                 	_Total                                                                          
 SQLServer:Plan Cache                    	Cache Pages                                                 	Bound Trees                                                                     
 SQLServer:Plan Cache                    	Cache Pages                                                 	Extended Stored Procedures                                                      
 SQLServer:Plan Cache                    	Cache Pages                                                 	Object Plans                                                                    
 SQLServer:Plan Cache                    	Cache Pages                                                 	SQL Plans                                                                       
 SQLServer:Plan Cache                    	Cache Pages                                                 	Temporary Tables & Table Variables      
-SQLServer:Transactions                  	Update conflict ratio                                       	                                                                                
-SQLServer:Transactions                  	Update conflict ratio base                                  	                                                                                
-
-SQLServer:Workload Group Stats          	Active parallel threads                                     	default                                                                         
-SQLServer:Workload Group Stats          	Active parallel threads                                     	internal                                                                        
-SQLServer:Workload Group Stats          	Active requests                                             	default                                                                         
-SQLServer:Workload Group Stats          	Active requests                                             	internal                                                                        
-SQLServer:Workload Group Stats          	Blocked tasks                                               	default                                                                         
-SQLServer:Workload Group Stats          	Blocked tasks                                               	internal                                                                        
-SQLServer:Workload Group Stats          	CPU usage %                                                 	default                                                                         
-SQLServer:Workload Group Stats          	CPU usage %                                                 	internal                                                                        
-SQLServer:Workload Group Stats          	CPU usage % base                                            	default                                                                         
-SQLServer:Workload Group Stats          	CPU usage % base                                            	internal                                                                        
 SQLServer:Workload Group Stats          	Max request cpu time (ms)                                   	default                                                                         
 SQLServer:Workload Group Stats          	Max request cpu time (ms)                                   	internal                                                                        
 SQLServer:Workload Group Stats          	Max request memory grant (KB)                               	default                                                                         
 SQLServer:Workload Group Stats          	Max request memory grant (KB)                               	internal                                                                        
-SQLServer:Workload Group Stats          	Query optimizations/sec                                     	default                                                                         
-SQLServer:Workload Group Stats          	Query optimizations/sec                                     	internal                                                                        
-SQLServer:Workload Group Stats          	Queued requests                                             	default                                                                         
-SQLServer:Workload Group Stats          	Queued requests                                             	internal                                                                        
-SQLServer:Workload Group Stats          	Reduced memory grants/sec                                   	default                                                                         
-SQLServer:Workload Group Stats          	Reduced memory grants/sec                                   	internal                                                                        
-SQLServer:Workload Group Stats          	Requests completed/sec                                      	default                                                                         
-SQLServer:Workload Group Stats          	Requests completed/sec                                      	internal                                                                        
-SQLServer:Workload Group Stats          	Suboptimal plans/sec                                        	default                                                                         
-SQLServer:Workload Group Stats          	Suboptimal plans/sec                                        	internal                                                                        
-SQLServer:Latches                       	Average Latch Wait Time (ms)                                	                                                                                
-SQLServer:Latches                       	Average Latch Wait Time Base                                	                                                                                
-SQLServer:Latches                       	Latch Waits/sec                                             	                                                                                
-SQLServer:Latches                       	Number of SuperLatches                                      	                                                                                
-SQLServer:Latches                       	SuperLatch Demotions/sec                                    	                                                                                
-SQLServer:Latches                       	SuperLatch Promotions/sec                                   	                                                                                
-SQLServer:Latches                       	Total Latch Wait Time (ms)                                  	                                                                                
+
+
+
+Low Frequency
+-------------------------------------------------------------------------
+
+
+
+Batch Frequency
+-------------------------------------------------------------------------
+
+
+
+
 
 
 
@@ -303,7 +295,6 @@ SQLServer:Access Methods                	LobSS Provider Destroy Count
 SQLServer:Access Methods                	LobSS Provider Truncation Count                             	                                                                                
 SQLServer:Access Methods                	Page Splits/sec                                             	                                                                                
 SQLServer:Access Methods                	Scan Point Revalidations/sec                                	                                                                                
-SQLServer:Access Methods                	Skipped Ghosted Records/sec                                 	                                                                                
 SQLServer:Access Methods                	Table Lock Escalations/sec                                  	                                                                                
 SQLServer:Access Methods                	Used leaf page cookie                                       	                                                                                
 SQLServer:Access Methods                	Used tree page cookie                                       	                                                                                
@@ -402,6 +393,9 @@ SQLServer:General Statistics            	Trace Event Notification Queue
 
 These are higher priority but I just put a single placeholder up above
 -------------------------------------------------------------------------------------------------------------------------------------
+The buckets are
+0-1ms	1-2ms	2-5ms	5-10ms	10-20ms	20-50ms	50-100ms	100-200ms	200-500ms	500-1000ms	1000-2000ms	2000-5000ms	5000-10000ms	10000-20000ms	20000-50000ms	50000ms-100000ms	>=100000ms
+
 SQLServer:Batch Resp Statistics         	Batches >=000000ms & <000001ms                              	CPU Time:Requests                                                               
 SQLServer:Batch Resp Statistics         	Batches >=000000ms & <000001ms                              	CPU Time:Total(ms)                                                              
 SQLServer:Batch Resp Statistics         	Batches >=000000ms & <000001ms                              	Elapsed Time:Requests                                                           
@@ -504,7 +498,6 @@ SQLServer:Locks                         	Average Wait Time Base                 
 SQLServer:Locks                         	Average Wait Time Base                                      	Page                                                                            
 SQLServer:Locks                         	Average Wait Time Base                                      	RID                                                                             
 SQLServer:Locks                         	Average Wait Time Base                                      	RowGroup                                                                        
-SQLServer:Locks                         	Lock Requests/sec                                           	_Total                                                                          
 SQLServer:Locks                         	Lock Requests/sec                                           	AllocUnit                                                                       
 SQLServer:Locks                         	Lock Requests/sec                                           	Application                                                                     
 SQLServer:Locks                         	Lock Requests/sec                                           	Database                                                                        
@@ -518,7 +511,6 @@ SQLServer:Locks                         	Lock Requests/sec                      
 SQLServer:Locks                         	Lock Requests/sec                                           	Page                                                                            
 SQLServer:Locks                         	Lock Requests/sec                                           	RID                                                                             
 SQLServer:Locks                         	Lock Requests/sec                                           	RowGroup                                                                        
-SQLServer:Locks                         	Lock Timeouts (timeout > 0)/sec                             	_Total                                                                          
 SQLServer:Locks                         	Lock Timeouts (timeout > 0)/sec                             	AllocUnit                                                                       
 SQLServer:Locks                         	Lock Timeouts (timeout > 0)/sec                             	Application                                                                     
 SQLServer:Locks                         	Lock Timeouts (timeout > 0)/sec                             	Database                                                                        
@@ -532,7 +524,6 @@ SQLServer:Locks                         	Lock Timeouts (timeout > 0)/sec        
 SQLServer:Locks                         	Lock Timeouts (timeout > 0)/sec                             	Page                                                                            
 SQLServer:Locks                         	Lock Timeouts (timeout > 0)/sec                             	RID                                                                             
 SQLServer:Locks                         	Lock Timeouts (timeout > 0)/sec                             	RowGroup                                                                        
-SQLServer:Locks                         	Lock Timeouts/sec                                           	_Total                                                                          
 SQLServer:Locks                         	Lock Timeouts/sec                                           	AllocUnit                                                                       
 SQLServer:Locks                         	Lock Timeouts/sec                                           	Application                                                                     
 SQLServer:Locks                         	Lock Timeouts/sec                                           	Database                                                                        
@@ -560,7 +551,6 @@ SQLServer:Locks                         	Lock Wait Time (ms)                    
 SQLServer:Locks                         	Lock Wait Time (ms)                                         	Page                                                                            
 SQLServer:Locks                         	Lock Wait Time (ms)                                         	RID                                                                             
 SQLServer:Locks                         	Lock Wait Time (ms)                                         	RowGroup                                                                        
-SQLServer:Locks                         	Lock Waits/sec                                              	_Total                                                                          
 SQLServer:Locks                         	Lock Waits/sec                                              	AllocUnit                                                                       
 SQLServer:Locks                         	Lock Waits/sec                                              	Application                                                                     
 SQLServer:Locks                         	Lock Waits/sec                                              	Database                                                                        
@@ -574,7 +564,6 @@ SQLServer:Locks                         	Lock Waits/sec                         
 SQLServer:Locks                         	Lock Waits/sec                                              	Page                                                                            
 SQLServer:Locks                         	Lock Waits/sec                                              	RID                                                                             
 SQLServer:Locks                         	Lock Waits/sec                                              	RowGroup                                                                        
-SQLServer:Locks                         	Number of Deadlocks/sec                                     	_Total                                                                          
 SQLServer:Locks                         	Number of Deadlocks/sec                                     	AllocUnit                                                                       
 SQLServer:Locks                         	Number of Deadlocks/sec                                     	Application                                                                     
 SQLServer:Locks                         	Number of Deadlocks/sec                                     	Database                                                                        
@@ -636,5 +625,23 @@ SQLServer:Wait Statistics               	Workspace synchronization waits        
 SQLServer:Wait Statistics               	Workspace synchronization waits                             	Cumulative wait time (ms) per second                                            
 SQLServer:Wait Statistics               	Workspace synchronization waits                             	Waits in progress                                                               
 SQLServer:Wait Statistics               	Workspace synchronization waits                             	Waits started per second                                                        
+SQLServer:Plan Cache                    	Cache Hit Ratio                                             	_Total                                                                          
+SQLServer:Plan Cache                    	Cache Hit Ratio                                             	Bound Trees                                                                     
+SQLServer:Plan Cache                    	Cache Hit Ratio                                             	Extended Stored Procedures                                                      
+SQLServer:Plan Cache                    	Cache Hit Ratio                                             	Object Plans                                                                    
+SQLServer:Plan Cache                    	Cache Hit Ratio                                             	SQL Plans                                                                       
+SQLServer:Plan Cache                    	Cache Hit Ratio                                             	Temporary Tables & Table Variables                                              
+SQLServer:Plan Cache                    	Cache Hit Ratio Base                                        	_Total                                                                          
+SQLServer:Plan Cache                    	Cache Hit Ratio Base                                        	Bound Trees                                                                     
+SQLServer:Plan Cache                    	Cache Hit Ratio Base                                        	Extended Stored Procedures                                                      
+SQLServer:Plan Cache                    	Cache Hit Ratio Base                                        	Object Plans                                                                    
+SQLServer:Plan Cache                    	Cache Hit Ratio Base                                        	SQL Plans                                                                       
+SQLServer:Plan Cache                    	Cache Hit Ratio Base                                        	Temporary Tables & Table Variables                                              
+SQLServer:Plan Cache                    	Cache Objects in use                                        	_Total                                                                          
+SQLServer:Plan Cache                    	Cache Objects in use                                        	Bound Trees                                                                     
+SQLServer:Plan Cache                    	Cache Objects in use                                        	Extended Stored Procedures                                                      
+SQLServer:Plan Cache                    	Cache Objects in use                                        	Object Plans                                                                    
+SQLServer:Plan Cache                    	Cache Objects in use                                        	SQL Plans                                                                       
+SQLServer:Plan Cache                    	Cache Objects in use                                        	Temporary Tables & Table Variables                                              
 
 */

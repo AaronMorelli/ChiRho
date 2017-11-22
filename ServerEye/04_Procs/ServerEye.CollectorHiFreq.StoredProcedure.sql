@@ -529,6 +529,34 @@ BEGIN TRY
 		n.online_scheduler_mask,
 		n.processor_group
 	FROM sys.dm_os_nodes n;
+
+	SET @errorloc = 'dm_os_nodes';
+	INSERT INTO [ServerEye].[dm_os_memory_broker_clerks](
+		[UTCCaptureTime],
+		[LocalCaptureTime],
+		[clerk_name],
+		[total_kb],
+		[simulated_kb],
+		[simulation_benefit],
+		[internal_benefit],
+		[external_benefit],
+		[value_of_memory],
+		[periodic_freed_kb],
+		[internal_freed_kb]
+	)
+	SELECT 
+		@UTCCaptureTime,
+		@LocalCaptureTime,
+		[clerk_name],
+		[total_kb],
+		[simulated_kb],
+		[simulation_benefit],
+		[internal_benefit],
+		[external_benefit],
+		[value_of_memory],
+		[periodic_freed_kb],
+		[internal_freed_kb]
+	FROM sys.dm_os_memory_broker_clerks m;
 	
 	SET @errorloc = 'dm_os_schedulers';
 	INSERT INTO [ServerEye].[dm_os_schedulers](
@@ -619,20 +647,24 @@ BEGIN TRY
 			ON w.scheduler_address = s.scheduler_address;
 
 
-	
+	SET @errorloc = 'Hi-Freq Perfmon';
+	INSERT INTO [ServerEye].[FactPerformanceCounter](
+		[UTCCaptureTime],
+		[DimPerformanceCounterID],
+		[cntr_value]
+	)
 	SELECT 
-		[worker_address],
-		[is_preemptive],
-		[is_sick],
-		[is_in_cc_exception],
-		[is_fatal_exception],
-		[is_inside_catch],
-		[is_in_polling_io_completion_routine],
-		[context_switch_count],
-		[pending_io_count],
-		[pending_io_byte_count],
-		[tasks_processed_count]
-	FROM sys.dm_os_workers w;
+		@UTCCaptureTime,
+		dpc.DimPerformanceCounterID,
+		pc.cntr_value
+	FROM ServerEye.DimPerformanceCounter dpc
+		INNER hash JOIN
+		sys.dm_os_performance_counters pc
+			ON dpc.object_name = pc.object_name
+			AND dpc.counter_name = pc.counter_name
+			AND dpc.instance_name = pc.instance_name
+	WHERE dpc.CounterFrequency = 1		--Hi-freq code
+	OPTION(FORCE ORDER);
 
 END TRY
 BEGIN CATCH

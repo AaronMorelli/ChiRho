@@ -41,6 +41,7 @@ CREATE TABLE [ServerEye].[dm_os_memory_cache_counters](
 	[LocalCaptureTime] [datetime] NOT NULL,
 	[DimMemoryTrackerID] [smallint],
 	[memory_node_id] [smallint] NOT NULL,
+	[NumUniqueRows] [int] NOT NULL,
 	[sum_pages_kb] [bigint] NULL,
 	[sum_pages_in_use_kb] [bigint] NULL,
 	[sum_entries_count] [bigint] NULL,

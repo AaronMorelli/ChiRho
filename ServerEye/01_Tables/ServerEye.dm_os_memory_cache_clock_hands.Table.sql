@@ -42,6 +42,7 @@ CREATE TABLE [ServerEye].[dm_os_memory_cache_clock_hands](
 	[DimMemoryTrackerID] [smallint],
 	[memory_node_id] [smallint] NOT NULL,
 	[clock_hand] [nvarchar](60) NOT NULL,
+	[NumUniqueRows] [int] NOT NULL,
 	[sum_status_is_suspended] [int] NULL,
 	[sum_status_is_running] [int] NULL,
 	[sum_rounds_count] [bigint] NULL,

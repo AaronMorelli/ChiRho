@@ -41,6 +41,7 @@ CREATE TABLE [ServerEye].[dm_os_memory_clerks](
 	[LocalCaptureTime] [datetime] NOT NULL,
 	[DimMemoryTrackerID] [smallint],
 	[memory_node_id] [smallint] NOT NULL,
+	[NumUniqueClerks] [int] NOT NULL,
 	[sum_pages_kb] [bigint] NULL,
 	[sum_virtual_memory_reserved_kb] [bigint] NULL,
 	[sum_virtual_memory_committed_kb] [bigint] NULL,

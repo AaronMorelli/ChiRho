@@ -376,6 +376,290 @@ BEGIN
 		tgt.IsInHosts = src.IsInHosts;
 
 
+	INSERT INTO [ServerEye].[DimPerformanceCounter](
+		[object_name],
+		[counter_name],
+		[instance_name],
+		[cntr_type],
+		[CounterFrequency]
+	)
+	SELECT 
+		LTRIM(RTRIM(pc.object_name)),
+		LTRIM(RTRIM(pc.counter_name)),
+		LTRIM(RTRIM(ISNULL(pc.instance_name,N''))),
+		pc.cntr_type,
+		[CounterFrequency] = 0
+	FROM sys.dm_os_performance_counters pc
+	WHERE NOT EXISTS (
+		SELECT * 
+		FROM ServerEye.DimPerformanceCounter dpc
+		WHERE dpc.object_name = pc.object_name
+		AND dpc.counter_name = pc.counter_name
+		AND dpc.instance_name = ISNULL(pc.instance_name,N'')
+	);
+
+	--Set to Hi-freq
+	UPDATE targ 
+	SET CounterFrequency = 1
+	FROM ServerEye.DimPerformanceCounter targ
+	WHERE targ.CounterFrequency = 0
+	AND (
+		object_name = N'SQLServer:Batch Resp Statistics'
+
+		OR (
+			object_name = N'SQLServer:Buffer Manager'
+			AND counter_name IN (
+				N'Background writer pages/sec',
+				N'Checkpoint pages/sec',
+				N'Free list stalls/sec',
+				N'Lazy writes/sec',
+				N'Page lookups/sec',
+				N'Page reads/sec',
+				N'Page writes/sec',
+				N'Readahead pages/sec',
+				N'Readahead time/sec'
+				)
+		)
+		OR (
+			object_name = N'SQLServer:Buffer Node'
+			AND counter_name IN (
+				N'Local node page lookups/sec',
+				N'Remote node page lookups/sec'
+			)
+		)
+		OR (
+			object_name = N'SQLServer:Databases'
+			AND counter_name IN (
+				N'Active Transactions',
+				N'Backup/Restore Throughput/sec',
+				N'Bulk Copy Rows/sec',
+				N'Bulk Copy Throughput/sec',
+				N'DBCC Logical Scan Bytes/sec',
+				N'Log Bytes Flushed/sec',
+				N'Log Flush Wait Time',
+				N'Log Flush Waits/sec',
+				N'Log Flush Write Time (ms)',
+				N'Log Flushes/sec',
+				N'Tracked transactions/sec',
+				N'Transactions/sec',
+				N'Write Transactions/sec'
+			)
+		)
+		OR (
+			object_name = N'SQLServer:General Statistics'
+			AND counter_name IN (
+				N'Connection Reset/sec',
+				N'Logins/sec',
+				N'Logouts/sec',
+				N'Processes blocked',
+				N'Transactions'
+			)
+		)
+		OR (
+			object_name = N'SQLServer:Latches'
+			AND counter_name IN (
+				N'Average Latch Wait Time (ms)',
+				N'Average Latch Wait Time Base',
+				N'Latch Waits/sec',
+				N'Total Latch Wait Time (ms)'
+			)
+		)
+		OR (
+			object_name = N'SQLServer:Locks'
+			AND counter_name IN (N'Lock Requests/sec', N'Lock Timeouts (timeout > 0)/sec', N'Lock Timeouts/sec', N'Number of Deadlocks/sec' )
+			AND instance_name = N'_Total'
+		)
+		OR (
+			object_name = N'SQLServer:Memory Broker Clerks'
+			AND counter_name IN (N'Periodic evictions (pages)', N'Pressure evictions (pages/sec)')
+		)
+		OR (
+			object_name = N'SQLServer:Resource Pool Stats'
+			AND counter_name IN (
+				N'Avg Disk Read IO (ms)',
+				N'Avg Disk Read IO (ms) Base',
+				N'CPU control effect %',
+				N'CPU usage %',
+				N'CPU usage target %',
+				N'Disk Read Bytes/sec',
+				N'Disk Read IO Throttled/sec',
+				N'Disk Read IO/sec',
+				N'Disk Write Bytes/sec',
+				N'Disk Write IO Throttled/sec',
+				N'Disk Write IO/sec',
+				N'Memory grant timeouts/sec',
+				N'Memory grants/sec'
+			)
+		)
+		OR (
+			object_name = N'SQLServer:SQL Errors'
+		)
+		OR (
+			object_name = N'SQLServer:SQL Statistics'
+		)
+		OR (
+			object_name = N'SQLServer:Transactions'
+			AND counter_name IN (
+				N'NonSnapshot Version Transactions',
+				N'Snapshot Transactions',
+				N'Transactions',
+				N'Update Snapshot Transactions',
+				N'Version Cleanup rate (KB/s)',
+				N'Version Generation rate (KB/s)'
+			)
+		)
+		OR (
+			object_name = N'SQLServer:Workload Group Stats'
+			AND counter_name IN (
+				N'Active parallel threads',
+				N'Active requests',
+				N'Blocked tasks',
+				N'CPU usage %',
+				N'CPU usage % base',
+				N'Query optimizations/sec',
+				N'Queued requests',
+				N'Requests completed/sec'
+			)
+		)
+	);
+
+	--Set to Med-Freq
+	UPDATE targ 
+	SET CounterFrequency = 2
+	FROM ServerEye.DimPerformanceCounter targ
+	WHERE targ.CounterFrequency = 0
+	AND (
+		(
+			object_name = N'SQLServer:Access Methods'
+			AND counter_name IN (
+				N'Extent Deallocations/sec',
+				N'Extents Allocated/sec',
+				N'Forwarded Records/sec',
+				N'Mixed page allocations/sec',
+				N'Page compression attempts/sec',
+				N'Page Deallocations/sec',
+				N'Pages Allocated/sec',
+				N'Pages compressed/sec',
+				N'Probe Scans/sec',
+				N'Range Scans/sec',
+				N'Skipped Ghosted Records/sec',
+				N'Workfiles Created/sec',
+				N'Worktables Created/sec',
+				N'Worktables From Cache Base',
+				N'Worktables From Cache Ratio'
+				)
+		)
+		OR (
+			object_name = N'SQLServer:Buffer Manager'
+			AND counter_name IN (
+				N'Buffer cache hit ratio',
+				N'Buffer cache hit ratio base',
+				N'Database pages',
+				N'Page life expectancy',
+				N'Target pages'
+			)
+		)
+		OR (
+			object_name = N'SQLServer:Buffer Node'
+			AND counter_name IN (
+				N'Database pages',
+				N'Page life expectancy'
+			)
+		)
+		OR (
+			object_name = N'SQLServer:Catalog Metadata'
+			AND counter_name = N'Cache Entries Count'
+			AND instance_name = N'_Total'
+		)
+		OR (
+			object_name = N'SQLServer:CLR'
+		)
+		OR (
+			object_name = N'SQLServer:Cursor Manager by Type'
+			AND counter_name IN (N'Active cursors', N'Cached Cursor Counts', N'Cursor memory usage')
+			AND instance_name = N'_Total'
+		)
+		OR (
+			object_name = N'SQLServer:Databases'
+			AND counter_name IN (
+				N'Commit table entries',
+				N'Group Commit Time/sec'
+			)
+		)
+		OR (
+			object_name = N'SQLServer:Exec Statistics'
+			AND counter_name IN (
+				N'Distributed Query',
+				N'DTC calls',
+				N'Extended Procedures',
+				N'OLEDB calls'
+			)
+		)
+		OR (
+			object_name = N'SQLServer:General Statistics'
+			AND counter_name IN (
+				N'Active Temp Tables',
+				N'Logical Connections',
+				N'Temp Tables Creation Rate',
+				N'Temp Tables For Destruction',
+				N'User Connections'
+			)
+		)
+		OR (
+			object_name = N'SQLServer:Latches'
+			AND counter_name IN (
+				N'SuperLatch Demotions/sec',
+				N'SuperLatch Promotions/sec'
+			)
+		)
+		OR (
+			object_name = N'SQLServer:Memory Manager'
+		)
+		OR (
+			object_name = N'SQLServer:Memory Node'
+		)
+		OR (
+			object_name = N'SQLServer:Plan Cache'
+			AND counter_name IN (
+				N'Cache Object Counts', N'Cache Pages'
+			)
+			AND instance_name = N'_Total'
+		)
+		OR (
+			object_name = N'SQLServer:Transactions'
+			AND counter_name IN (
+				N'Free Space in tempdb (KB)',
+				N'Longest Transaction Running Time',
+				N'Version Store Size (KB)'
+			)
+		)
+		OR (
+			object_name = N'SQLServer:Workload Group Stats'
+			AND counter_name IN (
+				N'Max request cpu time (ms)',
+				N'Max request memory grant (KB)',
+				N'Reduced memory grants/sec',
+				N'Suboptimal plans/sec'
+			)
+		)
+	);
+
+	/*
+	--Set to Lo-Freq
+	UPDATE targ 
+	SET CounterFrequency = 3
+	FROM ServerEye.DimPerformanceCounter targ
+	WHERE targ.CounterFrequency = 0
+	;
+
+	SELECT *
+	FROM ServerEye.DimPerformanceCounter dpc
+	WHERE dpc.CounterFrequency = 0
+	ORDER BY dpc.object_name, dpc.counter_name, dpc.instance_name
+	*/
+
+	ALTER INDEX [CL_CounterFrequency] ON ServerEye.DimPerformanceCounter REBUILD;
+	ALTER INDEX [AKDimPerformanceCounter] ON ServerEye.DimPerformanceCounter REBUILD;
 
 	RETURN 0;
 END
