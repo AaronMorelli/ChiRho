@@ -690,8 +690,8 @@ BEGIN TRY
 			sar.session_id, 
 			sar.request_id,
 			sar.rqst__start_time,
-			FirstSeenUTC = MIN(UTCCaptureTime),		--"Min" only within the start/end range
-			LastSeenUTC = MAX(UTCCaptureTime)		--"Max" only within the start/end range
+			FirstSeenUTC = MIN(sar.UTCCaptureTime),		--"Min" only within the start/end range
+			LastSeenUTC = MAX(sar.UTCCaptureTime)		--"Max" only within the start/end range
 		FROM AutoWho.SessionsAndRequests sar
 			INNER JOIN #CaptureTimes ct	--limit to just successful runs
 				ON ct.UTCCaptureTime = sar.UTCCaptureTime
