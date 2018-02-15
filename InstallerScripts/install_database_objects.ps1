@@ -72,7 +72,7 @@ $core_schemas = $core_parent + "CreateSchemas.sql"
 $core_tables = $core_parent + "01_Tables"
 $core_triggerstypes = $core_parent + "02_TriggersAndTypes"
 $core_functions = $core_parent + "03_Functions"
-$core_views = $core_views + "04_Views"
+$core_views = $core_parent + "04_Views"
 $core_procedures = $core_parent + "05_Procs"
 
 
@@ -290,7 +290,9 @@ Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
 ### NOTE: skipping "03_Functions" until we have a function.
 
-### NOTE: skipping "04_Views" until we have a view
+# Core views is down below after AW and SE since one of the views references AW tables. May rethink this later.
+
+
 
 $curtime = Get-Date -format s
 $outmsg = $curtime + "------> Creating core procedures"
@@ -598,7 +600,7 @@ $curtime = Get-Date -format s
 $outmsg = $curtime + "------> Configuring ServerEye"
 Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
-# AutoWho config
+# ServerEye config
 try {
 	$MyVariableArray = "DaysToKeep=$ServerDataDaysToKeep"
 	
@@ -620,7 +622,33 @@ catch [system.exception] {
 Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
 
+$curtime = Get-Date -format s
+$outmsg = $curtime + "------> Creating core views"
+Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
+# Core views
+try {
+	(dir $core_views) |  
+		ForEach-Object {  
+			$curScript = $_.FullName
+			$curFileName = $_.Name
+
+			invoke-sqlcmd -inputfile $curScript -serverinstance $Server -database $Database -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+			#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
+			CD $curScriptLocation
+
+		}
+}
+catch [system.exception] {
+	Write-Host "Error occurred when creating core views, in file: " + $curScript -foregroundcolor red -backgroundcolor black
+	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+    $curtime = Get-Date -format s
+	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+    throw "Installation failed"
+	break
+}  # end of Core views block
+
+Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
 
 
@@ -631,56 +659,56 @@ Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
 # we take our __TEMPLATE versions of the master procs and create versions with $Database substituted for @@XRDATABASENAME@@
 # Note: currently sp_XR_JobMatrix and sp_XR_FileUsage do not have any references to the XR database
-#$masterproc_JM = $masterprocs_parent + "sp_XR_JobMatrix.sql"
+$masterproc_JM = $masterprocs_parent + "sp_XR_JobMatrix.sql"
 
-#$curtime = Get-Date -format s
-#$outmsg = $curtime + "------> Creating sp_XR_JobMatrix"
-#Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+$curtime = Get-Date -format s
+$outmsg = $curtime + "------> Creating sp_XR_JobMatrix"
+Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
-#try {
-#	invoke-sqlcmd -inputfile $masterproc_JM -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+try {
+	invoke-sqlcmd -inputfile $masterproc_JM -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
 #	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
-#	CD $curScriptLocation
+	CD $curScriptLocation
 
-#	Write-Host "Finished creating sp_XR_JobMatrix" -foregroundcolor cyan -backgroundcolor black
+	Write-Host "Finished creating sp_XR_JobMatrix" -foregroundcolor cyan -backgroundcolor black
 
-#}
-#catch [system.exception] {
-#	Write-Host "Error occurred while creating sp_XR_JobMatrix: " -foregroundcolor red -backgroundcolor black
-#	Write-Host "$_" -foregroundcolor red -backgroundcolor black
-#    $curtime = Get-Date -format s
-#	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
-#    throw "Installation failed"
-#	break
-#}
+}
+catch [system.exception] {
+	Write-Host "Error occurred while creating sp_XR_JobMatrix: " -foregroundcolor red -backgroundcolor black
+	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+    $curtime = Get-Date -format s
+	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+    throw "Installation failed"
+	break
+}
 
-#Write-Host "" -foregroundcolor cyan -backgroundcolor black
+Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
 
-#$masterproc_MDF = $masterprocs_parent + "sp_XR_FileUsage.sql"
+$masterproc_MDF = $masterprocs_parent + "sp_XR_FileUsage.sql"
 
-#$curtime = Get-Date -format s
-#$outmsg = $curtime + "------> Creating sp_XR_FileUsage"
-#Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
+$curtime = Get-Date -format s
+$outmsg = $curtime + "------> Creating sp_XR_FileUsage"
+Write-Host $outmsg -backgroundcolor black -foregroundcolor cyan
 
-#try {
-#	invoke-sqlcmd -inputfile $masterproc_MDF -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
+try {
+	invoke-sqlcmd -inputfile $masterproc_MDF -serverinstance $Server -database master -QueryTimeout 65534 -AbortOnError -Verbose -outputsqlerrors $true
 #	#In Windows 2012 R2, we are ending up in the SQLSERVER:\ prompt, when really we want to be in the file system provider. Doing a simple "CD" command gets us back there
-#	CD $curScriptLocation
+	CD $curScriptLocation
 
-#	Write-Host "Finished creating sp_XR_FileUsage" -foregroundcolor cyan -backgroundcolor black
+	Write-Host "Finished creating sp_XR_FileUsage" -foregroundcolor cyan -backgroundcolor black
 
-#}
-#catch [system.exception] {
-#	Write-Host "Error occurred while creating sp_XR_FileUsage: " -foregroundcolor red -backgroundcolor black
-#	Write-Host "$_" -foregroundcolor red -backgroundcolor black
-#    $curtime = Get-Date -format s
-#	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
-#    throw "Installation failed"
-#	break
-#}
+}
+catch [system.exception] {
+	Write-Host "Error occurred while creating sp_XR_FileUsage: " -foregroundcolor red -backgroundcolor black
+	Write-Host "$_" -foregroundcolor red -backgroundcolor black
+    $curtime = Get-Date -format s
+	Write-Host "Aborting installation, abort time: " + $curtime -foregroundcolor red -backgroundcolor black
+    throw "Installation failed"
+	break
+}
 
-#Write-Host "" -foregroundcolor cyan -backgroundcolor black
+Write-Host "" -foregroundcolor cyan -backgroundcolor black
 
 
 $masterproc_LR = $masterprocs_parent + "sp_XR_LongRequests__TEMPLATE.sql"

@@ -2,7 +2,7 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [XR].[ProfilerTraceBySPID_Stop]
+CREATE PROCEDURE [CoreXR].[ProfilerTraceBySPID_Stop]
 /*   
 	Copyright 2016 Aaron Morelli
 
@@ -24,9 +24,9 @@ CREATE PROCEDURE [XR].[ProfilerTraceBySPID_Stop]
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: XR.ProfilerTraceBySPID_Stop.StoredProcedure.sql
+	FILE NAME: CoreXR.ProfilerTraceBySPID_Stop.StoredProcedure.sql
 
-	PROCEDURE NAME: XR.ProfilerTraceBySPID_Stop
+	PROCEDURE NAME: CoreXR.ProfilerTraceBySPID_Stop
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
@@ -34,7 +34,7 @@ CREATE PROCEDURE [XR].[ProfilerTraceBySPID_Stop]
 					sqlcrossjoin.wordpress.com
 
 	PURPOSE: Called ad-hoc by users when wanting to stop a trace started
-		by [XR].[ProfilerTraceBySPID_Start]
+		by [CoreXR].[ProfilerTraceBySPID_Start]
 
 		Note that error handling for this proc is carefully constructed not to raise any
 		exceptions, and no transaction management is undertaken. This is to avoid any
@@ -48,7 +48,7 @@ To Execute
 ------------------------
 minimal param usage:
 DECLARE @lmsg NVARCHAR(MAX);
-EXEC [XR].[ProfilerTraceBySPID_Start] @TraceCategories=N'Performance,Stored Procedures', 
+EXEC [CoreXR].[ProfilerTraceBySPID_Start] @TraceCategories=N'Performance,Stored Procedures', 
 												@IncludePerfWarnings=N'Y',
 												@SPID=NULL,			--defaults to current SPID
 												@Duration=250000,	--250 ms will ignore lots of unimportant statements

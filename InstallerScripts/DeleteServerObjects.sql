@@ -30,21 +30,29 @@
 */
 DECLARE @DBN_input NVARCHAR(256),
 		@AutoWhoTraceJobName NVARCHAR(256),
+		@ServerEyeTraceJobName NVARCHAR(256),
 		@XRMasterJobName NVARCHAR(256),
 		@ExceptionMessage NVARCHAR(4000),
 		@jid uniqueidentifier,
 		@DynSQL NVARCHAR(4000);
 SET @DBN_input = N'$(DBName)';
 SET @AutoWhoTraceJobName = @DBN_input +  N' - AlwaysDisabled - AutoWho Trace';
+SET @ServerEyeTraceJobName = @DBN_input + N' - AlwaysDisabled - ServerEye Trace';
 SET @XRMasterJobName = @DBN_input +  N' - Every 15 Min - Daily - ChiRho Master';
 
 IF @DBN_input IS NULL
 BEGIN
-	RAISERROR('Parameter "Database" cannot be null.', 16,1);
+	RAISERROR('Script DeleteServerObjects.sql: Parameter "Database" cannot be null.', 16,1);
 END
 ELSE
 BEGIN
 	SET @jid = (SELECT j.job_id FROM msdb.dbo.sysjobs j WHERE j.name = @AutoWhoTraceJobName);
+	IF @jid IS NOT NULL
+	BEGIN
+		EXEC msdb.dbo.sp_delete_job @job_id=@jid, @delete_unused_schedule=1
+	END
+
+	SET @jid = (SELECT j.job_id FROM msdb.dbo.sysjobs j WHERE j.name = @ServerEyeTraceJobName);
 	IF @jid IS NOT NULL
 	BEGIN
 		EXEC msdb.dbo.sp_delete_job @job_id=@jid, @delete_unused_schedule=1

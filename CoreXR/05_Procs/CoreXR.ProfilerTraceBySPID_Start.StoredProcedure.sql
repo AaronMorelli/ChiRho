@@ -2,7 +2,7 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [XR].[ProfilerTraceBySPID_Start]
+CREATE PROCEDURE [CoreXR].[ProfilerTraceBySPID_Start]
 /*   
 	Copyright 2016 Aaron Morelli
 
@@ -24,9 +24,9 @@ CREATE PROCEDURE [XR].[ProfilerTraceBySPID_Start]
 
 	PROJECT DESCRIPTION: A T-SQL toolkit for troubleshooting performance and stability problems on SQL Server instances
 
-	FILE NAME: XR.ProfilerTraceBySPID_Start.StoredProcedure.sql
+	FILE NAME: CoreXR.ProfilerTraceBySPID_Start.StoredProcedure.sql
 
-	PROCEDURE NAME: XR.ProfilerTraceBySPID_Start
+	PROCEDURE NAME: CoreXR.ProfilerTraceBySPID_Start
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com
@@ -50,7 +50,7 @@ To Execute
 ------------------------
 --minimal param usage:
 DECLARE @lmsg NVARCHAR(MAX);
-EXEC [XR].[ProfilerTraceBySPID_Start] @TraceCategories=N'Performance,Stored Procedures', 
+EXEC [CoreXR].[ProfilerTraceBySPID_Start] @TraceCategories=N'Performance,Stored Procedures', 
 												@IncludePerfWarnings=N'Y',
 												@SPID=NULL,			--defaults to current SPID
 												@Duration=250000,	--250 ms will ignore lots of unimportant statements

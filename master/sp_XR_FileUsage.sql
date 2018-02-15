@@ -4,7 +4,7 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-ALTER PROCEDURE [dbo].[sp_XR_FileUsage] 
+CREATE PROCEDURE [dbo].[sp_XR_FileUsage] 
 /*   
 	Copyright 2016 Aaron Morelli
 

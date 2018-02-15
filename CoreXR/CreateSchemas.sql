@@ -23,8 +23,6 @@
 */
 CREATE SCHEMA [CoreXR] 
 GO
-CREATE SCHEMA [XR]		--the "public" interface (e.g. views and such)
-GO
 CREATE SCHEMA [AutoWho]
 GO
 CREATE SCHEMA [ServerEye]

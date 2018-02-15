@@ -2,7 +2,7 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE VIEW [XR].[SessionsAndRequests] AS
+CREATE VIEW [CoreXR].[SessionsAndRequests] AS
 /*   
    Copyright 2016 Aaron Morelli
 
@@ -18,9 +18,9 @@ CREATE VIEW [XR].[SessionsAndRequests] AS
    See the License for the specific language governing permissions and
    limitations under the License.
 
-	FILE NAME: XR.SessionsAndRequests.View.sql
+	FILE NAME: CoreXR.SessionsAndRequests.View.sql
 
-	VIEW NAME: XR.SessionsAndRequests
+	VIEW NAME: CoreXR.SessionsAndRequests
 
 	AUTHOR:			Aaron Morelli
 					aaronmorelli@zoho.com

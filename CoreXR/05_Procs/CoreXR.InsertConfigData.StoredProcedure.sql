@@ -44,6 +44,7 @@ EXEC CoreXR.InsertConfigData
 --use to reset the data:
 truncate table CoreXR.ProfilerTraceEvents
 truncate table CoreXR.Version
+truncate table CoreXR.CollectionInitiators
 */
 AS
 BEGIN
