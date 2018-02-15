@@ -314,6 +314,23 @@ BEGIN
 			INSERT INTO AutoWho.UserCollectionTimes 
 			(CollectionInitiatorID, session_id, SPIDCaptureTime, UTCCaptureTime)
 			SELECT @init, @@SPID, @lv__SPIDCaptureTime, @lv__UTCCaptureTime;
+
+			--Try to link this capture up with a previous successful capture for this same initiator
+			UPDATE targ 
+			SET PrevSuccessfulUTCCaptureTime = prev.UTCCaptureTime
+			FROM AutoWho.CaptureTimes targ
+				OUTER APPLY (
+					SELECT TOP 1
+						ct.UTCCaptureTime
+					FROM AutoWho.CaptureTimes ct
+					WHERE ct.CollectionInitiatorID = @init
+					AND ct.UTCCaptureTime < @lv__UTCCaptureTime
+					--must be within 5 minutes 
+					AND ct.UTCCaptureTime >= DATEADD(MINUTE, -5, @lv__UTCCaptureTime)
+					AND ct.RunWasSuccessful = 1
+					ORDER BY ct.UTCCaptureTime DESC
+				) prev
+			WHERE targ.UTCCaptureTime = @lv__UTCCaptureTime;
 		END TRY
 		BEGIN CATCH
 			SET @omsg = 'User Collection: AutoWho Collector procedure generated an exception: Error Number: ' + 
@@ -387,6 +404,22 @@ BEGIN
 			INSERT INTO AutoWho.UserCollectionTimes 
 			(CollectionInitiatorID, session_id, SPIDCaptureTime, UTCCaptureTime)
 			SELECT @init, @@SPID, @lv__SPIDCaptureTime, @lv__UTCCaptureTime;
+
+			UPDATE targ 
+			SET PrevSuccessfulUTCCaptureTime = prev.UTCCaptureTime
+			FROM AutoWho.CaptureTimes targ
+				OUTER APPLY (
+					SELECT TOP 1
+						ct.UTCCaptureTime
+					FROM AutoWho.CaptureTimes ct
+					WHERE ct.CollectionInitiatorID = @init
+					AND ct.UTCCaptureTime < @lv__UTCCaptureTime
+					--must be within 5 minutes 
+					AND ct.UTCCaptureTime >= DATEADD(MINUTE, -5, @lv__UTCCaptureTime)
+					AND ct.RunWasSuccessful = 1
+					ORDER BY ct.UTCCaptureTime DESC
+				) prev
+			WHERE targ.UTCCaptureTime = @lv__UTCCaptureTime;
 		END TRY
 		BEGIN CATCH
 			SET @omsg = 'User Collection: AutoWho Collector procedure generated an exception: Error Number: ' + 

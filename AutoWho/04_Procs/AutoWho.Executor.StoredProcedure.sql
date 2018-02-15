@@ -642,6 +642,28 @@ BEGIN TRY
 		-- about the system in a more lightweight way.
 		SET @lv__AutoWhoCallCompleteTimeUTC = GETUTCDATE();
 
+		--If this run was successful, let's find the most-recent successful run 
+		-- (Useful for queries that consume this data and need to somehow connect a previous run with its successive run.)
+		IF @lv__SuccessiveExceptions = 0
+		BEGIN
+			UPDATE targ 
+			SET PrevSuccessfulUTCCaptureTime = prev.UTCCaptureTime
+			FROM AutoWho.CaptureTimes targ
+				OUTER APPLY (
+					SELECT TOP 1
+						ct.UTCCaptureTime
+					FROM AutoWho.CaptureTimes ct
+					WHERE ct.CollectionInitiatorID = 255
+					AND ct.UTCCaptureTime < @lv__UTCCaptureTime
+					--must be within 5 minutes 
+					AND ct.UTCCaptureTime >= DATEADD(MINUTE, -5, @lv__UTCCaptureTime)
+					AND ct.RunWasSuccessful = 1
+					ORDER BY ct.UTCCaptureTime DESC
+				) prev
+			WHERE targ.UTCCaptureTime = @lv__UTCCaptureTime;
+		END
+
+		--If the AutoWho collector itself took a long time, gather at least some data in a more lightweight way
 		IF DATEDIFF(MILLISECOND, @lv__LoopStartTimeUTC, @lv__AutoWhoCallCompleteTimeUTC) > 30000
 		BEGIN
 			--the system must be really loaded. Sometimes when things are really bad, AutoWho's results

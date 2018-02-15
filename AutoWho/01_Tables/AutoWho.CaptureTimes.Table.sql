@@ -42,6 +42,7 @@ CREATE TABLE [AutoWho].[CaptureTimes] (
 	[UTCCaptureTime]				[datetime] NOT NULL,
 	[SPIDCaptureTime]				[datetime] NOT NULL,
 	[RunWasSuccessful]				[tinyint] NOT NULL,
+	[PrevSuccessfulUTCCaptureTime]	[datetime] NULL,		--stores the most recent UTCCaptureTime where RunWasSuccessful=1
 	[SpidsCaptured]					[int] NULL,
 	[PostProcessed_StmtStats]		[tinyint] NOT NULL,
 	[PostProcessed_Latch]			[tinyint] NOT NULL,

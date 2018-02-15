@@ -2117,11 +2117,13 @@ N' -- ?>';
 			LEFT OUTER JOIN AutoWho.DimCommand dimcmd
 				ON sar.rqst__FKDimCommand = dimcmd.DimCommandID
 			LEFT OUTER JOIN AutoWho.TasksAndWaits taw
-				ON sar.UTCCaptureTime = taw.UTCCaptureTime
+				ON sar.CollectionInitiatorID = taw.CollectionInitiatorID
+				AND taw.CollectionInitiatorID = @init
+				AND sar.UTCCaptureTime = taw.UTCCaptureTime
+				AND taw.UTCCaptureTime = @tvar
 				AND sar.session_id = taw.session_id
 				AND sar.request_id = taw.request_id
 				AND taw.task_priority = 1
-				AND taw.UTCCaptureTime = @tvar
 			LEFT OUTER JOIN AutoWho.DimWaitType dwt
 				ON taw.FKDimWaitType = dwt.DimWaitTypeID
 			LEFT OUTER JOIN AutoWho.DimLoginName dln
