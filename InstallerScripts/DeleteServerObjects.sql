@@ -68,6 +68,12 @@ GO
 
 IF EXISTS (SELECT * FROM sys.procedures p 
 			WHERE p.schema_id = schema_id('dbo') 
+			AND p.name = N'sp_XR_Branches')
+BEGIN
+	DROP PROCEDURE dbo.sp_XR_Branches;
+END
+IF EXISTS (SELECT * FROM sys.procedures p 
+			WHERE p.schema_id = schema_id('dbo') 
 			AND p.name = N'sp_XR_JobMatrix')
 BEGIN
 	DROP PROCEDURE dbo.sp_XR_JobMatrix;

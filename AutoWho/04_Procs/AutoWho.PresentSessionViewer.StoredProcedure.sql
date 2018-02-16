@@ -480,7 +480,7 @@ BEGIN
 	-- There is also the possibility that conversion to XML will fail, so we don't want to wait until the final join.
 	-- This temp table is our workspace for that resolution/conversion work.
 	CREATE TABLE #SQLStmtStore (
-		PKSQLStmtStoreID			BIGINT NOT NULL,
+		PKSQLStmtStoreID			BIGINT NOT NULL PRIMARY KEY CLUSTERED,
 		[sql_handle]				VARBINARY(64) NOT NULL,
 		statement_start_offset		INT NOT NULL,
 		statement_end_offset		INT NOT NULL, 
@@ -495,7 +495,7 @@ BEGIN
 	);
 
 	CREATE TABLE #SQLBatchStore (
-		PKSQLBatchStoreID			BIGINT NOT NULL,
+		PKSQLBatchStoreID			BIGINT NOT NULL PRIMARY KEY CLUSTERED,
 		[sql_handle]				VARBINARY(64) NOT NULL, 
 		--[dbid]						SMALLINT NOT NULL,
 		--[objectid]					INT NOT NULL,
@@ -508,14 +508,14 @@ BEGIN
 
 	--Ditto, input buffer conversions to XML can fail.
 	CREATE TABLE #InputBufferStore (
-		PKInputBufferStoreID		BIGINT NOT NULL,
+		PKInputBufferStoreID		BIGINT NOT NULL PRIMARY KEY CLUSTERED,
 		inputbuffer					NVARCHAR(4000) NOT NULL,
 		inputbuffer_xml				XML
 	);
 
 	--Ditto, QP conversions to XML can fail.
 	CREATE TABLE #QueryPlanStmtStore (
-		PKQueryPlanStmtStoreID		BIGINT NOT NULL,
+		PKQueryPlanStmtStoreID		BIGINT NOT NULL PRIMARY KEY CLUSTERED,
 		[plan_handle]				VARBINARY(64) NOT NULL,
 		--statement_start_offset		INT NOT NULL,
 		--statement_end_offset		INT NOT NULL,
@@ -526,7 +526,7 @@ BEGIN
 	);
 
 	CREATE TABLE #QueryPlanBatchStore (
-		PKQueryPlanBatchStoreID		BIGINT NOT NULL, 
+		PKQueryPlanBatchStoreID		BIGINT NOT NULL PRIMARY KEY CLUSTERED, 
 		[plan_handle]				VARBINARY(64) NOT NULL,
 		--[dbid]						SMALLINT NOT NULL,
 		--[objectid]					INT NOT NULL,
@@ -543,7 +543,7 @@ BEGIN
 	);
 
 	CREATE TABLE #TranDetails (
-		session_id					INT,
+		session_id					INT PRIMARY KEY CLUSTERED,
 		tran__tlog_rsvd_bytes		BIGINT,
 		tran__info					NVARCHAR(MAX)
 	);
