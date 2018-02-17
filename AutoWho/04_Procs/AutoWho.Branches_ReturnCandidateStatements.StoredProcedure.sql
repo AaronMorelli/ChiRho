@@ -78,6 +78,7 @@ BEGIN
 		WHERE sct.session_id = @spid
 		AND sct.request_id = @rqst
 		AND sct.TimeIdentifier = @rqststart
+		AND sct.UTCCaptureTime BETWEEN @startUTC AND @endUTC
 		)
 	BEGIN
 		--Is the statement in AutoWho.SessionsAndRequests?
