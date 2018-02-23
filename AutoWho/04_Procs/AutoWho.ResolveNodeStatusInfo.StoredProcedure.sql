@@ -200,6 +200,8 @@ BEGIN TRY
 					rn = ROW_NUMBER() OVER (PARTITION BY taw.UTCCaptureTime, taw.session_id, taw.request_id, 
 												taw.task_address ORDER BY taw.task_priority ASC )
 				FROM AutoWho.TasksAndWaits taw
+					INNER JOIN #NodeStatusProcessCaptureTimes n
+						ON n.UTCCaptureTime = taw.UTCCaptureTime
 				WHERE taw.CollectionInitiatorID = @CollectionInitiatorID
 				AND taw.UTCCaptureTime BETWEEN @EffectiveFirstCaptureTimeUTC AND @EffectiveLastCaptureTimeUTC
 				AND taw.session_id >= 0

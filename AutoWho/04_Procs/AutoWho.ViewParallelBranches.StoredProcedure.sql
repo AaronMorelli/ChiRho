@@ -1,8 +1,11 @@
+USE [Sentinel]
+GO
+/****** Object:  StoredProcedure [AutoWho].[ViewParallelBranches]    Script Date: 2/23/2018 9:22:05 AM ******/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-ALTER PROCEDURE [AutoWho].[ViewParallelBranches] 
+CREATE PROCEDURE [AutoWho].[ViewParallelBranches] 
 /*   
 	Copyright 2016 Aaron Morelli
 
@@ -58,6 +61,8 @@ BEGIN
 		@lv__nullstring				NVARCHAR(8),
 		@lv__nullint				INT,
 		@lv__nullsmallint			SMALLINT,
+		@err__RowCount				BIGINT,
+		@err__msg					VARCHAR(8000),
 		@CXPWaitTypeID				SMALLINT,
 		@NULLWaitTypeID				SMALLINT,
 		@stmtStartUTC				DATETIME,
@@ -203,8 +208,9 @@ BEGIN
 		[FKDimWaitType]				[smallint]			NOT NULL,	-- LATCH_xx string has been converted to "subtype(xx)"; null has been converted to @lv__nullstring
 		[wait_duration_ms]			[bigint]			NOT NULL,	-- 0 if null
 
-		--AARON: left off here: need to add a column to show an "adjusted wait duration" that takes into account the time interval between this UTCCaptureTime and the Prev Successful one
-		[wait_duration_ms_adjusted]	[bigint]			NOT NULL,
+		[wait_duration_ms_adjusted]	[bigint]			NOT NULL,	--When a wait is longer than the interval between 2 AutoWho capture times, we need to 
+																	--adjust the wait time to the length of the interval. This allows the interval time to be
+																	--additive across captures.
 
 		[wait_special_category]		[tinyint]			NOT NULL,	--we use the special category of "none" if this is NULL
 		[wait_order_category]		[tinyint]			NOT NULL, 
@@ -261,28 +267,25 @@ BEGIN
 	CREATE TABLE #NodeConsumers (
 		NodeID			INT NOT NULL,
 		task_address	VARBINARY(8) NOT NULL,
-		HeuristicID		INT NOT NULL
+		HeuristicID		INT NOT NULL,
+		NumDirect		INT NOT NULL		--how many occurrences there are that tie this task_address DIRECTLY to the Node ID
 	);
 	CREATE CLUSTERED INDEX CL1 ON #NodeConsumers (task_address);
+	CREATE NONCLUSTERED INDEX NCL1 ON #NodeConsumers (NodeID) INCLUDE (task_address, HeuristicID, NumDirect);
 
-	/* Not sure if I really need a siblings table.
-	I should have producer siblings (same producer node) in the #TaskStats table
-	and I should have consumer siblings (consume from the same node) from the #NodeConsumers table.
-	CREATE TABLE #Siblings (
+	CREATE TABLE #NodeProducers (
+		NodeID			INT NOT NULL,
 		task_address	VARBINARY(8) NOT NULL,
-		NodeID		INT NOT NULL,
-		ProducerOrConsumer	CHAR(1)	NOT NULL,	--'P' or 'C'
-		Heuristic	INT NOT NULL			--1 = NewRow on the same node
-											--2 = GetRow on the same node
-
+		HeuristicID		INT NOT NULL,
+		NumDirect		INT NOT NULL,
+		IsSafe			BIT NOT NULL
 	);
-	*/
-
-
+	CREATE CLUSTERED INDEX CL1 ON #NodeProducers (task_address);
+	CREATE NONCLUSTERED INDEX NCL1 ON #NodeProducers (NodeID) INCLUDE (task_address, HeuristicID, NumDirect, IsSafe);
 	/*********************************************************************************************************************************************************************************
 	********************************************************************************************************************************************************************************
 
-															*BEGIN*  Assemble task and waits info and handle fragmented rows  *BEGIN*
+															*BEGIN*  Assemble task and waits info and handle fragmented and missing rows  *BEGIN*
 
 	********************************************************************************************************************************************************************************
 	********************************************************************************************************************************************************************************/
@@ -331,7 +334,7 @@ BEGIN
 		taw.FKDimWaitType,
 		wait_duration_ms,
 		[wait_duration_ms_adjusted] = CASE WHEN taw.wait_duration_ms > DATEDIFF(MILLISECOND, ct.PrevSuccessfulUTCCaptureTime, ct.UTCCaptureTime) 
-										THEN (taw.wait_duration_ms - DATEDIFF(MILLISECOND, ct.PrevSuccessfulUTCCaptureTime, ct.UTCCaptureTime))
+										THEN DATEDIFF(MILLISECOND, ct.PrevSuccessfulUTCCaptureTime, ct.UTCCaptureTime)
 										ELSE taw.wait_duration_ms END,
 		wait_special_category,
 		wait_order_category,
@@ -375,14 +378,59 @@ BEGIN
 		--In the logic below, we'll limit the actual time range for metric calculations to
 		--@startUTC AND @endUTC;
 
+	CREATE CLUSTERED INDEX CL1 ON #tasks_and_waits (task_address, UTCCaptureTime);
+
+
+	CREATE TABLE #FragmentedTasks (
+		task_address		VARBINARY(8) NOT NULL,
+		UTCCaptureTime		DATETIME NOT NULL,
+		NumTasksForTime		INT NOT NULL,
+		NumFragmentedTasksForTime	INT NOT NULL
+	);
+	CREATE UNIQUE CLUSTERED INDEX UCL1 ON #FragmentedTasks (task_address, UTCCaptureTime);
+
+	INSERT INTO #FragmentedTasks (
+		task_address,
+		UTCCaptureTime,
+		NumTasksForTime,
+		NumFragmentedTasksForTime
+	)
+	SELECT 
+		ss.task_address,
+		ss.UTCCaptureTime,
+		xapp1.NumTasks,
+		xapp1.NumFragmentedTasks
+	FROM (
+		SELECT DISTINCT
+			taw.task_address,
+			taw.UTCCaptureTime
+		FROM #tasks_and_waits taw
+		WHERE taw.RowIsFragmented = 1
+	) ss
+	CROSS APPLY (
+		SELECT
+			NumTasks = SUM(1),
+			NumFragmentedTasks = SUM(CASE WHEN taw2.RowIsFragmented = 1 THEN 1 ELSE 0 END)
+		FROM #tasks_and_waits taw2
+		WHERE taw2.UTCCaptureTime = ss.UTCCaptureTime
+		AND taw2.task_address = ss.task_address
+	) xapp1;
+
+	SET @err__RowCount = ROWCOUNT_BIG();
+	IF @err__RowCount > 0
+	BEGIN
+		SET @err__msg = CONVERT(VARCHAR(20),@err__RowCount) + ' fragmented rows found';
+		RAISERROR(@err__msg, 10,1);
+	END
+
 	/*
 		If a row is fragmented (CXP wait with bad data), we can still make use of it if 
 			1. there is no other row with the same task_address for the same UTCCaptureTime.
 				In that case, we adjust the row to "running" and assume that the task was transitioning to running 
 			2. If multiple rows for a task_address/UTCCaptureTime exist and they are all fragmented, we select 1
 				randomly and set it to running.
-					TODO: haven't written this logic yet.
 	*/
+
 	UPDATE targ 
 	SET tstate = 'R',
 		FKDimWaitType = @NULLWaitTypeID,
@@ -398,11 +446,73 @@ BEGIN
 		resource_dbid = @lv__nullsmallint,
 		resource_associatedobjid = @lv__nullsmallint,
 		[UseFragmentedRowAnyway] = 1
-	FROM #tasks_and_waits targ
-	WHERE targ.RowIsFragmented = 1
-	AND 1 = (SELECT NumRows = COUNT(*) FROM #tasks_and_waits taw2
-				WHERE taw2.UTCCaptureTime = targ.UTCCaptureTime
-				AND taw2.task_address = targ.task_address);
+	FROM #FragmentedTasks ft
+		INNER JOIN #tasks_and_waits targ
+			ON ft.UTCCaptureTime = targ.UTCCaptureTime
+			AND ft.task_address = targ.task_address
+	WHERE ft.NumTasksForTime = 1
+	AND ft.NumFragmentedTasksForTime = 1;
+
+	SET @err__RowCount = ROWCOUNT_BIG();
+	IF @err__RowCount > 0
+	BEGIN
+		SET @err__msg = CONVERT(VARCHAR(20),@err__RowCount) + ' isolated fragmented rows adjusted';
+		RAISERROR(@err__msg, 10,1);
+	END
+
+
+	;WITH cte1 AS (
+		SELECT
+			rn = ROW_NUMBER() OVER (PARTITION BY task_address, UTCCaptureTime ORDER BY (SELECT NULL)),
+			tstate,
+			FKDimWaitType,
+			wait_duration_ms,
+			wait_special_category,
+			wait_order_category,
+			wait_special_number,
+			wait_special_tag,
+			blocking_task_address,
+			blocking_session_id,
+			blocking_exec_context_id,
+			resource_description,
+			resource_dbid,
+			resource_associatedobjid,
+			[UseFragmentedRowAnyway]
+		FROM #tasks_and_waits targ
+		WHERE targ.RowIsFragmented = 1
+		--AND UseFragmentedRowAnyway = 0	unnecessary, b/c the next clause limits to just cases where there are multiple tasks
+		AND EXISTS (
+			SELECT *
+			FROM #FragmentedTasks ft
+			WHERE ft.UTCCaptureTime = targ.UTCCaptureTime
+			AND ft.task_address = targ.task_address
+			AND ft.NumTasksForTime > 1
+			AND ft.NumTasksForTime = ft.NumFragmentedTasksForTime
+		)
+	)
+	UPDATE cte1
+	SET tstate = 'R',
+		FKDimWaitType = @NULLWaitTypeID,
+		wait_duration_ms = 0,
+		wait_special_category = 0,
+		wait_order_category = 250,
+		wait_special_number = @lv__nullint,
+		wait_special_tag = '',
+		blocking_task_address = NULL,
+		blocking_session_id = @lv__nullsmallint,
+		blocking_exec_context_id = @lv__nullsmallint,
+		resource_description = NULL,
+		resource_dbid = @lv__nullsmallint,
+		resource_associatedobjid = @lv__nullsmallint,
+		[UseFragmentedRowAnyway] = 1
+	WHERE rn = 1;
+
+	SET @err__RowCount = ROWCOUNT_BIG();
+	IF @err__RowCount > 0
+	BEGIN
+		SET @err__msg = CONVERT(VARCHAR(20),@err__RowCount) + ' fragmented rows (that are part of multi-fragment sets) adjusted';
+		RAISERROR(@err__msg, 10,1);
+	END
 
 
 	--Inferred row logic
@@ -416,7 +526,7 @@ BEGIN
 			taw.blocking_task_address
 		FROM #tasks_and_waits taw
 		WHERE taw.blocking_task_address IS NOT NULL
-		AND taw.blocking_session_id = @spid
+		AND taw.blocking_session_id = @lv__nullsmallint
 		AND NOT EXISTS (
 			SELECT *
 			FROM #tasks_and_waits taw2
@@ -435,11 +545,11 @@ BEGIN
 		FROM MissingRows mr
 			OUTER APPLY (
 				SELECT TOP 1
-					taw.parent_task_address,
-					taw.exec_context_id,
-					taw.scheduler_id
-				FROM #tasks_and_waits taw
-				WHERE mr.blocking_task_address = taw.task_address
+					taw3.parent_task_address,
+					taw3.exec_context_id,
+					taw3.scheduler_id
+				FROM #tasks_and_waits taw3
+				WHERE mr.blocking_task_address = taw3.task_address
 			) xapp1
 	)
 	INSERT INTO #tasks_and_waits (
@@ -489,7 +599,13 @@ BEGIN
 		[PortOpenIsDaisyChain] = 0
 	FROM ConstructMissingRows c;
 
-	CREATE CLUSTERED INDEX CL1 ON #tasks_and_waits (task_address);
+	SET @err__RowCount = ROWCOUNT_BIG();
+	IF @err__RowCount > 0
+	BEGIN
+		SET @err__msg = CONVERT(VARCHAR(20),@err__RowCount) + ' inferred rows inserted';
+		RAISERROR(@err__msg, 10,1);
+	END
+
 
 	INSERT INTO #TaskStats (
 		task_address,
@@ -509,166 +625,258 @@ BEGIN
 	OR (taw.RowIsFragmented = 1 AND taw.UseFragmentedRowAnyway = 1)
 	GROUP BY taw.task_address;
 
-
-	/*********************************************************************************************************************************************************************************
-	********************************************************************************************************************************************************************************
-
-															*END*  Assemble task and waits info and handle fragmented rows  *END*
-
-	********************************************************************************************************************************************************************************
-	********************************************************************************************************************************************************************************/
-
-
-
-
-
-
-
-	/*********************************************************************************************************************************************************************************
-	********************************************************************************************************************************************************************************
-
-															*BEGIN*  Run rules to identify the producer node each task belongs to  *BEGIN*
-
-	********************************************************************************************************************************************************************************
-	********************************************************************************************************************************************************************************/
-	--Now, can we associate rows with Producer Node IDs?
-	--ECID 0 is always the "Thread 0". Apply that rule confidently
-	--Also, NewRow waits ALWAYS indicate which exchange Node ID a task is supplying with rows, so those are safe too
-	;WITH CTE AS (
+	DECLARE @Thread0TaskAddress VARBINARY(8);
+	SELECT
+		@Thread0TaskAddress = ss.task_address
+	FROM (
 		SELECT 
-			taw.ProducerNodeID_FromNewRowOrThreadZero,
-			CalcedProducer = CASE WHEN (taw.exec_context_id = 0 OR taw.parent_task_address IS NULL) THEN -1
-								WHEN taw.wait_special_tag = 'NewRow' THEN taw.wait_special_number
-								ELSE NULL
-								END
+			taw.task_address,
+			rn = ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC)
 		FROM #tasks_and_waits taw
-		WHERE (
+		WHERE (taw.exec_context_id = 0 OR taw.parent_task_address IS NULL)
+		AND (
+				taw.RowIsFragmented = 0
+				OR (taw.RowIsFragmented = 1 AND taw.UseFragmentedRowAnyway = 1)
+			)
+		GROUP BY taw.task_address
+	) ss
+	WHERE rn = 1;	--just in case the data is so weird that somehow there are 2 different task_addresses for Thread 0? (Yeah, seems paranoid)
+
+	--TODO: if @Thread0TaskAddress is NULL, raise a critical error. We can't proceed if the data is that mucked up.
+	/*********************************************************************************************************************************************************************************
+	********************************************************************************************************************************************************************************
+
+															*END*  Assemble task and waits info and handle fragmented and missing rows  *END*
+
+	********************************************************************************************************************************************************************************
+	********************************************************************************************************************************************************************************/
+
+
+
+
+	/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+																*BEGIN*  Assign tasks to nodes based on direct relationships  *BEGIN*
+																			NOTE: This section excludes most PortOpen logic
+
+	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+	INSERT INTO #NodeProducers (
+		NodeID,
+		task_address,
+		HeuristicID,
+		NumDirect,
+		IsSafe
+	)
+	SELECT -1,
+		@Thread0TaskAddress,
+		1,
+		1,
+		1;
+
+	--Now, find the Node ID that Thread 0 is a consumer on (always the left-most Gather Streams)
+	INSERT INTO #NodeConsumers (
+		NodeID,
+		task_address,
+		HeuristicID
+	)
+	SELECT
+		ss.wait_special_number,
+		@Thread0TaskAddress,
+		2
+	FROM (
+		SELECT
+			taw.wait_special_number,
+			rn = ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC)
+		FROM #tasks_and_waits taw
+		WHERE taw.task_address = @Thread0TaskAddress
+		AND (
+				taw.RowIsFragmented = 0
+				OR (taw.RowIsFragmented = 1 AND taw.UseFragmentedRowAnyway = 1)
+			)
+		AND taw.wait_special_tag IN ('PortOpen', 'PortClose', 'Range', 'GetRow', 'SynchConsumer')
+		GROUP BY taw.wait_special_number
+	) ss
+	WHERE rn = 1;	--Thread 0 never consumes from more than 1 node. If the data has that, it is wrong, and we take the most common Node ID
+
+	SET @err__RowCount = ROWCOUNT_BIG();
+	IF @err__RowCount = 0
+	BEGIN
+		--Could not find a Thread 0 consumer-side wait that was valid? See if any tasks had NewRow (or producer-side PortOpen!) waits on it
+		INSERT INTO #NodeConsumers (
+			NodeID,
+			task_address,
+			HeuristicID
+		)
+		SELECT 
+			ss.wait_special_number,
+			@Thread0TaskAddress,
+			3
+		FROM (
+			SELECT
+				taw.wait_special_number,
+				rn = ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC)
+			FROM #tasks_and_waits taw
+			WHERE taw.blocking_task_address = @Thread0TaskAddress
+			AND taw.RowIsFragmented = 0
+			AND taw.wait_special_tag IN ('NewRow', 'PortOpen')
+			GROUP BY taw.wait_special_number
+		) ss
+		WHERE rn = 1;
+
+		SET @err__RowCount = ROWCOUNT_BIG();
+		IF @err__RowCount = 0
+		BEGIN
+			--TODO: For now, we warn. May need to adjust this to an error if it causes too many problems.
+			SET @err__msg = 'Could not find the node Thread 0 consumes from.';
+			RAISERROR(@err__msg, 10,1);
+		END
+	END --if we couldn't tie Thread 0 to a consumer node ID from consumer waits.
+
+
+	--Now, let's do NewRow waits
+	INSERT INTO #NodeProducers (
+		NodeID,
+		task_address,
+		HeuristicID,
+		NumDirect,
+		IsSafe
+	)
+	SELECT
+		taw.wait_special_number,
+		taw.task_address,
+		4,
+		COUNT(*),
+		0			--if the data somehow has multiple producer Node IDs for a task, we'll choose the most numerous one, and mark that safe.
+	FROM #tasks_and_waits taw
+	WHERE (
 			taw.RowIsFragmented = 0
 			OR (taw.RowIsFragmented = 1 AND taw.UseFragmentedRowAnyway = 1)
 		)
-		AND (
-			(taw.exec_context_id = 0 OR taw.parent_task_address IS NULL)
-			OR
-			taw.wait_special_tag = 'NewRow'
-		)
-	)
-	UPDATE CTE 
-	SET ProducerNodeID_FromNewRowOrThreadZero = CalcedProducer
-	WHERE CalcedProducer IS NOT NULL;
+	AND taw.wait_special_tag = 'NewRow'
+	AND taw.wait_special_number IS NOT NULL
+	GROUP BY taw.wait_special_number,
+		taw.task_address;
 
-	--Now, try to identify the producer node for rows whose task_address has been the blocker
-	--for GetRow waits, PortClose waits, and Range waits. For those 3, we are confident that
-	--the wait is always consumer side, and always points to a task on the OTHER (producer) side of the exchange
-	UPDATE targ 
-	SET ProducerNodeID_FromSafeConsumerWaits = ss2.PossibleProducerNodeID
-	FROM #tasks_and_waits targ
-		INNER JOIN (
-			SELECT 
-				task_address,
-				PossibleProducerNodeID,
-				--This row-numbering logic is just in the (should be impossible!) event where the same task_address is somehow
-				--causing consumer-side waits on multiple (i.e. different) node IDs. We assume that the most common one is the correct one.
-				rn = ROW_NUMBER() OVER (PARTITION BY task_address ORDER BY NumRows DESC)
-			FROM (
-				SELECT 
-					blocker.task_address,
-					[PossibleProducerNodeID] = waiter.wait_special_number,
-					NumRows = COUNT(*)
-				FROM #tasks_and_waits blocker
-					 INNER JOIN #tasks_and_waits waiter
-						ON blocker.task_address = waiter.blocking_task_address
-						AND blocker.UTCCaptureTime = waiter.UTCCaptureTime
-						AND waiter.blocking_session_id = @spid
-						AND waiter.wait_special_tag IN ('GetRow', 'PortClose', 'Range')
-				WHERE (
-					blocker.RowIsFragmented = 0
-					OR (blocker.RowIsFragmented = 1 AND blocker.UseFragmentedRowAnyway = 1)
-				)
-				AND (
-					blocker.RowIsFragmented = 0
-					OR (blocker.RowIsFragmented = 1 AND blocker.UseFragmentedRowAnyway = 1)
-				)
-				GROUP BY blocker.task_address,
-					waiter.wait_special_number
-			) ss
-		) ss2
-			ON targ.task_address = ss2.task_address
-			AND ss2.rn = 1;
-
-	--There will be more logic to tie task_addresses to the node ID they produce for, but it will be further below after the PortOpen waits have been untangled.
-	/*********************************************************************************************************************************************************************************
-	********************************************************************************************************************************************************************************
-
-															*END*  Run rules to identify the producer node each task belongs to  *END*
-
-	********************************************************************************************************************************************************************************
-	********************************************************************************************************************************************************************************/
-
-
-
-
-
-
-	/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-																*BEGIN*  Run rules to identify node consumers  *BEGIN*
-
-	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+	--NewRow waits can be used to tie the blocking_task_address to a NodeID as a consumer
 	INSERT INTO #NodeConsumers (
 		NodeID,
 		task_address,
-		HeuristicID
+		HeuristicID,
+		NumDirect
 	)
-	SELECT DISTINCT
+	SELECT
 		taw.wait_special_number,
-		taw.task_address,
-		[HeuristicID] = CASE taw.wait_special_tag
-							WHEN 'GetRow' THEN 1
-							WHEN 'PortClose' THEN 2
-							WHEN 'Range' THEN 3
-							WHEN 'SynchConsumer' THEN 4
-							ELSE -1
-						END
+		taw.blocking_task_address,
+		5,
+		COUNT(*)
 	FROM #tasks_and_waits taw
 	WHERE (
-		taw.RowIsFragmented = 0
-		OR (taw.RowIsFragmented = 1 AND taw.UseFragmentedRowAnyway = 1)
-	)
-	AND taw.wait_special_tag IN ('GetRow', 'PortClose', 'Range', 'SynchConsumer');
-	--PortOpen waits can be in a daisy-chain, like SynchConsumer; they are omitted here (see further below)
+			taw.RowIsFragmented = 0
+			OR (taw.RowIsFragmented = 1 AND taw.UseFragmentedRowAnyway = 1)
+		)
+	AND taw.wait_special_tag = 'NewRow'
+	AND taw.wait_special_number IS NOT NULL
+	AND taw.blocking_task_address IS NOT NULL
+	AND taw.blocking_task_address <> @Thread0TaskAddress	--we already handled this special case further above
+	GROUP BY taw.wait_special_number,
+		taw.task_address;
 
 
-	INSERT INTO #NodeConsumers (
+	--Now, tie task_addresses to their Producer Node ID via "safe" consumer waits, i.e. waits that we KNOW are consumer-side,
+	--and where we know that the blocking_task_address refers to a task on the other/producer side of the Node ID
+	INSERT INTO #NodeProducers (
 		NodeID,
 		task_address,
-		HeuristicID
+		HeuristicID,
+		NumDirect,
+		IsSafe
 	)
 	SELECT 
 		waiter.wait_special_number,
-		blocker.task_address,
-		[HeuristicID] = 5
+		waiter.blocking_task_address,
+		6,
+		NumRows = COUNT(*),
+		0
 	FROM #tasks_and_waits waiter
-		INNER JOIN #tasks_and_waits blocker
-			ON blocker.task_address = waiter.blocking_task_address
-			AND blocker.UTCCaptureTime = waiter.UTCCaptureTime
-			AND waiter.blocking_session_id = @spid
-			AND waiter.wait_special_tag = 'NewRow'
-	WHERE
-		(waiter.RowIsFragmented = 0
-			OR (waiter.RowIsFragmented = 1 AND waiter.UseFragmentedRowAnyway = 1)
-		)
-	AND (blocker.RowIsFragmented = 0
-			OR (blocker.RowIsFragmented = 1 AND blocker.UseFragmentedRowAnyway = 1)
-		);
-	/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	WHERE waiter.wait_special_tag IN ('GetRow', 'PortClose', 'Range')
+	AND waiter.blocking_session_id = @lv__nullsmallint
+	AND waiter.blocking_task_address IS NOT NULL
+	AND (
+		waiter.RowIsFragmented = 0
+		OR (waiter.RowIsFragmented = 1 AND waiter.UseFragmentedRowAnyway = 1)
+	)
+	GROUP BY waiter.blocking_task_address,
+		waiter.wait_special_number;
 
-															*END*  Run rules to identify node consumers  *END*
+
+	--Now, tie task_addresses to their Consumer Node ID(s) via "safe" consumer waits. Note that this includes SynchConsumer
+	INSERT INTO #NodeConsumers (
+		NodeID,
+		task_address,
+		HeuristicID,
+		NumDirect
+	)
+	SELECT
+		ss.wait_special_number,
+		ss.TAddr,
+		7,
+		NumRows = COUNT(*)
+	FROM (
+		SELECT 
+			taw.wait_special_number,
+			[TAddr] = taw.task_address
+		FROM #tasks_and_waits taw
+		WHERE taw.wait_special_tag IN ('GetRow', 'PortClose', 'Range', 'SynchConsumer')
+		--AND taw.blocking_session_id = @lv__nullsmallint
+		--AND taw.blocking_task_address IS NOT NULL
+		AND (
+			taw.RowIsFragmented = 0
+			OR (taw.RowIsFragmented = 1 AND taw.UseFragmentedRowAnyway = 1)
+		)
+
+		UNION ALL
+
+		--The blocker of a SynchConsumer wait is always a task on the same side of the exchange.
+		SELECT
+			taw2.wait_special_number,
+			[TAddr] = taw2.blocking_task_address
+		FROM #tasks_and_waits taw2
+		WHERE taw2.wait_special_tag = 'SynchConsumer'
+		AND taw2.blocking_session_id = @lv__nullsmallint
+		AND taw2.blocking_task_address IS NOT NULL
+		AND (
+			taw2.RowIsFragmented = 0
+			OR (taw2.RowIsFragmented = 1 AND taw2.UseFragmentedRowAnyway = 1)
+		)
+	) ss
+	GROUP BY ss.wait_special_number,
+		ss.TAddr;
+
+
+	/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+																*END*  Assign tasks to nodes based on direct relationships  *END*
+																		NOTE: This section excludes most PortOpen logic
 
 	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+	/*
+	AARON: LEFT OFF HERE
+	Next, I should have a section that takes the above data from the direct relationships and recursively finds siblings.
+	I think that may mean 1 outer loop and 2 inner loops. The idea is that each inner loop looks for sibling consumers (loop 1) or sibling producers (loop 2)
+	As long as at least 1 row is found by a loop, the loop should keep going. If any rows are found by either inner loop, the outer loop should keep going.
+	I need to code this out and think through it a bit more, but at least the general idea is on paper now.
+
+	Once I have sibling logic resolved, then there is a higher chance for the PortOpen logic below to work correctly.
+
+	*/
+
+
+
 
 
 
@@ -719,6 +927,12 @@ BEGIN
 	UPDATE cte1
 	SET PortOpenIsProducerWait = 1;
 
+	SET @err__RowCount = ROWCOUNT_BIG();
+	IF @err__RowCount > 0
+	BEGIN
+		SET @err__msg = 'NOTE: ' + CONVERT(VARCHAR(20),@err__RowCount) + ' rows identified as in a producer-side PortOpen wait';
+		RAISERROR(@err__msg, 10,1);
+	END
 
 
 	--Ok, now that we have identified all producer-side PortOpen waits (fingers crossed), we can assume that all other
@@ -741,6 +955,10 @@ BEGIN
 	AND taw.wait_special_tag = 'PortOpen'
 	AND (taw.parent_task_address IS NOT NULL AND ISNULL(taw.exec_context_id,255) <> 0)		--ignore Thread 0; its PortOpen waits can sometimes be on tasks in a NON-adjacent branch
 	AND taw.PortOpenIsProducerWait = 0;
+
+	SET @err__RowCount = ROWCOUNT_BIG();
+	SET @err__msg = CONVERT(VARCHAR(20),@err__RowCount) + ' rows connected to nodes as consumers via PortOpen waits';
+	RAISERROR(@err__msg, 10,1);
 
 
 	--Since a task_address can appear multiple times in the same UTCCaptureTime with the same wait, we need to unique-ify each row so that the below
@@ -775,7 +993,7 @@ BEGIN
 			INNER JOIN #tasks_and_waits blocker
 				ON waiter.blocking_task_address = blocker.task_address
 				AND waiter.UTCCaptureTime = blocker.UTCCaptureTime
-				AND waiter.blocking_session_id = @spid
+				AND waiter.blocking_session_id = @lv__nullsmallint
 		WHERE (
 				waiter.RowIsFragmented = 0
 				OR (waiter.RowIsFragmented = 1 AND waiter.UseFragmentedRowAnyway = 1)
@@ -834,6 +1052,10 @@ BEGIN
 	AND targ.wait_special_tag = 'PortOpen'		
 	AND targ.PortOpenIsProducerWait = 0;
 
+	SET @err__RowCount = ROWCOUNT_BIG();
+	SET @err__msg = CONVERT(VARCHAR(20),@err__RowCount) + ' rows found to be in a PortOpen daisy-chain';
+	RAISERROR(@err__msg, 10,1);
+
 
 	--Ok, any other consumer-side PortOpen waits provide additional information we can use to tie task_addresses to their producer nodes.
 	UPDATE targ 
@@ -855,7 +1077,7 @@ BEGIN
 					 INNER JOIN #tasks_and_waits waiter
 						ON blocker.task_address = waiter.blocking_task_address
 						AND blocker.UTCCaptureTime = waiter.UTCCaptureTime
-						AND waiter.blocking_session_id = @spid
+						AND waiter.blocking_session_id = @lv__nullsmallint
 						AND waiter.wait_special_tag = 'PortOpen'
 						AND waiter.PortOpenIsDaisyChain = 0
 						AND waiter.PortOpenIsProducerWait = 0
@@ -874,6 +1096,10 @@ BEGIN
 		) ss2
 			ON targ.task_address = ss2.task_address
 			AND ss2.rn = 1;
+
+	SET @err__RowCount = ROWCOUNT_BIG();
+	SET @err__msg = CONVERT(VARCHAR(20),@err__RowCount) + ' rows connected to producer nodes via PortOpen waits that are clearly blocked on producer tasks';
+	RAISERROR(@err__msg, 10,1);
 
 	/*
 		For Thread 0 Port Open waits, we can set the [ThreadZeroPortOpenIsAdjacent] bit flag to 1 if we have other info that indicates the blocking task is adjacent.
@@ -934,13 +1160,53 @@ BEGIN
 			AND targ.task_address = c.task_address
 			AND targ.PortOpenRowNumber = c.PortOpenRowNumber;
 
+	SET @err__RowCount = ROWCOUNT_BIG();
+	SET @err__msg = CONVERT(VARCHAR(20),@err__RowCount) + ' rows found where Thread 0 is PortOpen-waiting on an adjacent task';
+	RAISERROR(@err__msg, 10,1);
 
-	--LEFT OFF HERE:
-	--TODO: Now that we know which Thread 0 Port Open waits are adjacent, we can look for task addresses to connect to their producer Node ID by 
-	--connecting any blocking_task_address values to Thread 0's Gather Streams exchange.
-	--After that, I think I'm DONE with PortOpen logic, which means I can then modify the below UPDATE so that it includes all of the ProducerNodeID fields in #tasks_and_waits.
+	--For Thread 0 PortOpen waits that we've found to be blocked on a task that is truly in an adjacent branch,
+	-- use that info to connect the blocking task_address(es) to the Gather Streams node as their producer node.
+	UPDATE targ 
+	SET ProducerNodeID_FromThreadZeroPortOpen = ss2.PossibleProducerNodeID
+	FROM #tasks_and_waits targ
+		INNER JOIN (
+			SELECT 
+				task_address,
+				PossibleProducerNodeID,
+				--This row-numbering logic is just in the (should be impossible!) event where the same task_address is somehow
+				--causing consumer-side waits on multiple (i.e. different) node IDs. We assume that the most common one is the correct one.
+				rn = ROW_NUMBER() OVER (PARTITION BY task_address ORDER BY NumRows DESC)
+			FROM (
+				SELECT 
+					blocker.task_address,
+					[PossibleProducerNodeID] = waiter.wait_special_number,
+					NumRows = COUNT(*)
+				FROM #tasks_and_waits blocker
+					 INNER JOIN #tasks_and_waits waiter
+						ON blocker.task_address = waiter.blocking_task_address
+						AND blocker.UTCCaptureTime = waiter.UTCCaptureTime
+						AND waiter.blocking_session_id = @lv__nullsmallint
+						AND waiter.wait_special_tag = 'PortOpen'
+						AND waiter.ThreadZeroPortOpenIsAdjacent = 1
+						AND (waiter.parent_task_address IS NULL AND waiter.exec_context_id = 0)	--JUST Thread 0 here
+				WHERE (
+					blocker.RowIsFragmented = 0
+					OR (blocker.RowIsFragmented = 1 AND blocker.UseFragmentedRowAnyway = 1)
+				)
+				AND (
+					blocker.RowIsFragmented = 0
+					OR (blocker.RowIsFragmented = 1 AND blocker.UseFragmentedRowAnyway = 1)
+				)
+				GROUP BY blocker.task_address,
+					waiter.wait_special_number
+			) ss
+		) ss2
+			ON targ.task_address = ss2.task_address
+			AND ss2.rn = 1;
 
-
+	SET @err__RowCount = ROWCOUNT_BIG();
+	SET @err__msg = CONVERT(VARCHAR(20),@err__RowCount) + ' rows connected to a Producer node via a Thread 0 PortOpen wait on an adjacent task';
+	RAISERROR(@err__msg, 10,1);
 
 	/*********************************************************************************************************************************************************************************
 	********************************************************************************************************************************************************************************
@@ -963,17 +1229,24 @@ BEGIN
 				SELECT 
 					task_address,
 					CalculatedProducerNodeID,
-					rn = ROW_NUMBER() OVER (PARTITION BY task_address, CalculatedProducerNodeID ORDER BY COUNT(*) DESC)
+					rn = ROW_NUMBER() OVER (PARTITION BY task_address ORDER BY NumRows DESC)
 				FROM (
-					SELECT 
+					SELECT
 						taw.task_address,
-						CalculatedProducerNodeID = COALESCE(taw.ProducerNodeID_ImmediatelyIdentified, ProducerNodeID_FromSafeConsumerWaits, ProducerNodeID_ThirdLevelIdentification)
+						CalculatedProducerNodeID = COALESCE(taw.ProducerNodeID_FromNewRowOrThreadZero,
+															taw.ProducerNodeID_FromSafeConsumerWaits, 
+															taw.ProducerNodeID_FromPortOpen,
+															taw.ProducerNodeID_FromThreadZeroPortOpen),
+						NumRows = COUNT(*)
 					FROM #tasks_and_waits taw
 					WHERE taw.RowIsFragmented = 0
+					GROUP BY taw.task_address,
+						COALESCE(taw.ProducerNodeID_FromNewRowOrThreadZero,
+									taw.ProducerNodeID_FromSafeConsumerWaits, 
+									taw.ProducerNodeID_FromPortOpen,
+									taw.ProducerNodeID_FromThreadZeroPortOpen)
 				) ss
 				WHERE CalculatedProducerNodeID IS NOT NULL
-				GROUP BY task_address,
-					CalculatedProducerNodeID
 			) ss2
 			WHERE rn = 1
 		) ss3
@@ -987,20 +1260,30 @@ BEGIN
 	SELECT * 
 	FROM #TaskStats;
 
-	SELECT
+	SELECT * 
+	FROM #NodeConsumers
+
+	SELECT 
 		taw.task_address,
-		taw.ProducerNodeID_FromNewRowOrThreadZero,
-		taw.ProducerNodeID_FromSafeConsumerWaits,
-		taw.ProducerNodeID_ThirdLevelIdentification,
-		NumRows = COUNT(*)
+		[ECID] = taw.exec_context_id,
+		[SubWT] = taw.wait_special_tag,
+		[Node] = taw.wait_special_number,
+		WT = (SELECT dwt.wait_type_short FROM AutoWho.DimWaitType dwt WHERE dwt.DimWaitTypeID = taw.FKDimWaitType),
+		[dur_ms] = taw.wait_duration_ms,
+		[adj_ms] = taw.wait_duration_ms_adjusted,
+		[Becid] = taw.blocking_exec_context_id,
+		[RowFrag] = taw.RowIsFragmented,
+		[UseFrag] = taw.UseFragmentedRowAnyway,
+		[PID_NRT0] = taw.ProducerNodeID_FromNewRowOrThreadZero,
+		[PID_SfCn] = taw.ProducerNodeID_FromSafeConsumerWaits,
+		[PID_PO] = taw.ProducerNodeID_FromPortOpen,
+		[PID_POT0] = taw.ProducerNodeID_FromThreadZeroPortOpen
 	FROM #tasks_and_waits taw
-	WHERE taw.RowIsFragmented = 0
-	GROUP BY taw.task_address,
-		taw.ProducerNodeID_FromNewRowOrThreadZero,
-		taw.ProducerNodeID_FromSafeConsumerWaits,
-		taw.ProducerNodeID_ThirdLevelIdentification;
+	ORDER BY taw.UTCCaptureTime, taw.exec_context_id;
+
+
+	
 	--DEBUG queries --
 
 	RETURN -1;
 END 
-GO

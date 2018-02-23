@@ -188,6 +188,8 @@ BEGIN TRY
 			NumPageLatch = SUM(CASE WHEN taw.wait_special_category IN (@enum__waitspecial__pgblocked, @enum__waitspecial__pgio, @enum__waitspecial__pg)
 								THEN 1 ELSE 0 END)
 		FROM AutoWho.TasksAndWaits taw
+			INNER JOIN #LatchWaitProcessCaptureTimes l
+				ON l.UTCCaptureTime = taw.UTCCaptureTime
 		WHERE taw.CollectionInitiatorID = @CollectionInitiatorID
 		AND taw.UTCCaptureTime BETWEEN @EffectiveFirstCaptureTimeUTC AND @EffectiveLastCaptureTimeUTC
 

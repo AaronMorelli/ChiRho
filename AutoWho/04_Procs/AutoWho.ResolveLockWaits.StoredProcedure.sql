@@ -216,6 +216,8 @@ BEGIN TRY
 			NumMetaLock = SUM(CASE WHEN taw.wait_special_category = @enum__waitspecial__lck AND taw.wait_special_number = 11
 								THEN 1 ELSE 0 END)
 		FROM AutoWho.TasksAndWaits taw
+			INNER JOIN #LockWaitProcessCaptureTimes t	--We include this join, even with the BETWEEN clause below, so that this logic won't process
+				ON taw.UTCCaptureTime = t.UTCCaptureTime	-- a single UTCCaptureTime if it was already processed.
 		WHERE taw.CollectionInitiatorID = @CollectionInitiatorID
 		AND taw.UTCCaptureTime BETWEEN @EffectiveFirstCaptureTimeUTC AND @EffectiveLastCaptureTimeUTC
 
@@ -381,6 +383,8 @@ BEGIN TRY
 								ELSE NULL 
 								END 
 			FROM AutoWho.TasksAndWaits taw
+				INNER JOIN #LockWaitProcessCaptureTimes t	--We include this join, even with the BETWEEN clause below, so that this logic won't process
+					ON taw.UTCCaptureTime = t.UTCCaptureTime	-- a single UTCCaptureTime if it was already processed.
 				LEFT OUTER JOIN sys.databases d
 					ON taw.resource_dbid = d.database_id
 			WHERE taw.CollectionInitiatorID = @CollectionInitiatorID
@@ -487,8 +491,8 @@ BEGIN TRY
 				ON taw.UTCCaptureTime = sar.UTCCaptureTime
 				AND taw.session_id = sar.session_id
 				AND taw.request_id = sar.request_id
-			INNER JOIN #LockWaitProcessCaptureTimes t		--need this join for the 1am-2am DST problem
-				ON sar.SPIDCaptureTime = t.SPIDCaptureTime
+			INNER JOIN #LockWaitProcessCaptureTimes t	--We include this join, even with the BETWEEN clause below, so that this logic won't process
+				ON sar.UTCCaptureTime = t.UTCCaptureTime	-- a single UTCCaptureTime if it was already processed.
 			LEFT OUTER JOIN sys.databases d
 					ON taw.resource_dbid = d.database_id
 		WHERE taw.CollectionInitiatorID = @CollectionInitiatorID
@@ -676,6 +680,8 @@ FROM #tasks_and_waits targ
 				ON taw.UTCCaptureTime = sar.UTCCaptureTime
 				AND taw.session_id = sar.session_id
 				AND taw.request_id = sar.request_id
+			INNER JOIN #LockWaitProcessCaptureTimes t	--We include this join, even with the BETWEEN clause below, so that this logic won't process
+				ON sar.UTCCaptureTime = t.UTCCaptureTime	-- a single UTCCaptureTime if it was already processed.
 			LEFT OUTER JOIN sys.databases d
 				ON taw.resource_dbid = d.database_id
 		WHERE taw.CollectionInitiatorID = @CollectionInitiatorID 
