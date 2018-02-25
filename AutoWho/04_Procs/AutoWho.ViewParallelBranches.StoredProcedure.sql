@@ -1,11 +1,8 @@
-USE [Sentinel]
-GO
-/****** Object:  StoredProcedure [AutoWho].[ViewParallelBranches]    Script Date: 2/23/2018 9:22:05 AM ******/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [AutoWho].[ViewParallelBranches] 
+ALTER PROCEDURE [AutoWho].[ViewParallelBranches] 
 /*   
 	Copyright 2016 Aaron Morelli
 
@@ -66,7 +63,12 @@ BEGIN
 		@CXPWaitTypeID				SMALLINT,
 		@NULLWaitTypeID				SMALLINT,
 		@stmtStartUTC				DATETIME,
-		@stmtEndUTC					DATETIME;
+		@stmtEndUTC					DATETIME,
+		
+		@loopCounter				INT,
+		@stmt1RowCount				INT,
+		@stmt2RowCount				INT,
+		@stmt3RowCount				INT;
 
 	SET @lv__nullstring = N'<nul5>';		--used the # 5 just to make it that much more unlikely that our "special value" would collide with a DMV value
 	SET @lv__nullint = -929;				--ditto, used a strange/random number rather than -999, so there is even less of a chance of 
@@ -273,15 +275,22 @@ BEGIN
 	CREATE CLUSTERED INDEX CL1 ON #NodeConsumers (task_address);
 	CREATE NONCLUSTERED INDEX NCL1 ON #NodeConsumers (NodeID) INCLUDE (task_address, HeuristicID, NumDirect);
 
-	CREATE TABLE #NodeProducers (
+	CREATE TABLE #NodeProducersPass1 (
 		NodeID			INT NOT NULL,
 		task_address	VARBINARY(8) NOT NULL,
 		HeuristicID		INT NOT NULL,
-		NumDirect		INT NOT NULL,
-		IsSafe			BIT NOT NULL
+		NumRows			INT NOT NULL
 	);
-	CREATE CLUSTERED INDEX CL1 ON #NodeProducers (task_address);
-	CREATE NONCLUSTERED INDEX NCL1 ON #NodeProducers (NodeID) INCLUDE (task_address, HeuristicID, NumDirect, IsSafe);
+	CREATE UNIQUE CLUSTERED INDEX CL1 ON #NodeProducersPass1 (task_address, NodeID, HeuristicID);
+	CREATE NONCLUSTERED INDEX NCL1 ON #NodeProducersPass1 (NodeID) INCLUDE (task_address, HeuristicID, NumRows);
+
+	CREATE TABLE #NodeProducersPass2 (
+		NodeID			INT NOT NULL,
+		task_address	VARBINARY(8) NOT NULL,
+		HeuristicID		INT NOT NULL
+	);
+	CREATE CLUSTERED INDEX CL1 ON #NodeProducersPass2 (task_address);
+	CREATE NONCLUSTERED INDEX NCL1 ON #NodeProducersPass2 (NodeID) INCLUDE (task_address, HeuristicID);
 	/*********************************************************************************************************************************************************************************
 	********************************************************************************************************************************************************************************
 
@@ -662,16 +671,14 @@ BEGIN
 
 	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-	INSERT INTO #NodeProducers (
+	INSERT INTO #NodeProducersPass1 (
 		NodeID,
 		task_address,
 		HeuristicID,
-		NumDirect,
-		IsSafe
+		NumRows
 	)
 	SELECT -1,
 		@Thread0TaskAddress,
-		1,
 		1,
 		1;
 
@@ -736,19 +743,17 @@ BEGIN
 
 
 	--Now, let's do NewRow waits
-	INSERT INTO #NodeProducers (
+	INSERT INTO #NodeProducersPass1 (
 		NodeID,
 		task_address,
 		HeuristicID,
-		NumDirect,
-		IsSafe
+		NumRows
 	)
 	SELECT
 		taw.wait_special_number,
 		taw.task_address,
 		4,
-		COUNT(*),
-		0			--if the data somehow has multiple producer Node IDs for a task, we'll choose the most numerous one, and mark that safe.
+		COUNT(*)
 	FROM #tasks_and_waits taw
 	WHERE (
 			taw.RowIsFragmented = 0
@@ -786,19 +791,17 @@ BEGIN
 
 	--Now, tie task_addresses to their Producer Node ID via "safe" consumer waits, i.e. waits that we KNOW are consumer-side,
 	--and where we know that the blocking_task_address refers to a task on the other/producer side of the Node ID
-	INSERT INTO #NodeProducers (
+	INSERT INTO #NodeProducersPass1 (
 		NodeID,
 		task_address,
 		HeuristicID,
-		NumDirect,
-		IsSafe
+		NumRows
 	)
 	SELECT 
 		waiter.wait_special_number,
 		waiter.blocking_task_address,
 		6,
-		NumRows = COUNT(*),
-		0
+		NumRows = COUNT(*)
 	FROM #tasks_and_waits waiter
 	WHERE waiter.wait_special_tag IN ('GetRow', 'PortClose', 'Range')
 	AND waiter.blocking_session_id = @lv__nullsmallint
@@ -854,6 +857,47 @@ BEGIN
 	GROUP BY ss.wait_special_number,
 		ss.TAddr;
 
+	--Technically, the code above doesn't prevent a given task_address from being associated with multiple nodes as a producer, if the tasks-and-waits data
+	--contains that. That isn't actually possible and the code below is structured to eliminate that condition, by choosing the NodeID that appears most frequently. 
+	--Also, a task could be connected to the same node as a producer via multiple heuristics. That's fine, but we simplify down so that each task_address/NodeID 
+	--appears only once in the data we've constructed. We do all this via an insert into a "Pass2" table. (Allows us to go back and easily debug the Pass1 logic above).
+
+	--Node associations that occur from Heuristic 1 (Thread 0 Producer) and Heuristic 4 (NewRow waits) are trusted more, so those get preference
+	INSERT INTO #NodeProducersPass2 (
+		NodeID,
+		task_address,
+		HeuristicID
+	)
+	SELECT
+		ss.NodeID,
+		ss.task_address,
+		8
+	FROM (
+		SELECT np.NodeID,
+			np.task_address,
+			rn = ROW_NUMBER() OVER (PARTITION BY task_address ORDER BY NumRows DESC)
+		FROM #NodeProducersPass1 np
+		WHERE np.HeuristicID IN (1,4)
+	) ss
+	WHERE ss.rn = 1;
+
+	INSERT INTO #NodeProducersPass2 (
+		NodeID,
+		task_address,
+		HeuristicID
+	)
+	SELECT
+		NodeID,
+		task_address,
+		9
+	FROM (
+		SELECT
+			np.NodeID,
+			np.task_address,
+			rn = ROW_NUMBER() OVER (PARTITION BY task_address ORDER BY NumRows DESC)
+		FROM #NodeProducersPass2 np
+		WHERE np.HeuristicID IN (6)
+	) ss;
 
 	/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -863,23 +907,134 @@ BEGIN
 
 	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-
 	/*
-	AARON: LEFT OFF HERE
-	Next, I should have a section that takes the above data from the direct relationships and recursively finds siblings.
-	I think that may mean 1 outer loop and 2 inner loops. The idea is that each inner loop looks for sibling consumers (loop 1) or sibling producers (loop 2)
-	As long as at least 1 row is found by a loop, the loop should keep going. If any rows are found by either inner loop, the outer loop should keep going.
-	I need to code this out and think through it a bit more, but at least the general idea is on paper now.
+		The base tasks-and-waits data (what is above called "direct relationships") doesn't necessarily map every actual relationship between a task_address and the nodes it consumes from 
+		and produces to. For example, Task A might produce to Node 7, but may never have a NewRow wait on Node 7 or have another Task blocked on it in a GetRow/PortClose/SynchConsumer/Range wait.
+		However, that doesn't mean we have to give up in tying it to its producer node. If we have info about Task A consuming from, say, Node 27, and we also have info about Task B consuming
+		from Node 27, then we know that Task A and Task B are siblings... they are both tasks in the same parallel branch of the plan. And if we have info about Task B producing to Node 7,
+		then we now know which Node ID produces to.
 
-	Once I have sibling logic resolved, then there is a higher chance for the PortOpen logic below to work correctly.
+		Simlilarly, if Task B also consumes from Node 54, then we can also assume that Task A consumes from Node 54, even if there is no direct indication in the data.
 
+		Also, note that there can be multiple levels of linking here. Consider the following:
+
+			Task A   consumes directly from Node 27
+
+			Task B	 consumes directly from Node 27 and Node 54
+
+			Task C	 consumes directly from Node 54 and Node 109
+
+		We know that Task A and Task C are also siblings, even though they do not directly share a node.
+
+		The possibility of these sibling relationships being more than 1 "hop" away means that we need to run the below statements multiple times if we want to suss out all of the
+		possible "derived relationships". The below 3 statements are thus run in a loop. That loop ALWAYS runs at least once. If any rows are inserted by any of the 3 statements,
+		then we know we learned something new during the loop. That new thing or things may unlock further relationships, and so we keep looping. Thus, the below loop will
+		keep executing until *all 3* statements have a row-count of 0.
 	*/
 
 
 
+	SET @loopCounter = 0;
+	SET @stmt1RowCount = 1;
+	SET @stmt2RowCount = 1;
+	SET @stmt3RowCount = 1;
 
+	WHILE @stmt1RowCount > 0 OR @stmt2RowCount > 0 OR @stmt3RowCount > 0 
+	BEGIN
+		SET @loopCounter = @loopCounter + 1;
 
+		/*
+			First, if 2 tasks point to the same producer node, they also consume from the same nodes. So for each task ("original task"): 
+				1. Find its siblings
+				2. Find which nodes those sibling tasks consume from
+				3. insert new rows with (NodeID, original task address) if that mapping doesn't already exist
+		*/
+		INSERT INTO #NodeConsumers (
+			NodeID,
+			task_address,
+			HeuristicID,
+			NumDirect
+		)
+		SELECT DISTINCT
+			sibsConsume.NodeID,
+			orig.task_address,
+			[HeuristicID] = 10,
+			[NumDirect] = 0		--there is no direct relationship between this task_address and this NodeID
+		FROM #NodeProducersPass2 orig
+			INNER JOIN #NodeProducersPass2 sibs
+				ON orig.NodeID = sibs.NodeID
+				AND orig.task_address <> sibs.task_address
+			INNER JOIN #NodeConsumers sibsConsume
+				ON sibs.task_address = sibsConsume.task_address
+		WHERE NOT EXISTS (
+			SELECT *
+			FROM #NodeConsumers nc
+			WHERE nc.NodeID = sibsConsume.NodeID
+			AND nc.task_address = orig.task_address
+		);
 
+		SET @stmt1RowCount = ROWCOUNT_BIG();
+
+		/*
+			If 2 tasks consume from at least one of the same nodes, they share all consumption Node IDs.
+			For example, it is possible for Task A to have direct relationships in the data to NodeID 5, e.g. through a GetRow wait.
+			If Task B consumes from NodeID 5 and also from NodeID 20, then Task A must be a consumer of NodeID 20 also.
+			Thus, we can add that connection to our table.
+		*/
+		INSERT INTO #NodeConsumers (
+			NodeID,
+			task_address,
+			HeuristicID,
+			NumDirect
+		)
+		SELECT DISTINCT
+			sibsConsume.NodeID,
+			orig.task_address,
+			[HeuristicID] = 11,
+			[NumDirect] = 0		--there is no direct relationship between this task_address and this NodeID
+		FROM #NodeConsumers orig
+			INNER JOIN #NodeConsumers sibs
+				ON orig.NodeID = sibs.NodeID
+				AND orig.task_address <> sibs.task_address
+			INNER JOIN #NodeConsumers sibsConsume
+				ON sibs.task_address = sibsConsume.task_address
+		WHERE NOT EXISTS (
+			SELECT *
+			FROM #NodeConsumers nc
+			WHERE nc.NodeID = sibsConsume.NodeID
+			AND nc.task_address = orig.task_address
+		);
+
+		SET @stmt2RowCount = ROWCOUNT_BIG();
+
+		--And finally, if 2 tasks consume from at least one of the same nodes, they also produce to the same node.
+		INSERT INTO #NodeProducersPass2 (
+			NodeID,
+			task_address,
+			HeuristicID
+		)
+		SELECT DISTINCT
+			sibsProduce.NodeID,
+			orig.task_address,
+			[HeuristicID] = 12
+		FROM #NodeConsumers orig
+			INNER JOIN #NodeConsumers sibs
+				ON orig.NodeID = sibs.NodeID
+				AND orig.task_address <> sibs.task_address
+			INNER JOIN #NodeProducersPass2 sibsProduce
+				ON sibs.task_address = sibsProduce.task_address
+		WHERE NOT EXISTS (
+			SELECT *
+			FROM #NodeProducersPass2 np2
+			WHERE np2.task_address = orig.task_address
+			--AND np2.NodeID = sibsProduce.NodeID
+			--since each task can only produce to one Node, we just need to check if the task_address
+			--has ANY row in this table yet.
+		);
+
+		SET @stmt3RowCount = ROWCOUNT_BIG();
+		
+	END --WHILE
 	/*********************************************************************************************************************************************************************************
 	********************************************************************************************************************************************************************************
 
@@ -895,21 +1050,32 @@ BEGIN
 			1) Thread 0 often is PortOpen-waiting on tasks in a non-adjacent branch
 
 			2) (for tasks other than Thread 0) PortOpen waits are often in a daisy-chain structure, with only the
-				final task in the chain actually waiting on a blocking_task_address that is in a different branch.
+				final task in the chain actually waiting on a blocking_task_address that is in an adjacent branch
+				on the other side of the exchange.
 
 			3) There *do* seem to be something like producer-side PortOpen waits; this is not common but it does
 				seem to happen.
 
-		Thus, our logic for handling these waits needs to be nuanced and tread carefully. Since this proc is built on the idea that a given parallel query execution
-		will have been sampled by the collector a number of times (b/c shorter parallel queries aren't as interesting as longer ones), the multiplicity of samples
-		of tasks and waits data means that the above logic on the simpler wait types will have probably identified which Node IDs each task is a producer and consumer for.
-		There may be a few a tasks that we still don't have nodes identified for, and PortOpen can help us there.
+			4) And finally, sometimes PortOpen really does point to a blocking_task_address on the other side of the exchange
+			where PortOpen is a wait on the consumer side. These are still useful because they can help us in our quest
+			to tie all tasks to their producer Node ID and their consumer node IDs.
 
+		Thus, our logic for handling these waits needs to be nuanced, treading carefully. Since this proc is built on the idea that a given parallel query execution
+		*that is actually interesting enough to review* will have been sampled by the collector a number of times (b/c shorter parallel queries aren't as interesting 
+		as longer ones), the multiplicity of samples of tasks and waits data means that the above logic on the simpler wait types will have probably identified which 
+		Node IDs each task is a producer and consumer for. We can use the relationships already identified (which we are reasonably confident in), to help extricate
+		what each PortOpen wait is telling us.
 	*/
 
-	--First, let's try to identify PortOpen waits that are producer-side. For now, we are pretty conservative. A PortOpen wait is only declared producer-side if the Node ID
-	--a task_address is PortOpen-waiting on is already known (by the above logic) to be its producer node ID from other samples taken. There are other tests we could do,
-	--e.g. if the # of tasks in a branch would be > the statement's DOP if all PortOpen waits on a node were considered to be consumer-side. We may add more logic in later.
+	/* 
+		First, we attempt to identify PortOpen waits. The logic we use is actually very simple: if a task is in PortOpen, and the NodeID of the wait is also
+		the node ID that has previously been identified as the node for which the task in PortOpen is producing to, then we know that the PortOpen wait is producer-side.
+		We don't need to add anything to #NodeProducersPass2 (since that is what tells us that this task is producing to that node!) but we can mark those waits in
+		#tasks_and_waits. It also allows us to tie the blocking_task_address to the NodeID as a consumer, if that hasn't already been discovered yet.
+
+		There are potentially other ways to identify PortOpen, e.g. if assuming they were consumer-side on the NodeID would give us more tasks consuming from that node
+		than the DOP for the statement; we will re-evaluate later whether to add any logic of that sort.
+	*/
 	;WITH cte1 AS (
 		SELECT 
 			taw.task_address,
@@ -920,9 +1086,14 @@ BEGIN
 			taw.RowIsFragmented = 0
 			OR (taw.RowIsFragmented = 1 AND taw.UseFragmentedRowAnyway = 1)
 		)
+		AND taw.task_address <> @Thread0TaskAddress	--ignore Thread 0; its PortOpen waits are NEVER producer-side, of course
 		AND taw.wait_special_tag = 'PortOpen'
-		AND (taw.parent_task_address IS NOT NULL AND ISNULL(taw.exec_context_id,255) <> 0)		--ignore Thread 0; its PortOpen waits are NEVER producer-side, of course
-		AND taw.wait_special_number = COALESCE(taw.ProducerNodeID_FromNewRowOrThreadZero, taw.ProducerNodeID_FromSafeConsumerWaits)
+		AND EXISTS (
+			SELECT *
+			FROM #NodeProducersPass2 np2
+			WHERE np2.task_address = taw.task_address
+			AND np2.NodeID = taw.wait_special_number
+		)
 	)
 	UPDATE cte1
 	SET PortOpenIsProducerWait = 1;
@@ -934,6 +1105,31 @@ BEGIN
 		RAISERROR(@err__msg, 10,1);
 	END
 
+	/* TODO: NOTE 2018-02-24: the logic below is not actually correct. The blocking_task_address could be on the same 
+	side of the exchange, i.e. a PRODUCER-side daisy-chain! Probably will need to make this logic smarter in the future
+	for those difficult cases.
+	IF @err__RowCount > 0
+	BEGIN
+		--The blocking_task_address is a consumer on the node!
+		INSERT INTO #NodeConsumers (
+			NodeID,
+			task_address,
+			HeuristicID,
+			NumDirect
+		)
+		SELECT
+			taw.wait_special_number,
+			taw.blocking_task_address,
+			13,
+			COUNT(*)
+		FROM #tasks_and_waits taw
+		WHERE taw.PortOpenIsProducerWait = 1
+		GROUP BY taw.wait_special_number,
+				taw.blocking_task_address;
+
+	END
+	*/
+
 
 	--Ok, now that we have identified all producer-side PortOpen waits (fingers crossed), we can assume that all other
 	--PortOpen waits are consumer-side. This lets us populate #NodeConsumers, which also has value for identifying further Producer Node IDs
@@ -941,25 +1137,55 @@ BEGIN
 	INSERT INTO #NodeConsumers (
 		NodeID,
 		task_address,
-		HeuristicID
+		HeuristicID,
+		NumDirect
 	)
-	SELECT DISTINCT
+	SELECT
 		taw.wait_special_number,
 		taw.task_address,
-		[HeuristicID] = 6
+		[HeuristicID] = 13,
+		COUNT(*)
 	FROM #tasks_and_waits taw
 	WHERE (
 			taw.RowIsFragmented = 0
 			OR (taw.RowIsFragmented = 1 AND taw.UseFragmentedRowAnyway = 1)
 		)
 	AND taw.wait_special_tag = 'PortOpen'
-	AND (taw.parent_task_address IS NOT NULL AND ISNULL(taw.exec_context_id,255) <> 0)		--ignore Thread 0; its PortOpen waits can sometimes be on tasks in a NON-adjacent branch
-	AND taw.PortOpenIsProducerWait = 0;
+	AND taw.task_address <> @Thread0TaskAddress		--ignore Thread 0; its PortOpen waits can sometimes be on tasks in a NON-adjacent branch
+	AND taw.PortOpenIsProducerWait = 0
+	GROUP BY taw.wait_special_number,
+		taw.task_address;
 
 	SET @err__RowCount = ROWCOUNT_BIG();
 	SET @err__msg = CONVERT(VARCHAR(20),@err__RowCount) + ' rows connected to nodes as consumers via PortOpen waits';
 	RAISERROR(@err__msg, 10,1);
 
+
+
+	/*
+		TODO: if we have more consumers, then we can re-run our sibling logic and potentially tie more siblings to nodes.
+		Probably am going to implement this as a GOTO so I re-use the code above.
+	IF @err__RowCount > 0
+	BEGIN
+
+
+
+	END
+
+	*/
+
+
+
+
+
+
+
+
+
+
+
+
+	--TODO: I reworked the below CTE so that it doesn't have any joins. So I don't need this unique row-numbering logic anymore.
 
 	--Since a task_address can appear multiple times in the same UTCCaptureTime with the same wait, we need to unique-ify each row so that the below
 	--UPDATE can work correctly.
@@ -977,84 +1203,45 @@ BEGIN
 		Now, handle daisy-chains. A daisy-chain PortOpen wait occurs when a task_address (*besides Thread 0*) is in a PortOpen wait (and PortOpenIsProducerWait=0)
 		and its blocking_task_address refers to a task on the same side (i.e. consumer side) of the exchange. (I use the term "daisy-chain" because typically there
 		are a string of PortOpen waits all referring to the "next one in line").
-		There are a variety of ways that we can determine whether the blocking_task_address is on the same side of the exchange:
-
-			1. The blocking_task_address is also in a PortOpen wait on the same NodeID (and the blocking_task_address is NOT a known PortOpen producer wait)
-			2. The blocking_task_address is in another CXPACKET wait that is known to be consumer side (GetRow, SynchConsumer, PortClose, Range), and on the same Node ID
-			3. The blocking_task_address is a sibling of the task_address
+		We lean on the #NodeConsumers table here.
 	*/
 
 	;WITH IdentifyDaisyChainPO AS (
 		SELECT 
 			waiter.task_address,
 			waiter.UTCCaptureTime,
-			waiter.PortOpenRowNumber
+			waiter.PortOpenRowNumber,
+			waiter.PortOpenIsDaisyChain
 		FROM #tasks_and_waits waiter
-			INNER JOIN #tasks_and_waits blocker
-				ON waiter.blocking_task_address = blocker.task_address
-				AND waiter.UTCCaptureTime = blocker.UTCCaptureTime
-				AND waiter.blocking_session_id = @lv__nullsmallint
 		WHERE (
 				waiter.RowIsFragmented = 0
 				OR (waiter.RowIsFragmented = 1 AND waiter.UseFragmentedRowAnyway = 1)
 			)
-		AND (
-			blocker.RowIsFragmented = 0
-			OR (blocker.RowIsFragmented = 1 AND blocker.UseFragmentedRowAnyway = 1)
-		)
-		AND (waiter.parent_task_address IS NULL OR ISNULL(waiter.exec_context_id,255) <> 0)		--NOT Thread 0
+		AND waiter.task_address <> @Thread0TaskAddress	--NOT Thread 0, I've never seen that in a "daisy-chain" (and it doesn't even make sense for Thread 0)
 		AND waiter.wait_special_tag = 'PortOpen'		
 		AND waiter.PortOpenIsProducerWait = 0
 
 		--blocker is on the same side of the exchange
-		AND (
-			(
-				blocker.wait_special_tag IN ('PortOpen', 'SynchConsumer','GetRow', 'SynchConsumer','Range')
-				AND blocker.PortOpenIsProducerWait = 0
-				AND waiter.wait_special_number = blocker.wait_special_number	--Node IDs match
-			)
-			OR
-			--the waiter task consumes from the same NodeID as the blocker task, i.e. they are siblings
-			EXISTS (
-				SELECT * 
-				FROM #NodeConsumers nc1
-				WHERE nc1.task_address = waiter.task_address
-				AND nc1.NodeID IN (SELECT nc2.task_address FROM #NodeConsumers nc2 WHERE nc2.task_address = blocker.task_address)
-				)
-			OR
-			--the waiter task produces to the same NodeID as the blocker task, i.e. they are siblings
-			EXISTS (
-				SELECT *
-				FROM #tasks_and_waits taw1
-				WHERE taw1.task_address = waiter.task_address
-				AND EXISTS (
-					SELECT * 
-					FROM #tasks_and_waits taw2
-					WHERE taw2.task_address = blocker.task_address
-					AND COALESCE(taw1.ProducerNodeID_FromNewRowOrThreadZero, taw1.ProducerNodeID_FromSafeConsumerWaits)
-						= COALESCE(taw2.ProducerNodeID_FromNewRowOrThreadZero, taw2.ProducerNodeID_FromSafeConsumerWaits)
-					)
-			)
-		) --end of complex "blocker is on the same side of the exchange" section
+		AND EXISTS (
+			SELECT *
+			FROM #NodeConsumers nc
+			WHERE nc.task_address = waiter.blocking_task_address
+			AND nc.NodeID = waiter.wait_special_number
+		)
 	)
-	UPDATE targ 
-	SET PortOpenIsDaisyChain = 1
-	FROM #tasks_and_waits targ
-		INNER JOIN IdentifyDaisyChainPO i
-			ON targ.task_address = i.task_address
-			AND targ.UTCCaptureTime = i.UTCCaptureTime
-			AND targ.PortOpenRowNumber = i.PortOpenRowNumber
-	WHERE (
-		targ.RowIsFragmented = 0
-		OR (targ.RowIsFragmented = 1 AND targ.UseFragmentedRowAnyway = 1)
-	)
-	AND (targ.parent_task_address IS NULL OR ISNULL(targ.exec_context_id,255) <> 0)		--NOT Thread 0
-	AND targ.wait_special_tag = 'PortOpen'		
-	AND targ.PortOpenIsProducerWait = 0;
+	UPDATE IdentifyDaisyChainPO 
+	SET PortOpenIsDaisyChain = 1;
 
 	SET @err__RowCount = ROWCOUNT_BIG();
 	SET @err__msg = CONVERT(VARCHAR(20),@err__RowCount) + ' rows found to be in a PortOpen daisy-chain';
 	RAISERROR(@err__msg, 10,1);
+
+
+
+	--AARON: this is where I left off. The below statements need to be re-thought in light of the much more robust #NodeConsumers/#NodeProducersPass2 logic
+	--that I know have in place. Also, is there a need to do a THIRD pass on the sibling logic, once I have all of these PortOpen waits handled?
+
+
 
 
 	--Ok, any other consumer-side PortOpen waits provide additional information we can use to tie task_addresses to their producer nodes.
